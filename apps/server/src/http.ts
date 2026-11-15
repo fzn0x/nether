@@ -64,6 +64,18 @@ function namedKey(app: FastifyInstance, name: string, key: (request: FastifyRequ
   return (request: FastifyRequest) => `${name}:${key(request)}`;
 }
 
+/** The message of a 503 while the limits cannot count, as when Redis is away. */
+export const cannotCount = "The server cannot count tries just now: try again in a minute.";
+
+/**
+ * Answers a limit whose store failed, as Redis away, with a 503: the route
+ * is not let through unlimited, and the store's own message stays in the log.
+ */
+function storeFailed(request: FastifyRequest, reply: FastifyReply, error: unknown) {
+  request.log.error({ err: error }, "Could not count a try against a rate limit");
+  return fail(reply.header("retry-after", "60"), 503, cannotCount);
+}
+
 /** A hook that limits a route's requests from one client address, counted under `name`. */
 export function limitByAddress(
   app: FastifyInstance,
@@ -71,11 +83,21 @@ export function limitByAddress(
   max: number,
   timeWindow: string,
 ) {
-  return app.rateLimit({
+  const limit = app.rateLimit({
     max,
     timeWindow,
     keyGenerator: namedKey(app, name, (request) => normalizeIP(request.ip)),
   });
+  return async (request: FastifyRequest, reply: FastifyReply) => {
+    try {
+      await limit.call(app, request, reply);
+    } catch (error) {
+      // The plugin throws its own answer, a 429, when the limit is reached.
+      if (typeof error === "object" && error !== null && "statusCode" in error) throw error;
+      return storeFailed(request, reply, error);
+    }
+    return undefined;
+  };
 }
 
 /**
@@ -92,7 +114,12 @@ export function limitBy(
 ) {
   const check = app.createRateLimit({ max, timeWindow, keyGenerator: namedKey(app, name, key) });
   return async (request: FastifyRequest, reply: FastifyReply) => {
-    const limit = await check(request);
+    let limit;
+    try {
+      limit = await check(request);
+    } catch (error) {
+      return storeFailed(request, reply, error);
+    }
     if (limit.isAllowed || !limit.isExceeded) return undefined;
     return fail(
       reply.header("retry-after", String(limit.ttlInSeconds)),

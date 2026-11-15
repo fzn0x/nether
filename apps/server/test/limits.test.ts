@@ -3,9 +3,9 @@
 // test with NETHER_TEST_REDIS_URL set; the tests of several nodes need it.
 import rateLimit from "@fastify/rate-limit";
 import Fastify from "fastify";
-import type { Redis } from "ioredis";
+import { Redis } from "ioredis";
 import { afterEach, describe, expect, it } from "vitest";
-import { limitBy, limitByAddress } from "../src/http.ts";
+import { cannotCount, limitBy, limitByAddress } from "../src/http.ts";
 import { connectRedis, redactedUrl } from "../src/redis.ts";
 import { freePort } from "./ports.ts";
 import { type TestServer, signIn, setUp, startServer, testRedis, testRedisUrl } from "./app.ts";
@@ -85,6 +85,38 @@ describe("rate limits", () => {
       expect(keys?.some((key) => key.includes("sign-in-account:ada@example.org"))).toBe(true);
     },
   );
+});
+
+describe("rate limits whose Redis is away", () => {
+  it("answer 503, neither letting the route through nor saying why", async () => {
+    // A client that never connects, whose every command fails at once.
+    const away = new Redis(`redis://127.0.0.1:${String(await freePort())}`, {
+      lazyConnect: true,
+      enableOfflineQueue: false,
+    });
+    const app = Fastify();
+    await app.register(rateLimit, { global: false, redis: away });
+    let reached = 0;
+    const handler = () => {
+      reached += 1;
+      return { ok: true };
+    };
+    app.get("/by-address", { onRequest: limitByAddress(app, "address", 5, "1 minute") }, handler);
+    app.get("/by-key", { preHandler: limitBy(app, "key", 5, "1 minute", () => "k") }, handler);
+    for (const url of ["/by-address", "/by-key"]) {
+      const response = await app.inject({ method: "GET", url });
+      expect(response.statusCode).toBe(503);
+      expect(response.headers["retry-after"]).toBe("60");
+      expect(response.json()).toEqual({
+        statusCode: 503,
+        error: "Service Unavailable",
+        message: cannotCount,
+      });
+    }
+    expect(reached).toBe(0);
+    await app.close();
+    away.disconnect();
+  });
 });
 
 describe("connecting to Redis or Valkey", () => {
