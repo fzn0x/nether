@@ -7,6 +7,7 @@
 [![CI](https://github.com/fzn0x/nether/actions/workflows/ci.yml/badge.svg)](https://github.com/fzn0x/nether/actions/workflows/ci.yml)
 [![Docs](https://github.com/fzn0x/nether/actions/workflows/pages.yml/badge.svg)](https://fzn0x.github.io/nether/)
 [![License: AGPL-3.0-or-later](https://img.shields.io/badge/license-AGPL--3.0--or--later-blue.svg)](#license)
+[![Listed on Awesome MyGo](https://awesomemygo.dev/badge.svg)](https://awesomemygo.dev/apps/nether)
 
 Nether is self-hostable and local-first note taking app combining both
 Notion and Obsidian features. You can import your Obsidian vaults and
