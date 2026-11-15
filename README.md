@@ -13,27 +13,24 @@ Notion and Obsidian features. You can import your Obsidian vaults and
 Notion exports. Self-hosting is available for enterprise.
 
 > [!NOTE]
-> Nether is in early development. [Version 0.0.1](https://github.com/fzn0x/Nether/releases/latest),
-> a developer preview of the desktop app for Windows, macOS and Linux, keeps
-> your notes on your computer ([how to install it](https://fzn0x.github.io/Nether/install/)).
-> [Phase 0](docs/reports/phase-0.md), [Phase 1](docs/reports/phase-1.md)
-> and [Phase 2](docs/reports/phase-2.md) of six are done: a vault of
+> Nether is in early development. [Phase 0](docs/reports/phase-0.md),
+> [Phase 1](docs/reports/phase-1.md), [Phase 2](docs/reports/phase-2.md)
+> and [Phase 3](docs/reports/phase-3.md) of six are done: a vault of
 > Markdown notes with the block editor, links, backlinks, tags, search,
-> templates and export, and databases with six views, relations, rollups,
-> formulas, query blocks, synced blocks, the graph, themes and importers
-> from Obsidian, Notion, Logseq, HTML and CSV, within the performance
-> targets on 50,000 notes.
+> templates and export; databases with six views, relations, rollups,
+> formulas, the graph, themes and importers from Obsidian, Notion, Logseq,
+> HTML and CSV; and a server you start with one `docker compose up`, which
+> syncs vaults with end-to-end encryption, shares spaces and pages, lets
+> people co-edit and comment, keeps history and backups, and serves the web
+> app. All within the performance targets on 50,000 notes.
 >
-> Phase 3, sync and collaboration, the first public release, has all 16
-> of its tasks done: the server with accounts and single sign-on, sync with
-> end-to-end encryption, attachments, version history, spaces and page
-> permissions, live co-editing, comments and mentions, server search, the
-> canvas, task assignment, backups, the web app the server serves, which
-> installs and works offline, and `docker compose up`, which starts it all.
-> Its gate and the release come next; until then, sync stays out of the
-> released app. The
-> [roadmap](docs/roadmap.md#phase-3-self-hosted-sync-and-collaboration)
-> ticks each task off as it lands.
+> Version 0.1.0, the first public release, with sync and the server,
+> comes next. Until it is out, the
+> [latest release](https://github.com/fzn0x/Nether/releases/latest) is
+> 0.0.1, a developer preview of the desktop app alone
+> ([how to install it](https://fzn0x.github.io/Nether/install/)). Phase 4,
+> the platform, is under way, and the
+> [roadmap](docs/roadmap.md#phase-4-platform) ticks it off as it lands.
 
 [Documentation](https://fzn0x.github.io/Nether/) ·
 [Roadmap](docs/roadmap.md) · [Requirements](docs/requirements.md) ·
@@ -66,8 +63,8 @@ Notion exports. Self-hosting is available for enterprise.
 | 0. Foundations | Decisions, the repository, CI, the data model, a 50,000-note test vault | ✅ |
 | 1. Local-first notes | The desktop app: a vault on disk, the block and Markdown editor, links and backlinks, tags, search, templates, export | ✅ |
 | 2. Databases and structure | Databases with six views, relations, rollups, formulas, synced blocks, the graph view, importers from Obsidian and Notion | ✅ |
-| 3. Sync and collaboration | The first public release: the server, end-to-end encrypted sync, co-editing, comments, permissions, the web app, the canvas, backups | 🚧 16 of 16, the gate next |
-| 4. Platform | Plugins in a sandbox, bring-your-own AI, publishing, the REST API, the web clipper, automations | ❌ |
+| 3. Sync and collaboration | The first public release: the server, end-to-end encrypted sync, co-editing, comments, permissions, the web app, the canvas, backups | ✅ |
+| 4. Platform | Plugins in a sandbox, bring-your-own AI, publishing, the REST API, the web clipper, automations | 🚧 0 of 11 |
 | 5. Enterprise, mobile and scale | Single sign-on, SCIM, audit logs, data policies, high availability, the Helm chart, mobile apps | ❌ |
 
 Each phase ends with a gate it must pass before the next one starts; the

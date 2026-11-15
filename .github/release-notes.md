@@ -1,9 +1,8 @@
-A developer preview of Nether, the local-first note taking app that you
-truly own: your notes are plain Markdown files in a folder you choose, and
-the app works fully offline, with no account.
-
-Sync and collaboration are not in this release yet: they come with the
-self-hosted server's first release.
+Nether's first public release: the local-first note taking app that you
+truly own, and now the server that syncs it, on a machine you control.
+Your notes stay plain Markdown files in a folder you choose, and the app
+works fully offline with no account; a Nether server adds sync between
+your devices, sharing with others, co-editing, comments and a web app.
 
 ## Get it
 
@@ -14,6 +13,7 @@ self-hosted server's first release.
 | Linux (x64), updating itself | `curl -fsSL https://github.com/fzn0x/Nether/releases/latest/download/install.sh \| sh` |
 | Debian and Ubuntu (x64) | [nether_{version}_amd64.deb]({url}/nether_{version}_amd64.deb) |
 | Linux, any (x64) | [nether-{version}-x86_64.appimage]({url}/nether-{version}-x86_64.appimage), or the [Flatpak bundle]({url}/nether-{version}-x86_64.flatpak) |
+| The server (amd64 and arm64) | `ghcr.io/fzn0x/nether-server:{version}`, started with PostgreSQL and Valkey by the [`docker-compose.yml`](https://github.com/fzn0x/Nether/blob/v{version}/deploy/docker/docker-compose.yml): see [Run a server](https://fzn0x.github.io/Nether/self-hosting/) |
 
 Nether installed from the Windows installer, the macOS disk image or the
 Linux install script updates itself, asking first; it can be turned off.
@@ -23,7 +23,15 @@ next release when it comes. On Linux, Nether needs GTK 3 and WebKitGTK
 Windows 10, the WebView2 Runtime, which Windows 11 has. `SHA256SUMS`
 lists every file's checksum.
 
-### The first time you open it
+### A server of your own
+
+In a folder with the release's `docker-compose.yml`, `docker compose up -d`
+starts the server on `http://127.0.0.1:3000`. Open it in a browser, or
+connect the desktop app to it, and set it up with the code in its log
+(`docker compose logs server`). Put it behind HTTPS before others use it;
+the guide shows how.
+
+### The first time you open the app
 
 These builds are not code signed yet, so your system asks before opening
 them the first time:
