@@ -6,6 +6,8 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-11-15
+
 ### Added
 
 - `docker compose up`, in `deploy/docker`, starts the server with
@@ -561,5 +563,6 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   multi-select cell are both kept: the second no longer writes the list
   as the cell showed it before the first was read back.
 
-[Unreleased]: https://github.com/fzn0x/Nether/compare/v0.0.1...HEAD
+[Unreleased]: https://github.com/fzn0x/Nether/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/fzn0x/Nether/compare/v0.0.1...v0.1.0
 [0.0.1]: https://github.com/fzn0x/Nether/releases/tag/v0.0.1
