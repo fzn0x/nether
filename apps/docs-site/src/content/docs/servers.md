@@ -33,6 +33,16 @@ how you may sign in:
 Accounts come by invitation from a workspace's owner or admin, so ask them
 for one if the server says it has none for you.
 
+## Setting up a new server
+
+A server just started has no account. Connecting to it, or opening its
+web app and choosing **Sign in**, asks for its **setup code** instead of a
+password: the server writes it to its log each time it starts, after "Set
+it up from the app with this code". Type it with your name, email address
+and password, and the name of the first workspace. You become the
+server's admin, signed in, and can invite the others. The code works once,
+and only someone who can read the server's log has it.
+
 ## Where the app keeps your sign-in
 
 The app keeps the servers you have signed in to and their accounts in its

@@ -40,7 +40,9 @@ The server has no account yet. Set it up from the app with this code: ABCDE-FGHJ
 
 `POST /api/setup` with that code makes the admin account and its first
 workspace, once, and signs the admin in; `GET /api/setup` says whether the
-server still waits for it. Only someone who can read the server's log can set it up, so a new
+server still waits for it. The desktop app's **Servers and signing in**,
+and the web app's **Sign in**, ask for the code when the server waits, and
+set it up. Only someone who can read the server's log can set it up, so a new
 server reachable from the internet cannot be claimed by whoever finds it
 first.
 
