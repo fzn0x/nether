@@ -187,6 +187,36 @@ test("an invitation link makes an account and joins the workspace", async ({ pag
   expect(problems).toEqual([]);
 });
 
+test("a new server is set up from its web app, with the code from its log", async ({
+  page,
+  context,
+}) => {
+  const problems = problemsOf(page);
+  const fresh = await ask<{ url: string; setupCode: string }>("/fresh");
+  await page.goto(fresh.url);
+  await page.getByRole("button", { name: "Sign in" }).click();
+  const dialog = page.getByRole("dialog", { name: "Account and encryption" });
+  await expect(dialog.getByRole("group", { name: /^Set up 127\.0\.0\.1:\d+$/ })).toBeVisible();
+  expect(await violations(page)).toEqual([]);
+
+  await dialog.getByRole("textbox", { name: "Setup code" }).fill(fresh.setupCode);
+  await dialog.getByRole("textbox", { name: "Your name" }).fill("Grace");
+  await dialog.getByRole("textbox", { name: "Email address" }).fill("grace@example.org");
+  await dialog.getByLabel("Password").fill("a long password");
+  await dialog.getByRole("textbox", { name: "First workspace's name" }).fill("Home");
+  await dialog.getByRole("button", { name: "Set up the server" }).click();
+  await expect(dialog.getByRole("status")).toContainText(
+    "is set up, and you are signed in as Grace, its admin.",
+  );
+  expect(
+    (await context.cookies()).find((cookie) => cookie.name === "nether_session"),
+  ).toMatchObject({ httpOnly: true, sameSite: "Strict" });
+  await dialog.getByRole("button", { name: "Done" }).click();
+  await expect(page.getByRole("heading", { name: "Your workspaces" })).toBeVisible();
+  await expect(page.getByRole("button", { name: /^Home/ })).toBeVisible();
+  expect(problems).toEqual([]);
+});
+
 test("the link in a sign-in email signs in", async ({ page }) => {
   const problems = problemsOf(page);
   const grace = await person("Mailed");

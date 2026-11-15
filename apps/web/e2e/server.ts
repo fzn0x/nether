@@ -1,9 +1,10 @@
 // A real Nether server for the web app's end-to-end tests: PostgreSQL in
 // the process (PGlite), the web app's build at `/`, email kept for the tests
-// to read, and an OpenID Connect provider standing in for single sign-on.
-// Beside it, on its own port, what the tests ask of it: the emails sent, a
-// new person in the workspace, and the provider's sign-in, done as the
-// provider's own page would. Run by Playwright: node e2e/server.ts
+// to read, and an OpenID Connect provider standing in for single sign-on;
+// and a second server, not set up yet. Beside them, on its own port, what
+// the tests ask of it: the emails sent, a new person in the workspace, the
+// provider's sign-in, done as the provider's own page would, and the second
+// server's setup code. Run by Playwright: node e2e/server.ts
 import { mkdtemp } from "node:fs/promises";
 import { type IncomingMessage, createServer } from "node:http";
 import { tmpdir } from "node:os";
@@ -20,6 +21,7 @@ import { startProvider } from "../../server/test/provider.ts";
 
 export const port = 4175;
 export const controlPort = 4176;
+export const freshPort = 4177;
 const url = `http://127.0.0.1:${String(port)}`;
 const password = "a long password";
 
@@ -42,6 +44,27 @@ const app = await buildApp(
   { db, setupCode, mailer, blobs: new DiskBlobs(await mkdtemp(join(tmpdir(), "nether-web-e2e-"))) },
 );
 await app.listen({ host: "127.0.0.1", port });
+
+// A second server, not set up yet, for the test that sets one up from the
+// web app with the code its log would have.
+const freshUrl = `http://127.0.0.1:${String(freshPort)}`;
+const freshDb = await testDatabase();
+await migrate(freshDb);
+const freshCode = newSetupCode();
+const fresh = await buildApp(
+  readConfig({
+    NETHER_DATABASE_URL: "postgres://nether@localhost:5432/nether",
+    NETHER_LOG_LEVEL: "warn",
+    NETHER_PUBLIC_URL: freshUrl,
+    NETHER_WEB_APP: fileURLToPath(new URL("../dist", import.meta.url)),
+  }),
+  {
+    db: freshDb,
+    setupCode: freshCode,
+    blobs: new DiskBlobs(await mkdtemp(join(tmpdir(), "nether-web-e2e-fresh-"))),
+  },
+);
+await fresh.listen({ host: "127.0.0.1", port: freshPort });
 
 // Ada sets the server up, with the workspace Team.
 const setup = (await (
@@ -90,6 +113,9 @@ const control = createServer((request, response) => {
       let answer: unknown;
       if (request.url === "/mail") {
         answer = mailer.sent;
+      } else if (request.url === "/fresh") {
+        // The server not set up yet, and the code its log has.
+        answer = { url: freshUrl, setupCode: freshCode };
       } else if (request.url === "/invitation") {
         // A link to Team, for anyone, as Ada would share it.
         answer = await api(`/api/workspaces/${setup.workspace.id}/invitations`, { role: "member" });
@@ -131,6 +157,7 @@ control.listen(controlPort, "127.0.0.1");
 const stop = () => {
   control.close();
   void app.close().then(() => provider.close());
+  void fresh.close().then(() => freshDb.close());
   void db.close();
 };
 process.on("SIGINT", stop);
