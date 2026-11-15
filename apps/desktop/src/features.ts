@@ -1,7 +1,7 @@
-// What a build of the app shows. Sync and collaboration wait for Phase 3's
-// server to be ready to run, with `docker compose up`: until then their
-// commands and menu show only in a build made with VITE_NETHER_SYNC=on, as
-// the end-to-end tests make theirs. The web app, built with
+// What a build of the app shows. Sync and collaboration show in every
+// build, now that `docker compose up` starts a server for them; a build made
+// with VITE_NETHER_SYNC=off leaves their commands and menu out, as for a
+// copy meant never to reach a server. The web app, built with
 // VITE_NETHER_TARGET=web, is its server's, so it always syncs (ADR 0053),
 // and leaves out what a page in a browser cannot do yet.
 import type { CommandId } from "./commands.ts";
@@ -16,7 +16,7 @@ export interface Build {
 
 const web = import.meta.env.VITE_NETHER_TARGET === "web";
 
-export const build: Build = { web, sync: web || import.meta.env.VITE_NETHER_SYNC === "on" };
+export const build: Build = { web, sync: web || import.meta.env.VITE_NETHER_SYNC !== "off" };
 
 export const syncShown = build.sync;
 
