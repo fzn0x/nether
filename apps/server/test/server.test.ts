@@ -37,6 +37,7 @@ describe("readConfig", () => {
       port: 3000,
       logLevel: "info",
       databaseUrl: database.NETHER_DATABASE_URL,
+      redisUrl: null,
       trustProxy: false,
       mail: null,
       publicUrl: null,
@@ -78,6 +79,16 @@ describe("readConfig", () => {
     [" uniquelocal, 172.16.0.0/12 ,::1 ", ["uniquelocal", "172.16.0.0/12", "::1"]],
   ])("reads NETHER_TRUST_PROXY=%j", (value, trustProxy) => {
     expect(readConfig({ ...database, NETHER_TRUST_PROXY: value }).trustProxy).toEqual(trustProxy);
+  });
+
+  it("reads the Redis or Valkey server the limits count in", () => {
+    expect(readConfig({ ...database, NETHER_REDIS_URL: " redis://valkey:6379 " }).redisUrl).toBe(
+      "redis://valkey:6379",
+    );
+    expect(
+      readConfig({ ...database, NETHER_REDIS_URL: "rediss://:secret@cache.example.org:6380/2" })
+        .redisUrl,
+    ).toBe("rediss://:secret@cache.example.org:6380/2");
   });
 
   it("reads the SMTP server and the sender together", () => {
@@ -175,6 +186,10 @@ describe("readConfig", () => {
     [{ NETHER_TRUST_PROXY: "proxy.example.org" }, "NETHER_TRUST_PROXY must be on, off"],
     [{ NETHER_TRUST_PROXY: "10.0.0.0/33" }, "NETHER_TRUST_PROXY must be on, off"],
     [{ NETHER_TRUST_PROXY: "10.0.0.1," }, "NETHER_TRUST_PROXY must be on, off"],
+    [
+      { NETHER_REDIS_URL: "valkey:6379" },
+      "NETHER_REDIS_URL must be a redis:// or rediss:// address, as redis://valkey:6379",
+    ],
     [{ NETHER_MAIL_FROM: "nether@example.org" }, "NETHER_MAIL_FROM is set without NETHER_SMTP_URL"],
     [
       { NETHER_SMTP_URL: "http://mail.example.org", NETHER_MAIL_FROM: "nether@example.org" },

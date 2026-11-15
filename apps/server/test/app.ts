@@ -1,6 +1,9 @@
 // A server for a test, on a database of its own, and its setup.
+import { randomUUID } from "node:crypto";
 import type { FastifyInstance, LightMyRequestResponse } from "fastify";
+import type { Redis } from "ioredis";
 import { buildApp } from "../src/app.ts";
+import { connectRedis } from "../src/redis.ts";
 import { readConfig } from "../src/config.ts";
 import type { BlobStore } from "../src/blobs.ts";
 import type { Database } from "../src/db.ts";
@@ -49,19 +52,39 @@ export class TestMailer implements Mailer {
   }
 }
 
+/**
+ * With NETHER_TEST_REDIS_URL set, as in CI, the rate limits of every test
+ * server count in that Redis or Valkey, each server's keys under a prefix
+ * of their own; `shared` gives several servers one prefix, as nodes of one
+ * deployment.
+ */
+export const testRedisUrl = process.env.NETHER_TEST_REDIS_URL ?? "";
+
+export function testRedis(shared?: string): Promise<Redis> | undefined {
+  if (testRedisUrl === "") return undefined;
+  return connectRedis(testRedisUrl, { keyPrefix: `test:${shared ?? randomUUID()}:` });
+}
+
 /** Starts a server, configured by `env` beside what every test server has. */
 export async function startServer(
-  options: { mailer?: Mailer; env?: Record<string, string>; blobs?: BlobStore } = {},
+  options: {
+    mailer?: Mailer;
+    env?: Record<string, string>;
+    blobs?: BlobStore;
+    redis?: Redis;
+  } = {},
 ): Promise<TestServer> {
   const db = await testDatabase();
   await migrate(db);
   const setupCode = newSetupCode();
   const config = readConfig({ ...baseEnv, ...options.env });
+  const redis = options.redis ?? (await testRedis());
   const server = await buildApp(config, {
     db,
     setupCode,
     ...(options.mailer === undefined ? {} : { mailer: options.mailer }),
     ...(options.blobs === undefined ? {} : { blobs: options.blobs }),
+    ...(redis === undefined ? {} : { redis }),
   });
   return {
     server,
@@ -69,6 +92,8 @@ export async function startServer(
     setupCode,
     async close() {
       await server.close();
+      // A client the test gave is the test's to close.
+      if (options.redis === undefined) await redis?.quit();
       await db.close();
     },
   };

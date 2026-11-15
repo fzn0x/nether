@@ -1,18 +1,22 @@
 // Starts the server: `node dist/main.js`, configured by environment
 // variables. It brings the database to its schema first, and while it has
 // no account it writes the setup code to its log.
+import type { Redis } from "ioredis";
 import { buildApp } from "./app.ts";
 import { readConfig } from "./config.ts";
 import { DiskBlobs, S3Blobs } from "./blobs.ts";
 import { connectPostgres } from "./db.ts";
 import { smtpMailer } from "./mail.ts";
 import { migrate } from "./migrations.ts";
+import { connectRedis, watchRedis } from "./redis.ts";
 import { newSetupCode, setupNeeded } from "./setup.ts";
 
 async function main(): Promise<void> {
   const config = readConfig(process.env);
   const db = connectPostgres(config.databaseUrl);
+  let redis: Redis | undefined;
   try {
+    if (config.redisUrl !== null) redis = await connectRedis(config.redisUrl);
     const migrated = await migrate(db);
     const setupCode = (await setupNeeded(db)) ? newSetupCode() : undefined;
     const mailer = config.mail === null ? undefined : smtpMailer(config.mail.url, config.mail.from);
@@ -25,12 +29,15 @@ async function main(): Promise<void> {
       blobs,
       ...(setupCode === undefined ? {} : { setupCode }),
       ...(mailer === undefined ? {} : { mailer }),
+      ...(redis === undefined ? {} : { redis }),
     });
     if (migrated.from !== migrated.to) {
       app.log.info(migrated, "Migrated the database to the server's schema");
     }
+    if (redis !== undefined) watchRedis(redis, app.log);
     app.addHook("onClose", async () => {
       mailer?.close();
+      await redis?.quit();
       await db.close();
     });
     for (const signal of ["SIGINT", "SIGTERM"] as const) {
@@ -47,6 +54,7 @@ async function main(): Promise<void> {
       );
     }
   } catch (error) {
+    redis?.disconnect();
     await db.close().catch(() => undefined);
     throw error;
   }
