@@ -16,7 +16,7 @@ from its `deploy/docker` folder:
 
 ```sh
 git clone https://github.com/fzn0x/nether.git
-cd Nether/deploy/docker
+cd nether/deploy/docker
 docker compose up -d
 ```
 

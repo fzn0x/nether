@@ -24,11 +24,11 @@ Notion exports. Self-hosting is available for enterprise.
 > people co-edit and comment, keeps history and backups, and serves the web
 > app. All within the performance targets on 50,000 notes.
 >
-> Version 0.1.0, the first public release, with sync and the server,
-> comes next. Until it is out, the
-> [latest release](https://github.com/fzn0x/nether/releases/latest) is
-> 0.0.1, a developer preview of the desktop app alone
-> ([how to install it](https://fzn0x.github.io/nether/install/)). Phase 4,
+> [Version 0.1.0](https://github.com/fzn0x/nether/releases/latest), the
+> first public release, has the desktop app for Windows, macOS and Linux
+> ([how to install it](https://fzn0x.github.io/nether/install/)) and the
+> server's image, `ghcr.io/fzn0x/nether-server`
+> ([how to run it](https://fzn0x.github.io/nether/self-hosting/)). Phase 4,
 > the platform, is under way, and the
 > [roadmap](docs/roadmap.md#phase-4-platform) ticks it off as it lands.
 

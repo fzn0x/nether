@@ -50,9 +50,8 @@ importers from Obsidian, Notion, Logseq, HTML and CSV. A server you
 end-to-end encryption, spaces and sharing, co-editing, comments and
 mentions, history and backups, and serves the web app.
 
-Version 0.1.0, the first public release with sync and the server, comes
-next; until then, version 0.0.1, a developer preview of the desktop app
-alone, is ready to [install](../install/). The fifth phase, the platform,
+Version 0.1.0, the first public release, with sync and the server, is
+ready to [install](../install/). The fifth phase, the platform,
 is under way. The [roadmap](../roadmap/) lists what each phase
 delivers.
 
