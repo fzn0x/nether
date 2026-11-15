@@ -563,6 +563,9 @@ importers:
 
   tools/perf:
     dependencies:
+      '@hocuspocus/provider':
+        specifier: ~4.7.1
+        version: 4.7.1(y-protocols@1.0.7(yjs@13.6.33))(yjs@13.6.33)
       '@nether/core':
         specifier: workspace:*
         version: link:../../packages/core
@@ -581,6 +584,9 @@ importers:
       '@nether/vault-generator':
         specifier: workspace:*
         version: link:../vault-generator
+      yjs:
+        specifier: ^13.6.33
+        version: 13.6.33
     devDependencies:
       '@types/node':
         specifier: ^24.19.2

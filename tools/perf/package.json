@@ -7,15 +7,18 @@
   "type": "module",
   "scripts": {
     "bench": "node --experimental-strip-types --disable-warning=ExperimentalWarning src/bench.ts",
+    "sync": "node --experimental-strip-types --disable-warning=ExperimentalWarning src/sync.ts",
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {
+    "@hocuspocus/provider": "~4.7.1",
     "@nether/core": "workspace:*",
     "@nether/graph": "workspace:*",
     "@nether/markdown": "workspace:*",
     "@nether/search": "workspace:*",
     "@nether/storage": "workspace:*",
-    "@nether/vault-generator": "workspace:*"
+    "@nether/vault-generator": "workspace:*",
+    "yjs": "^13.6.33"
   },
   "devDependencies": {
     "@types/node": "^24.19.2"
