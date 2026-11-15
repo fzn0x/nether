@@ -1,0 +1,157 @@
+---
+title: Run a server
+description: How to start a Nether server with Docker Compose, set it up, put it behind HTTPS, configure it, update it, and back it up and restore it.
+---
+
+A Nether server syncs vaults between devices, shares them with other
+people and serves the web app. One `docker compose up` starts it with
+everything it needs: PostgreSQL for its data, Valkey for its rate limits,
+and a volume for attachments and backups.
+
+## Start it
+
+You need [Docker](https://docs.docker.com/get-started/get-docker/) with
+Docker Compose 2.24 or later. Get the repository, and start the server
+from its `deploy/docker` folder:
+
+```sh
+git clone https://github.com/fzn0x/Nether.git
+cd Nether/deploy/docker
+docker compose up -d
+```
+
+Compose pulls the server's image, `ghcr.io/fzn0x/nether-server`, or builds
+it from the repository when it cannot pull it. Once a release has
+published the image, the `docker-compose.yml` file alone is enough: copy
+it into a folder of its own and run `docker compose up -d` there.
+
+The server answers on `http://127.0.0.1:3000`, on this machine only, until
+you choose otherwise below.
+
+## Set it up
+
+A new server has no account. Its log has a code that makes the first one,
+the server's admin, with a first workspace:
+
+```sh
+docker compose logs server | grep "Set it up"
+```
+
+Send the code with the admin's name, email address, password (twelve
+characters or more) and the workspace's name:
+
+```sh
+curl -X POST http://127.0.0.1:3000/api/setup -H 'content-type: application/json' \
+  -d '{"code":"ABCDE-FGHJK-LMNPQ-RSTUV","name":"Ada","email":"ada@example.org",
+       "password":"at least twelve characters","workspace":"Team"}'
+```
+
+The code works once. Only someone who can read the server's log can set it
+up, so a new server cannot be claimed by whoever finds it first. Then sign
+in from the [desktop app or the web app](../servers/) and invite the
+others.
+
+## Put it behind HTTPS
+
+Browsers keep the web app's sessions and run its offline copy only over
+HTTPS, and passwords should never cross a network in the clear. Put a
+reverse proxy in front of the server, on the same machine. With
+[Caddy](https://caddyserver.com), which fetches its certificate on its
+own, this `Caddyfile` does it:
+
+```text
+nether.example.org {
+	reverse_proxy 127.0.0.1:3000
+}
+```
+
+Then tell the server its address, and to believe the proxy about each
+client's address, in a `.env` file beside `docker-compose.yml`:
+
+```sh
+NETHER_PUBLIC_URL=https://nether.example.org
+NETHER_TRUST_PROXY=uniquelocal
+```
+
+`uniquelocal` believes any private address. It is safe while the server is
+published on `127.0.0.1` alone, as it is by default, since only the proxy
+on this machine reaches it then. The proxy passes WebSocket connections
+through, which sync uses, on the same port.
+
+## Settings
+
+Settings go in the `.env` file beside `docker-compose.yml`, one
+`NAME=value` a line, and take effect when the server starts again:
+`docker compose up -d`. Three are Compose's own:
+
+| Setting | Default | |
+| --- | --- | --- |
+| `NETHER_PUBLISH` | `127.0.0.1:3000` | The address and port on this machine the server answers at; `0.0.0.0:3000` for every network it is on |
+| `NETHER_VERSION` | `latest` | The image's version, as `0.1.0`, to stay on one release |
+| `NETHER_POSTGRES_PASSWORD` | `nether` | PostgreSQL's password, read when its volume is first made; set it before the first start |
+
+The server reads every other setting of the
+[server's configuration](https://github.com/fzn0x/Nether/tree/main/apps/server#configuration)
+from the same file, such as:
+
+- **Email**, for codes that sign in and mentions:
+  `NETHER_SMTP_URL=smtp://user:password@mail.example.org:587` and
+  `NETHER_MAIL_FROM=Nether <nether@example.org>`.
+- **Single sign-on** with your OpenID Connect provider:
+  `NETHER_OIDC_ISSUER`, `NETHER_OIDC_CLIENT_ID` and
+  `NETHER_OIDC_CLIENT_SECRET`, with `NETHER_PUBLIC_URL` set.
+- **Attachments in an S3-compatible bucket** instead of the volume:
+  `NETHER_STORAGE=s3` with `NETHER_S3_ENDPOINT`, `NETHER_S3_BUCKET`,
+  `NETHER_S3_ACCESS_KEY` and `NETHER_S3_SECRET_KEY`.
+- **Scheduled backups**: `NETHER_BACKUP=disk`, below.
+
+## Update it
+
+```sh
+docker compose pull
+docker compose up -d
+```
+
+The server brings its database to the new version's schema as it starts.
+Versions within one major release can be skipped. To choose when to move,
+set `NETHER_VERSION` to a release and change it when you are ready.
+
+## Back it up
+
+The server's data is in two volumes: `database`, PostgreSQL's, and
+`files`, which holds the attachments and the server's own backups. The
+simplest backup is the server's: one file holding the database and every
+attachment, made while it runs. Add to `.env`:
+
+```sh
+NETHER_BACKUP=disk
+```
+
+The server then makes one a day in `/data/backups`, in the `files`
+volume, and keeps the newest seven (`NETHER_BACKUP_HOURS` and
+`NETHER_BACKUP_KEEP` change that). To make one now, and copy it off this
+machine, where a backup belongs:
+
+```sh
+docker compose exec server node dist/admin.js backup /data/backups/now.ndjson.gz
+docker compose cp server:/data/backups/now.ndjson.gz .
+```
+
+## Restore it
+
+A backup restores into a new, empty server, on this machine or another,
+from the server that made it or an older one of the same major release.
+With the backup in the current folder, as `nether.ndjson.gz`:
+
+```sh
+docker compose down --volumes      # only on this machine: deletes the server's data
+docker compose run --rm --volume "$PWD:/restore:ro" server \
+  node dist/admin.js restore /restore/nether.ndjson.gz
+docker compose up -d
+```
+
+The first line deletes the database and files volumes, so be sure the
+backup is outside them first. The restore refuses a database that has
+data, so it never overwrites one by mistake. Accounts, sessions,
+workspaces, notes and attachments come back as they were when the backup
+was made. CI runs these steps on every change.

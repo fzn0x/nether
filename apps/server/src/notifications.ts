@@ -159,7 +159,10 @@ export function registerNotifications(
         body: mentionBody,
       },
       // A few mentions a minute, however many comments mention people.
-      preHandler: [account, limitBy(app, 60, "10 minutes", (request) => accountOf(request).id)],
+      preHandler: [
+        account,
+        limitBy(app, "mentions", 60, "10 minutes", (request) => accountOf(request).id),
+      ],
     },
     async (request, reply) => {
       const me = accountOf(request);

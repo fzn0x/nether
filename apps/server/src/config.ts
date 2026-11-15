@@ -15,6 +15,11 @@ export interface Config {
   /** The PostgreSQL database's address, as `postgres://user:password@host:5432/nether`. */
   readonly databaseUrl: string;
   /**
+   * The Redis or Valkey server that keeps the rate limits' counts (ADR 0054),
+   * as `redis://host:6379`; without one, each node keeps its own in memory.
+   */
+  readonly redisUrl: string | null;
+  /**
    * Which proxies in front of the server to believe about the client's
    * address: none, all, or their addresses and ranges.
    */
@@ -129,6 +134,18 @@ function readDatabaseUrl(env: NodeJS.ProcessEnv): string {
   }
   if (!/^postgres(ql)?:\/\//i.test(value)) {
     throw new ConfigError("NETHER_DATABASE_URL", "must be a postgres:// address");
+  }
+  return value;
+}
+
+function readRedisUrl(env: NodeJS.ProcessEnv): string | null {
+  const value = env.NETHER_REDIS_URL?.trim() ?? "";
+  if (value === "") return null;
+  if (!/^rediss?:\/\/./i.test(value)) {
+    throw new ConfigError(
+      "NETHER_REDIS_URL",
+      "must be a redis:// or rediss:// address, as redis://valkey:6379",
+    );
   }
   return value;
 }
@@ -395,6 +412,7 @@ export function readConfig(env: NodeJS.ProcessEnv): Config {
     port: readPort(env),
     logLevel: readLogLevel(env),
     databaseUrl: readDatabaseUrl(env),
+    redisUrl: readRedisUrl(env),
     trustProxy: readTrustProxy(env),
     mail: readMail(env),
     publicUrl,

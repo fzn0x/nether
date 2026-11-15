@@ -17,7 +17,7 @@ flowchart TB
     ee["enterprise/<br/>SAML, SCIM, audit<br/>free, off until an admin turns it on"]
   end
   pg[("PostgreSQL<br/>metadata, Yjs history, search")]
-  redis[("Redis or Valkey<br/>presence, jobs, fan-out")]
+  redis[("Redis or Valkey<br/>rate limits; fan-out with HA")]
   files[("File storage<br/>local disk or S3-compatible")]
   desktop <-->|Yjs sync and REST| server
   web <--> server
@@ -40,7 +40,7 @@ flowchart TB
 | Sync server | Hocuspocus, inside the server's Node service | [0003](adr/0003-sync-yjs-hocuspocus.md) |
 | Server framework | Fastify | [0005](adr/0005-server-on-fastify.md) |
 | Server database | PostgreSQL 16 or later: metadata, permissions, Yjs updates, full-text search | |
-| Cache and pub/sub | Redis or Valkey: presence, sync fan-out across nodes, job queue | |
+| Cache and pub/sub | Redis or Valkey: the rate limits' counts now; presence and sync fan-out across nodes with high availability | [0054](adr/0054-docker-compose-starts-the-server-with-postgresql-valkey-and-volumes.md) |
 | File storage | Local disk or any S3-compatible store (MinIO, R2, S3) | |
 | Client storage | SQLite with FTS5; on the desktop, Markdown files in the vault too | [0003](adr/0003-sync-yjs-hocuspocus.md) |
 | Desktop | MyGO, its main window a web page with the shared UI | [0004](adr/0004-desktop-on-mygo.md) |

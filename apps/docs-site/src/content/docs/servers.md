@@ -4,8 +4,9 @@ description: How to connect the Nether app to a Nether server, sign in with a pa
 ---
 
 Nether works without a server: a vault is a folder of Markdown files on your
-computer. A Nether server, which you or your organization runs, adds sync
-between devices, sharing and collaboration. The app signs in to it first.
+computer. A Nether server, which you or your organization
+[runs](../self-hosting/), adds sync between devices, sharing and
+collaboration. The app signs in to it first.
 
 :::note
 Sync and collaboration are not in Nether's first releases yet: they wait

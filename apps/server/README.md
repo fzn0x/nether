@@ -20,7 +20,11 @@ and [0038](../../docs/adr/0038-encrypted-workspaces-seal-a-key-to-each-member-an
 
 ## Run it
 
-It needs PostgreSQL 16 or newer, and a database for Nether on it.
+`docker compose up` in [`deploy/docker`](../../deploy/docker/) starts it
+with PostgreSQL, Valkey and a volume for its files; the
+[self-hosting guide](https://fzn0x.github.io/Nether/self-hosting/) goes on
+from there. To run it from the repository instead, it needs PostgreSQL 16
+or newer, and a database for Nether on it.
 
 ```sh
 pnpm --filter @nether/server build
@@ -137,6 +141,14 @@ in 15 minutes for one account from anywhere. One email address gets at
 most three codes in 15 minutes. One account mentions people 60 times in
 10 minutes, and searches 120 times a minute. Setup, invitations, ending sessions and changing passwords
 have limits of their own. Each answers `429` with `Retry-After`.
+
+Each node counts these tries in its memory, unless `NETHER_REDIS_URL`
+names a Redis or Valkey server: then they count there, so a restart forgets
+none and several nodes count together
+([ADR 0054](../../docs/adr/0054-docker-compose-starts-the-server-with-postgresql-valkey-and-volumes.md)).
+The server checks that it answers as it starts; while it cannot reach it,
+the routes with a limit answer `503` with `Retry-After: 60` rather than go
+unlimited, and the log says when it is lost and when back.
 
 ## Notifications
 
@@ -377,10 +389,11 @@ machine.
 
 | Variable | Default | |
 | --- | --- | --- |
-| `NETHER_HOST` | `127.0.0.1` | The address to listen on; the Docker image will set `0.0.0.0` |
+| `NETHER_HOST` | `127.0.0.1` | The address to listen on; the Docker image sets `0.0.0.0` |
 | `NETHER_PORT` | `3000` | The port; `0` picks a free one |
 | `NETHER_LOG_LEVEL` | `info` | `fatal`, `error`, `warn`, `info`, `debug`, `trace` or `silent` |
 | `NETHER_DATABASE_URL` | none, required | The PostgreSQL database, as `postgres://user:password@host:5432/nether` |
+| `NETHER_REDIS_URL` | none | The Redis or Valkey server the rate limits count in, as `redis://valkey:6379` or `rediss://` for TLS; without one, each node counts in its memory |
 | `NETHER_SMTP_URL` | none | The SMTP server email goes through, as `smtp://user:password@host:587` or `smtps://user:password@host:465` |
 | `NETHER_MAIL_FROM` | none, required with `NETHER_SMTP_URL` | The sender, as `Nether <nether@example.org>` |
 | `NETHER_PUBLIC_URL` | none | The address people reach the server at, as `https://nether.example.org`; needed for OIDC |
@@ -429,4 +442,7 @@ pnpm --filter @nether/server smoke    # starts dist/main.js with every enterpris
 The tests run on [PGlite](https://pglite.dev), PostgreSQL in the test's own
 process, so they need no server. With `NETHER_TEST_DATABASE_URL` set, as in
 CI, they run on that PostgreSQL instead, each in a schema of its own that it
-drops. The smoke run needs `NETHER_DATABASE_URL`.
+drops. With `NETHER_TEST_REDIS_URL` set, as in CI too, their rate limits
+count in that Redis or Valkey, each server's under a prefix of its own,
+and the test of two nodes sharing one runs. The smoke run needs
+`NETHER_DATABASE_URL`.

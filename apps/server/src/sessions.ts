@@ -14,7 +14,15 @@ import {
   readTime,
 } from "./db.ts";
 import { clearSessionCookies, cookieToken, readCookies, sessionCookie } from "./cookies.ts";
-import { emailKey, fail, limitBy, newPasswordField, passwordField, uuidField } from "./http.ts";
+import {
+  emailKey,
+  fail,
+  limitBy,
+  limitByAddress,
+  newPasswordField,
+  passwordField,
+  uuidField,
+} from "./http.ts";
 import { hashPassword, verifyPassword } from "./passwords.ts";
 
 /** Days a session lasts unused. */
@@ -211,8 +219,8 @@ export function registerSessions(app: FastifyInstance, db: Database): void {
       schema: { body: signInBody },
       // Per address, before the body is read; then per account, so many
       // addresses cannot guess one password together.
-      onRequest: app.rateLimit({ max: 30, timeWindow: "5 minutes" }),
-      preHandler: limitBy(app, 10, "15 minutes", (request) =>
+      onRequest: limitByAddress(app, "sign-in", 30, "5 minutes"),
+      preHandler: limitBy(app, "sign-in-account", 10, "15 minutes", (request) =>
         emailKey((request.body as SignIn).email),
       ),
     },
@@ -274,7 +282,7 @@ export function registerSessions(app: FastifyInstance, db: Database): void {
     "/api/sessions/revoke",
     {
       schema: { body: revokeBody },
-      preHandler: [account, app.rateLimit({ max: 10, timeWindow: "15 minutes" })],
+      preHandler: [account, limitByAddress(app, "revoke-sessions", 10, "15 minutes")],
     },
     async (request, reply) => {
       const me = accountOf(request);
@@ -322,7 +330,7 @@ export function registerSessions(app: FastifyInstance, db: Database): void {
     "/api/me/password",
     {
       schema: { body: passwordBody },
-      preHandler: [account, app.rateLimit({ max: 10, timeWindow: "15 minutes" })],
+      preHandler: [account, limitByAddress(app, "password-change", 10, "15 minutes")],
     },
     async (request, reply) => {
       const me = accountOf(request);

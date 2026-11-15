@@ -35,6 +35,15 @@ jobs:
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
+      # The server's rate limits count in it in every server test (ADR 0054).
+      valkey:
+        image: valkey/valkey:9-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "valkey-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
@@ -52,8 +61,10 @@ jobs:
       - name: Unit tests
         run: pnpm test
         env:
-          # The server's tests run on this PostgreSQL, each in a schema of its own.
+          # The server's tests run on this PostgreSQL, each in a schema of its own,
+          # and count their rate limits in this Valkey, each under a prefix of its own.
           NETHER_TEST_DATABASE_URL: postgres://nether:nether@localhost:5432/nether
+          NETHER_TEST_REDIS_URL: redis://localhost:6379
       - name: Build the server, the desktop page and the documentation site
         run: pnpm build
       # The Phase 0 gate: the server runs with every enterprise feature off.
@@ -66,6 +77,31 @@ jobs:
         run: pnpm --filter @nether/server drill
         env:
           NETHER_DATABASE_URL: postgres://nether:nether@localhost:5432/nether
+
+  # The Phase 3 gate's first half: `docker compose up` gives a working
+  # server, set up from its log, which keeps its data when started again.
+  docker:
+    name: Docker compose
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: docker/setup-buildx-action@v4
+      - name: Build the server's image
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: deploy/docker/Dockerfile
+          tags: ghcr.io/fzn0x/nether-server:check
+          load: true
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+      - name: Start it with PostgreSQL and Valkey, set it up, start it again
+        run: node deploy/docker/check.mjs
+        env:
+          NETHER_VERSION: check
 
   licenses:
     name: Licenses

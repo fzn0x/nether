@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import rateLimit from "@fastify/rate-limit";
 import Fastify, { type FastifyInstance } from "fastify";
+import type { Redis } from "ioredis";
 import { registerAttachments } from "./attachments.ts";
 import type { BlobStore } from "./blobs.ts";
 import { registerCodes } from "./codes.ts";
@@ -62,6 +63,11 @@ export interface Services {
   readonly mailer?: Mailer;
   /** Where attachments' bytes are kept; without it, the server takes none. */
   readonly blobs?: BlobStore;
+  /**
+   * Where the rate limits keep their counts, so they hold across restarts
+   * and nodes (ADR 0054); without it, each node counts in its memory.
+   */
+  readonly redis?: Redis;
   /** The modules of the enterprise features this build includes; none are written yet. */
   readonly enterpriseModules?: readonly EnterpriseModule[];
 }
@@ -75,6 +81,7 @@ export async function buildApp(config: Config, services: Services): Promise<Fast
   // Limits apply only to the routes that ask for one, as signing in does.
   await app.register(rateLimit, {
     global: false,
+    ...(services.redis === undefined ? {} : { redis: services.redis, nameSpace: "nether:limit:" }),
     errorResponseBuilder: (_request, context) => ({
       statusCode: 429,
       error: "Too Many Requests",

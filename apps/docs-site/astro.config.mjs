@@ -39,7 +39,7 @@ export default defineConfig({
             "markdown",
           ],
         },
-        { label: "Servers", items: ["servers"] },
+        { label: "Servers", items: ["servers", "self-hosting"] },
       ],
     }),
   ],

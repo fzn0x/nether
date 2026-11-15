@@ -11,6 +11,7 @@ import {
   emailField,
   emailKey,
   fail,
+  limitByAddress,
   nameField,
   newPasswordField,
   tokenField,
@@ -316,7 +317,7 @@ export function registerInvitations(app: FastifyInstance, db: Database): void {
     "/api/invitations/lookup",
     {
       schema: { body: lookupBody },
-      onRequest: app.rateLimit({ max: 30, timeWindow: "5 minutes" }),
+      onRequest: limitByAddress(app, "invitation-lookup", 30, "5 minutes"),
     },
     async (request, reply) => {
       const { rows } = await db.query(
@@ -348,7 +349,7 @@ export function registerInvitations(app: FastifyInstance, db: Database): void {
     "/api/invitations/accept",
     {
       schema: { body: acceptBody },
-      onRequest: app.rateLimit({ max: 20, timeWindow: "15 minutes" }),
+      onRequest: limitByAddress(app, "invitation-accept", 20, "15 minutes"),
     },
     async (request, reply) => {
       const { body } = request;

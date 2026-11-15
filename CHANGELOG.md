@@ -8,6 +8,20 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- `docker compose up`, in `deploy/docker`, starts the server with
+  PostgreSQL 18, Valkey and volumes for its database and files, on
+  `127.0.0.1:3000` unless `NETHER_PUBLISH` says otherwise, configured by a
+  `.env` beside it; the server's log has the code that sets it up. CI
+  checks it from setup to a restart and a restore on a new install
+  ([ADR 0054](docs/adr/0054-docker-compose-starts-the-server-with-postgresql-valkey-and-volumes.md)).
+- The server's image, `ghcr.io/fzn0x/nether-server`, with the web app, for
+  amd64 and arm64, pushed by each release as its version, its minor line
+  and `latest`.
+- `NETHER_REDIS_URL`: the server's rate limits count in that Redis or
+  Valkey, so a restart forgets no tries and nodes count together; while it
+  cannot be reached, the routes with a limit answer 503.
+- A self-hosting guide: starting a server, setting it up, HTTPS behind a
+  proxy, settings, updates, backups and restoring.
 - The web app's build, `apps/web`, from the desktop app's sources: it signs
   in to the server that serves it, with its cookie, and lists the
   account's workspaces, each a vault kept in the browser's private file

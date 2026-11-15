@@ -7,7 +7,7 @@
 import { createHash, randomInt, randomUUID, timingSafeEqual } from "node:crypto";
 import type { FastifyBaseLogger, FastifyInstance } from "fastify";
 import { type Database, readBoolean, readNumber, readText } from "./db.ts";
-import { emailField, emailKey, fail, limitBy } from "./http.ts";
+import { emailField, emailKey, fail, limitBy, limitByAddress } from "./http.ts";
 import type { Mailer } from "./mail.ts";
 import { startSession } from "./sessions.ts";
 
@@ -134,9 +134,11 @@ export function registerCodes(
     "/api/sign-in-codes",
     {
       schema: { body: askBody },
-      onRequest: app.rateLimit({ max: 10, timeWindow: "15 minutes" }),
+      onRequest: limitByAddress(app, "sign-in-codes", 10, "15 minutes"),
       // A few emails to one address, however many ask for them.
-      preHandler: limitBy(app, 3, "15 minutes", (request) => emailKey((request.body as Ask).email)),
+      preHandler: limitBy(app, "sign-in-codes-to", 3, "15 minutes", (request) =>
+        emailKey((request.body as Ask).email),
+      ),
     },
     async (request, reply) => {
       send(request.body.email, request.log);
@@ -150,7 +152,7 @@ export function registerCodes(
     "/api/sign-in-codes/redeem",
     {
       schema: { body: redeemBody },
-      onRequest: app.rateLimit({ max: 30, timeWindow: "5 minutes" }),
+      onRequest: limitByAddress(app, "sign-in-code-redeem", 30, "5 minutes"),
     },
     async (request, reply) => {
       const digits = digitsOf(request.body.code);

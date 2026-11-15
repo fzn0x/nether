@@ -61,3 +61,4 @@ record supersedes it and says so. Start a new one from
 | [0051](0051-canvases-are-json-canvas-files-drawn-with-the-page-s-own-elements.md) | Canvases are JSON Canvas files, drawn with the page's own elements | Accepted |
 | [0053](0053-the-web-app-is-the-desktop-page-in-the-browser-signed-in-by-a-cookie.md) | The web app is the desktop page in the browser, signed in by a cookie | Accepted |
 | [0052](0052-backups-are-the-server-s-own-files-restored-at-their-schema-then-migrated.md) | Backups are the server's own files, restored at their schema, then migrated | Accepted |
+| [0054](0054-docker-compose-starts-the-server-with-postgresql-valkey-and-volumes.md) | Docker Compose starts the server with PostgreSQL, Valkey and volumes | Accepted |
