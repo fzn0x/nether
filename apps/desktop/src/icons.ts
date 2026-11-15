@@ -38,6 +38,7 @@ import {
   NotebookPen,
   Palette,
   Pencil,
+  Puzzle,
   RefreshCw,
   RotateCw,
   ScrollText,
@@ -111,6 +112,7 @@ export const menuIcons = {
   view: Eye,
   sync: RefreshCw,
   settings: Settings,
+  plugins: Puzzle,
 } as const;
 
 /** The items of a note's and a folder's menus that are not commands. */
