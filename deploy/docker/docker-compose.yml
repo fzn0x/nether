@@ -1,0 +1,69 @@
+# The Nether server with PostgreSQL, Valkey and a volume for its files
+# (ADR 0054). In this folder, `docker compose up -d` starts them, and the
+# server's log has the code that sets it up:
+#
+#   docker compose logs server | grep "Set it up"
+#
+# Settings go in a .env file beside this one, which the server reads too;
+# README.md lists them. Without one, the server answers on
+# http://127.0.0.1:3000 alone.
+name: nether
+
+services:
+  server:
+    image: ghcr.io/fzn0x/nether-server:${NETHER_VERSION:-latest}
+    # Built from this repository when the image cannot be pulled, or with
+    # `docker compose up --build`.
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      valkey:
+        condition: service_healthy
+    ports:
+      - "${NETHER_PUBLISH:-127.0.0.1:3000}:3000"
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      NETHER_DATABASE_URL: postgres://nether:${NETHER_POSTGRES_PASSWORD:-nether}@postgres:5432/nether
+      NETHER_REDIS_URL: redis://valkey:6379
+      NETHER_HOST: 0.0.0.0
+      NETHER_PORT: "3000"
+    volumes:
+      # Attachments in /data/attachments and backups in /data/backups.
+      - files:/data
+
+  postgres:
+    image: postgres:18-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: nether
+      # Read once, when the database is first made.
+      POSTGRES_PASSWORD: ${NETHER_POSTGRES_PASSWORD:-nether}
+      POSTGRES_DB: nether
+    volumes:
+      - database:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "nether", "-d", "nether"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  valkey:
+    image: valkey/valkey:9-alpine
+    restart: unless-stopped
+    # It holds only rate limits' counts, which last minutes: none on disk.
+    command: ["--save", "", "--appendonly", "no"]
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+volumes:
+  database:
+  files:
