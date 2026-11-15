@@ -26,6 +26,19 @@ updates:
       prefix: build
       include: scope
 
+  # The server image's Node.js (deploy/docker/Dockerfile).
+  - package-ecosystem: docker
+    directory: /deploy/docker
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: build
+      include: scope
+    ignore:
+      # Node.js stays on 24, as .nvmrc has it.
+      - dependency-name: node
+        update-types: ["version-update:semver-major"]
+
   - package-ecosystem: github-actions
     directory: /
     schedule:
