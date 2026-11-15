@@ -1,6 +1,8 @@
 # 0001. License the whole repository under the AGPL-3.0-or-later, with the DCO
 
-- Status: Accepted; [0008](0008-allow-mit-0.md) adds MIT-0 to the permissive licenses
+- Status: Accepted; [0008](0008-allow-mit-0.md) adds MIT-0 to the permissive licenses, and
+  [0055](0055-plugins-declare-what-they-add-and-reach-the-app-only-by-messages.md)
+  puts the plugin SDK, `packages/plugin-api`, under the MIT license
 - Date: 2026-10-30
 
 ## Context
