@@ -1,0 +1,38 @@
+# What the server's image is built without (deploy/docker/Dockerfile):
+# what Git ignores, and what only people and their tools use.
+
+# Dependencies, builds and caches, made again inside the build
+**/node_modules/
+.pnpm-store/
+**/dist/
+**/build/
+**/.turbo/
+**/.astro/
+**/*.tsbuildinfo
+**/coverage/
+apps/desktop/.mygo/
+apps/desktop/*.exe
+
+# Test output and reference vaults
+**/test-results/
+**/playwright-report/
+**/blob-report/
+**/perf-report.json
+**/perf-ui-report.json
+.vaults/
+apps/server/data/
+
+# Local environment, editors and history
+**/.env
+**/.env.*
+**/*.log
+.git/
+.idea/
+.vscode/
+.claude/
+.impeccable/
+**/.impeccable/
+AGENTS.md
+CLAUDE.md
+**/.DS_Store
+**/Thumbs.db
