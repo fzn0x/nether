@@ -3,9 +3,10 @@ title: Install Nether
 description: Where to download the Nether desktop app for Windows, macOS and Linux, how to open it the first time, and how it updates.
 ---
 
-Nether's desktop app is a developer preview: it keeps your notes on your
-computer and works fully offline, with no account. Sync and collaboration
-come with the self-hosted server's first release.
+Nether's desktop app keeps your notes on your computer and works fully
+offline, with no account. A Nether server, which you
+[run with Docker Compose](../self-hosting/), adds sync between your
+devices, sharing and collaboration, and serves the web app.
 
 ## Download
 
@@ -14,11 +15,11 @@ Every release is on
 
 | System | Download |
 | --- | --- |
-| Windows 10 and 11 (x64) | [The Windows installer](https://github.com/fzn0x/nether/releases/download/v0.0.1/nether-0.0.1-windows-amd64-setup.exe) |
-| macOS 12 or later (Apple silicon and Intel) | [The disk image](https://github.com/fzn0x/nether/releases/download/v0.0.1/nether-0.0.1-darwin-universal.dmg) |
+| Windows 10 and 11 (x64) | [The Windows installer](https://github.com/fzn0x/nether/releases/download/v0.1.0/nether-0.1.0-windows-amd64-setup.exe) |
+| macOS 12 or later (Apple silicon and Intel) | [The disk image](https://github.com/fzn0x/nether/releases/download/v0.1.0/nether-0.1.0-darwin-universal.dmg) |
 | Linux (x64), updating itself | The install script, below |
-| Debian and Ubuntu (x64) | [The Debian package](https://github.com/fzn0x/nether/releases/download/v0.0.1/nether_0.0.1_amd64.deb) |
-| Linux, any (x64) | [The AppImage](https://github.com/fzn0x/nether/releases/download/v0.0.1/nether-0.0.1-x86_64.appimage), or the [Flatpak bundle](https://github.com/fzn0x/nether/releases/download/v0.0.1/nether-0.0.1-x86_64.flatpak) |
+| Debian and Ubuntu (x64) | [The Debian package](https://github.com/fzn0x/nether/releases/download/v0.1.0/nether_0.1.0_amd64.deb) |
+| Linux, any (x64) | [The AppImage](https://github.com/fzn0x/nether/releases/download/v0.1.0/nether-0.1.0-x86_64.appimage), or the [Flatpak bundle](https://github.com/fzn0x/nether/releases/download/v0.1.0/nether-0.1.0-x86_64.flatpak) |
 
 On Linux, the install script puts Nether in your home folder, with no
 root, and adds it to the applications menu and the `nether` command:
@@ -45,7 +46,7 @@ them the first time:
   **Privacy & Security**, and click **Open Anyway** beside Nether; or run
   `xattr -dr com.apple.quarantine /Applications/Nether.app`.
 - **Linux**: make the AppImage executable,
-  `chmod +x nether-0.0.1-x86_64.appimage`.
+  `chmod +x nether-0.1.0-x86_64.appimage`.
 
 Then choose **Open a folder** and pick a folder of notes, or an empty one;
 [Vaults](../vaults/) tells the rest.
