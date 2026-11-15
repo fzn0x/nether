@@ -22,7 +22,7 @@ and [0038](../../docs/adr/0038-encrypted-workspaces-seal-a-key-to-each-member-an
 
 `docker compose up` in [`deploy/docker`](../../deploy/docker/) starts it
 with PostgreSQL, Valkey and a volume for its files; the
-[self-hosting guide](https://fzn0x.github.io/Nether/self-hosting/) goes on
+[self-hosting guide](https://fzn0x.github.io/nether/self-hosting/) goes on
 from there. To run it from the repository instead, it needs PostgreSQL 16
 or newer, and a database for Nether on it.
 

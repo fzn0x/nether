@@ -4,7 +4,7 @@
 - Gate: a 50,000-note vault edits offline within the
   [performance targets](../requirements.md#non-functional-requirements).
   Passed on cf01e6a
-  ([run](https://github.com/fzn0x/Nether/actions/runs/41133963752)), where
+  ([run](https://github.com/fzn0x/nether/actions/runs/41133963752)), where
   CI measures five of the targets; the desktop app's start, memory and
   pickup were measured on the maintainer's machine, below.
 
@@ -17,25 +17,25 @@ ticked. Phase 2, databases and structure, starts now.
 
 | Feature | Pull request | Notes |
 | --- | --- | --- |
-| Markdown to and from notes | [#3](https://github.com/fzn0x/Nether/pull/3) | Obsidian's syntax, unchanged blocks kept byte for byte ([ADR 0006](../adr/0006-markdown-file-format.md)) |
-| The vault on disk | [#4](https://github.com/fzn0x/Nether/pull/4) | Folders opened as vaults, the SQLite index, other apps' changes followed ([ADR 0007](../adr/0007-vault-folder-and-local-index.md)) |
-| The block editor | [#5](https://github.com/fzn0x/Nether/pull/5), [#6](https://github.com/fzn0x/Nether/pull/6) | TipTap, live Markdown shortcuts, the slash menu, the block handle, math, code and diagrams ([ADR 0009](../adr/0009-math-code-and-diagrams.md)) |
-| Media in notes | [#7](https://github.com/fzn0x/Nether/pull/7) | Images, PDFs, audio and video, from the vault or the web ([ADR 0010](../adr/0010-vault-files-in-notes.md)) |
-| Source mode | [#8](https://github.com/fzn0x/Nether/pull/8) | CodeMirror, with Vim keys that can be turned on |
-| Yjs documents | [#9](https://github.com/fzn0x/Nether/pull/9) | One per note, merged with its file both ways |
-| Links | [#10](https://github.com/fzn0x/Nether/pull/10), [#11](https://github.com/fzn0x/Nether/pull/11), [#21](https://github.com/fzn0x/Nether/pull/21), [#27](https://github.com/fzn0x/Nether/pull/27) | `[[` links and aliases, heading and block links, backlinks, tags, the outline, embeds of notes and blocks |
-| Search | [#12](https://github.com/fzn0x/Nether/pull/12) | The quick switcher, and full-text search with FTS5 and operators |
-| Properties | [#13](https://github.com/fzn0x/Nether/pull/13) | All ten types, kept in the frontmatter |
-| Templates and periodic notes | [#14](https://github.com/fzn0x/Nether/pull/14) | Obsidian's variables and settings ([ADR 0011](../adr/0011-templates-and-periodic-notes.md)) |
-| The trash | [#15](https://github.com/fzn0x/Nether/pull/15) | Restore, and deletion after 30 days or as set |
-| Export | [#16](https://github.com/fzn0x/Nether/pull/16) | Markdown (ZIP), HTML and PDF ([ADR 0012](../adr/0012-export-from-the-page.md)) |
-| Renaming | [#18](https://github.com/fzn0x/Nether/pull/18) | Every link to a note rewritten |
-| Folders and pages | [#19](https://github.com/fzn0x/Nether/pull/19) | The file tree and the page tree, moved by drag ([ADR 0013](../adr/0013-pages-in-the-folder-beside-a-note.md)) |
-| Keyboard | [#20](https://github.com/fzn0x/Nether/pull/20) | The command palette, and a shortcut for every action |
-| Web link previews | [#22](https://github.com/fzn0x/Nether/pull/22) | Fetched only when asked |
-| Desktop packages | [#23](https://github.com/fzn0x/Nether/pull/23) | AppImage, deb and Flatpak, and updates that can be turned off |
-| Performance | [#25](https://github.com/fzn0x/Nether/pull/25), [#28](https://github.com/fzn0x/Nether/pull/28) | The harness, and the app within the targets on 50,000 notes ([ADR 0014](../adr/0014-load-a-vaults-links-lean-and-after-its-note.md), [ADR 0016](../adr/0016-find-backlinks-by-the-names-links-write.md)) |
-| Accessibility and right to left | [#26](https://github.com/fzn0x/Nether/pull/26) | axe on every screen in CI, and layout by direction ([ADR 0015](../adr/0015-check-accessibility-and-lay-out-by-direction.md)) |
+| Markdown to and from notes | [#3](https://github.com/fzn0x/nether/pull/3) | Obsidian's syntax, unchanged blocks kept byte for byte ([ADR 0006](../adr/0006-markdown-file-format.md)) |
+| The vault on disk | [#4](https://github.com/fzn0x/nether/pull/4) | Folders opened as vaults, the SQLite index, other apps' changes followed ([ADR 0007](../adr/0007-vault-folder-and-local-index.md)) |
+| The block editor | [#5](https://github.com/fzn0x/nether/pull/5), [#6](https://github.com/fzn0x/nether/pull/6) | TipTap, live Markdown shortcuts, the slash menu, the block handle, math, code and diagrams ([ADR 0009](../adr/0009-math-code-and-diagrams.md)) |
+| Media in notes | [#7](https://github.com/fzn0x/nether/pull/7) | Images, PDFs, audio and video, from the vault or the web ([ADR 0010](../adr/0010-vault-files-in-notes.md)) |
+| Source mode | [#8](https://github.com/fzn0x/nether/pull/8) | CodeMirror, with Vim keys that can be turned on |
+| Yjs documents | [#9](https://github.com/fzn0x/nether/pull/9) | One per note, merged with its file both ways |
+| Links | [#10](https://github.com/fzn0x/nether/pull/10), [#11](https://github.com/fzn0x/nether/pull/11), [#21](https://github.com/fzn0x/nether/pull/21), [#27](https://github.com/fzn0x/nether/pull/27) | `[[` links and aliases, heading and block links, backlinks, tags, the outline, embeds of notes and blocks |
+| Search | [#12](https://github.com/fzn0x/nether/pull/12) | The quick switcher, and full-text search with FTS5 and operators |
+| Properties | [#13](https://github.com/fzn0x/nether/pull/13) | All ten types, kept in the frontmatter |
+| Templates and periodic notes | [#14](https://github.com/fzn0x/nether/pull/14) | Obsidian's variables and settings ([ADR 0011](../adr/0011-templates-and-periodic-notes.md)) |
+| The trash | [#15](https://github.com/fzn0x/nether/pull/15) | Restore, and deletion after 30 days or as set |
+| Export | [#16](https://github.com/fzn0x/nether/pull/16) | Markdown (ZIP), HTML and PDF ([ADR 0012](../adr/0012-export-from-the-page.md)) |
+| Renaming | [#18](https://github.com/fzn0x/nether/pull/18) | Every link to a note rewritten |
+| Folders and pages | [#19](https://github.com/fzn0x/nether/pull/19) | The file tree and the page tree, moved by drag ([ADR 0013](../adr/0013-pages-in-the-folder-beside-a-note.md)) |
+| Keyboard | [#20](https://github.com/fzn0x/nether/pull/20) | The command palette, and a shortcut for every action |
+| Web link previews | [#22](https://github.com/fzn0x/nether/pull/22) | Fetched only when asked |
+| Desktop packages | [#23](https://github.com/fzn0x/nether/pull/23) | AppImage, deb and Flatpak, and updates that can be turned off |
+| Performance | [#25](https://github.com/fzn0x/nether/pull/25), [#28](https://github.com/fzn0x/nether/pull/28) | The harness, and the app within the targets on 50,000 notes ([ADR 0014](../adr/0014-load-a-vaults-links-lean-and-after-its-note.md), [ADR 0016](../adr/0016-find-backlinks-by-the-names-links-write.md)) |
+| Accessibility and right to left | [#26](https://github.com/fzn0x/nether/pull/26) | axe on every screen in CI, and layout by direction ([ADR 0015](../adr/0015-check-accessibility-and-lay-out-by-direction.md)) |
 
 ## Measured
 
@@ -91,7 +91,7 @@ the square of the notes.
 
 - Typing's p95 is one frame, 16 ms, which is its limit, and idle memory
   is 19 MB under its target. A slow CI runner measured switching at 109 ms
-  and typing at 24 ms before [#28](https://github.com/fzn0x/Nether/pull/28) stopped each change from working out
+  and typing at 24 ms before [#28](https://github.com/fzn0x/nether/pull/28) stopped each change from working out
   every link again; on a machine three times slower than the maintainer's,
   switching still misses its target. A change that adds work per key, per
   save, per note opened or memory per note must say what it costs on the

@@ -10,10 +10,10 @@ your devices, sharing with others, co-editing, comments and a web app.
 | --- | --- |
 | Windows 10 and 11 (x64) | [nether-{version}-windows-amd64-setup.exe]({url}/nether-{version}-windows-amd64-setup.exe) |
 | macOS 12 or later (Apple silicon and Intel) | [nether-{version}-darwin-universal.dmg]({url}/nether-{version}-darwin-universal.dmg) |
-| Linux (x64), updating itself | `curl -fsSL https://github.com/fzn0x/Nether/releases/latest/download/install.sh \| sh` |
+| Linux (x64), updating itself | `curl -fsSL https://github.com/fzn0x/nether/releases/latest/download/install.sh \| sh` |
 | Debian and Ubuntu (x64) | [nether_{version}_amd64.deb]({url}/nether_{version}_amd64.deb) |
 | Linux, any (x64) | [nether-{version}-x86_64.appimage]({url}/nether-{version}-x86_64.appimage), or the [Flatpak bundle]({url}/nether-{version}-x86_64.flatpak) |
-| The server (amd64 and arm64) | `ghcr.io/fzn0x/nether-server:{version}`, started with PostgreSQL and Valkey by the [`docker-compose.yml`](https://github.com/fzn0x/Nether/blob/v{version}/deploy/docker/docker-compose.yml): see [Run a server](https://fzn0x.github.io/Nether/self-hosting/) |
+| The server (amd64 and arm64) | `ghcr.io/fzn0x/nether-server:{version}`, started with PostgreSQL and Valkey by the [`docker-compose.yml`](https://github.com/fzn0x/nether/blob/v{version}/deploy/docker/docker-compose.yml): see [Run a server](https://fzn0x.github.io/nether/self-hosting/) |
 
 Nether installed from the Windows installer, the macOS disk image or the
 Linux install script updates itself, asking first; it can be turned off.

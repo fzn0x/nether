@@ -31,8 +31,8 @@ not contradict. The maintainer chose to take the measurements out of CI.
   their numbers, as the Phase 1 report does.
 - **A change that may cost time or memory on a large vault says so in its
   pull request**, with the harness's numbers before and after, as
-  [#25](https://github.com/fzn0x/Nether/pull/25) and
-  [#28](https://github.com/fzn0x/Nether/pull/28) did.
+  [#25](https://github.com/fzn0x/nether/pull/25) and
+  [#28](https://github.com/fzn0x/nether/pull/28) did.
 
 ## Alternatives
 

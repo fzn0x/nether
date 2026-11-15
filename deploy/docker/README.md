@@ -3,7 +3,7 @@
 The Nether server's image and a `docker-compose.yml` that starts it with
 PostgreSQL, Valkey and a volume for its files
 ([ADR 0054](../../docs/adr/0054-docker-compose-starts-the-server-with-postgresql-valkey-and-volumes.md)).
-The [self-hosting guide](https://fzn0x.github.io/Nether/self-hosting/)
+The [self-hosting guide](https://fzn0x.github.io/nether/self-hosting/)
 covers setting it up, HTTPS, settings, updates, backups and restoring.
 
 ```sh

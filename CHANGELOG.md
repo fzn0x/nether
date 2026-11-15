@@ -125,7 +125,7 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   environment variables, with every enterprise feature off by default.
 - `@nether/desktop`, a MyGO app for Windows, macOS and Linux whose window
   shows the Nether page.
-- The documentation site at https://fzn0x.github.io/Nether/.
+- The documentation site at https://fzn0x.github.io/nether/.
 - `pnpm vault:generate`, which writes the reference vault of 50,000 notes
   that performance targets are measured on.
 - `@nether/markdown`, which reads Markdown with Obsidian's syntax into

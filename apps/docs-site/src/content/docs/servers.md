@@ -233,7 +233,7 @@ history; those come from the apps that can read it.
 
 ## For admins
 
-The [server's README](https://github.com/fzn0x/Nether/blob/main/apps/server/README.md)
+The [server's README](https://github.com/fzn0x/nether/blob/main/apps/server/README.md)
 covers running a server and its first-run setup, email, single sign-on,
 where attachments are kept, how long history is kept, and every setting.
 
