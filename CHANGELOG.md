@@ -53,6 +53,10 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   restores into a newer one, migrated as it is restored, and CI runs the
   restore as documented
   ([ADR 0052](docs/adr/0052-backups-are-the-server-s-own-files-restored-at-their-schema-then-migrated.md)).
+- Sync and collaboration in every desktop build: the Sync menu, servers,
+  members, spaces, sharing and notifications, which until now showed only
+  in a build made with `VITE_NETHER_SYNC=on`. A build made with
+  `VITE_NETHER_SYNC=off` leaves them out.
 - Task assignment: **Your name…** in Settings, and an **Assigned** tab in
   the sidebar listing every row and note whose person properties name you,
   across all databases, by database, the soonest first, with each row's
