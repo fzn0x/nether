@@ -6,7 +6,22 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- The plugin API's first part, `@nether/plugin-api`, under the MIT
+  license: a plugin's manifest, `definePlugin`, and the messages between a
+  plugin and the app, within the page or through a port. Commands a
+  manifest declares show in the menus, the palette and the shortcuts
+  before the plugin's code runs, and its code loads when one is first
+  chosen; the menu bar's Plugins menu holds those that name no other. Only
+  built-in plugins run until the sandbox does
+  ([ADR 0055](docs/adr/0055-plugins-declare-what-they-add-and-reach-the-app-only-by-messages.md)).
+- A guide to writing plugins.
+
 ### Changed
+
+- The app's commands are in one registry with its plugins', from which
+  the menus, the palette and the shortcuts are made.
 
 - The desktop app keeps one copy of each link target, tag, heading and
   property value its notes' indexes repeat, as the vault's links load: on

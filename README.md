@@ -118,3 +118,8 @@ option) any later version. See [LICENSE](LICENSE).
 The enterprise features in [`enterprise/`](enterprise/) are under the same
 license and just as free; [ADR 0001](docs/adr/0001-license-agpl-and-dco.md)
 explains why, and why contributions come under the DCO.
+
+The plugin API alone, [`packages/plugin-api`](packages/plugin-api/), is
+under the [MIT license](packages/plugin-api/LICENSE), so a plugin may use
+any license
+([ADR 0055](docs/adr/0055-plugins-declare-what-they-add-and-reach-the-app-only-by-messages.md)).

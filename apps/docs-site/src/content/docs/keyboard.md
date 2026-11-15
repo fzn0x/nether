@@ -13,7 +13,9 @@ Every command is also in the menus at the top of the sidebar: **File**
 bookmark, source, history, comment, trash), **View** (the palette, search,
 the graph, the sidebar's panels, tabs), **Sync** (servers, sync, members,
 spaces, sharing, notifications) and **Settings** (templates, appearance,
-shortcuts, updates). Each item shows its shortcut; those about a note are
+shortcuts, updates). A plugin's commands come after a menu's own, or in a
+**Plugins** menu at the end ([Writing plugins](../plugins/)). Each item
+shows its shortcut; those about a note are
 greyed out until one is open.
 
 From the keyboard, Tab to the menus, move between them with Left and
