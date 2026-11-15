@@ -6,6 +6,13 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- The desktop app keeps one copy of each link target, tag, heading and
+  property value its notes' indexes repeat, as the vault's links load: on
+  50,000 notes the page's heap is 10 MB smaller, and the app idles 5 MB
+  lower.
+
 ## [0.1.0] - 2026-11-15
 
 ### Added
