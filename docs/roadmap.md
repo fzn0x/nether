@@ -132,7 +132,7 @@ The first public release, one feature per pull request, in this order:
 
 One feature per pull request, in this order:
 
-- [ ] Headroom in the desktop app's memory, before plugins add their own
+- [x] Headroom in the desktop app's memory, before plugins add their own: on 50,000 notes the page's renderer holds 209 MB of 291, its JavaScript heap 67 MB, and the vault's link index 31 MB of that. 10 MB of the heap was copies of the same link targets, tags, headings and property values, now shared as the links load, and the app idles at 287 MB, against 292 MB before. The process gave back about half of what the heap freed; more can come from the rest, and from the headings and the path index the page holds, about 6 MB each.
 - [ ] The plugin API: a versioned TypeScript SDK for commands, block types, views, sidebar panels, settings tabs, Markdown post-processors and property types
 - [ ] The plugin sandbox: permissions declared and approved at install, untrusted plugins run isolated
 - [ ] The plugin and theme directory, a GitHub-backed index browsable in the app
