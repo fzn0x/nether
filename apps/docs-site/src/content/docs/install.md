@@ -10,21 +10,21 @@ come with the self-hosted server's first release.
 ## Download
 
 Every release is on
-[GitHub](https://github.com/fzn0x/Nether/releases/latest).
+[GitHub](https://github.com/fzn0x/nether/releases/latest).
 
 | System | Download |
 | --- | --- |
-| Windows 10 and 11 (x64) | [The Windows installer](https://github.com/fzn0x/Nether/releases/download/v0.0.1/nether-0.0.1-windows-amd64-setup.exe) |
-| macOS 12 or later (Apple silicon and Intel) | [The disk image](https://github.com/fzn0x/Nether/releases/download/v0.0.1/nether-0.0.1-darwin-universal.dmg) |
+| Windows 10 and 11 (x64) | [The Windows installer](https://github.com/fzn0x/nether/releases/download/v0.0.1/nether-0.0.1-windows-amd64-setup.exe) |
+| macOS 12 or later (Apple silicon and Intel) | [The disk image](https://github.com/fzn0x/nether/releases/download/v0.0.1/nether-0.0.1-darwin-universal.dmg) |
 | Linux (x64), updating itself | The install script, below |
-| Debian and Ubuntu (x64) | [The Debian package](https://github.com/fzn0x/Nether/releases/download/v0.0.1/nether_0.0.1_amd64.deb) |
-| Linux, any (x64) | [The AppImage](https://github.com/fzn0x/Nether/releases/download/v0.0.1/nether-0.0.1-x86_64.appimage), or the [Flatpak bundle](https://github.com/fzn0x/Nether/releases/download/v0.0.1/nether-0.0.1-x86_64.flatpak) |
+| Debian and Ubuntu (x64) | [The Debian package](https://github.com/fzn0x/nether/releases/download/v0.0.1/nether_0.0.1_amd64.deb) |
+| Linux, any (x64) | [The AppImage](https://github.com/fzn0x/nether/releases/download/v0.0.1/nether-0.0.1-x86_64.appimage), or the [Flatpak bundle](https://github.com/fzn0x/nether/releases/download/v0.0.1/nether-0.0.1-x86_64.flatpak) |
 
 On Linux, the install script puts Nether in your home folder, with no
 root, and adds it to the applications menu and the `nether` command:
 
 ```sh
-curl -fsSL https://github.com/fzn0x/Nether/releases/latest/download/install.sh | sh
+curl -fsSL https://github.com/fzn0x/nether/releases/latest/download/install.sh | sh
 ```
 
 `sh install.sh --uninstall` removes it again and leaves your settings.
@@ -65,12 +65,12 @@ themselves: download the next release when it comes.
 You need Node.js 24, pnpm 10 and Go 1.27:
 
 ```sh
-git clone https://github.com/fzn0x/Nether.git
+git clone https://github.com/fzn0x/nether.git
 cd Nether
 pnpm install
 pnpm --filter @nether/desktop dev
 ```
 
 The repository's
-[CONTRIBUTING.md](https://github.com/fzn0x/Nether/blob/main/CONTRIBUTING.md)
+[CONTRIBUTING.md](https://github.com/fzn0x/nether/blob/main/CONTRIBUTING.md)
 has the rest.

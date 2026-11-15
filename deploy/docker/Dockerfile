@@ -42,7 +42,7 @@ RUN --mount=type=cache,id=pnpm-store,target=/root/.local/share/pnpm/store \
 FROM node:24.22.3-alpine
 LABEL org.opencontainers.image.title="Nether server" \
       org.opencontainers.image.description="The Nether server: sync, sharing and the web app, on a server you control." \
-      org.opencontainers.image.source="https://github.com/fzn0x/Nether" \
+      org.opencontainers.image.source="https://github.com/fzn0x/nether" \
       org.opencontainers.image.licenses="AGPL-3.0-or-later"
 ENV NODE_ENV=production \
     NETHER_HOST=0.0.0.0 \

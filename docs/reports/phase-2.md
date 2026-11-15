@@ -17,20 +17,20 @@ now.
 
 | Feature | Pull request | Notes |
 | --- | --- | --- |
-| Opening at a note | [#30](https://github.com/fzn0x/Nether/pull/30) | `nether <vault> <note>`, which the desktop measurements start from |
-| Performance outside CI | [#31](https://github.com/fzn0x/Nether/pull/31) | The harnesses run on a maintainer's machine before each gate ([ADR 0017](../adr/0017-measure-performance-before-each-gate-not-in-ci.md)) |
-| Databases | [#32](https://github.com/fzn0x/Nether/pull/32), [#33](https://github.com/fzn0x/Nether/pull/33), [#34](https://github.com/fzn0x/Nether/pull/34) | A note with a schema, its rows the notes beside it, an Obsidian base kept in step both ways ([ADR 0018](../adr/0018-a-database-is-a-note-with-an-obsidian-base-beside-it.md)) |
-| Six views | [#33](https://github.com/fzn0x/Nether/pull/33), [#35](https://github.com/fzn0x/Nether/pull/35), [#36](https://github.com/fzn0x/Nether/pull/36) | Table, board, gallery, list, calendar and timeline, each with its filters, sorts, groups and properties |
-| Relations and rollups | [#37](https://github.com/fzn0x/Nether/pull/37), [#38](https://github.com/fzn0x/Nether/pull/38) | Links kept both ways in both rows' files; rollups worked out, never written ([ADR 0019](../adr/0019-relations-are-links-both-ways-and-rollups-are-worked-out.md)) |
-| Formulas | [#39](https://github.com/fzn0x/Nether/pull/39) | A documented language with its own parser and interpreter ([ADR 0020](../adr/0020-formulas-in-a-language-nether-reads-and-runs-itself.md)) |
-| Query blocks | [#40](https://github.com/fzn0x/Nether/pull/40) | Obsidian's `base` code blocks, run live over every note ([ADR 0021](../adr/0021-query-blocks-are-obsidian-bases-in-a-code-block.md)) |
-| CSV export | [#41](https://github.com/fzn0x/Nether/pull/41) | A view as it shows ([ADR 0022](../adr/0022-a-database-exports-to-csv-as-its-view-shows-it.md)) |
-| Synced blocks | [#42](https://github.com/fzn0x/Nether/pull/42) | Block embeds edited in place, written to their notes ([ADR 0023](../adr/0023-synced-blocks-are-block-embeds-edited-in-place.md)) |
-| Unlinked mentions | [#43](https://github.com/fzn0x/Nether/pull/43) | Found through the index, linked where written ([ADR 0024](../adr/0024-unlinked-mentions-found-by-the-index-and-linked-where-written.md)) |
-| The graph view | [#44](https://github.com/fzn0x/Nether/pull/44) | Sigma with WebGL, ForceAtlas2 in a worker, smooth at 10,000 notes ([ADR 0025](../adr/0025-graph-view-with-sigma-and-forceatlas2-in-a-worker.md)) |
-| Themes and CSS snippets | [#46](https://github.com/fzn0x/Nether/pull/46) | Light, dark or as the system, per vault; themes set the design tokens ([ADR 0026](../adr/0026-themes-and-snippets-are-css-files-of-the-vault.md)) |
-| Importers | [#47](https://github.com/fzn0x/Nether/pull/47), [#48](https://github.com/fzn0x/Nether/pull/48), [#49](https://github.com/fzn0x/Nether/pull/49), [#50](https://github.com/fzn0x/Nether/pull/50) | Obsidian vaults and Markdown byte for byte, Notion, Logseq, web pages and CSV ([ADRs 0027 to 0030](../adr/0027-imports-are-plans-made-from-sources-read-only.md)) |
-| A fix | [#45](https://github.com/fzn0x/Nether/pull/45) | Two quick adds to a list cell both kept |
+| Opening at a note | [#30](https://github.com/fzn0x/nether/pull/30) | `nether <vault> <note>`, which the desktop measurements start from |
+| Performance outside CI | [#31](https://github.com/fzn0x/nether/pull/31) | The harnesses run on a maintainer's machine before each gate ([ADR 0017](../adr/0017-measure-performance-before-each-gate-not-in-ci.md)) |
+| Databases | [#32](https://github.com/fzn0x/nether/pull/32), [#33](https://github.com/fzn0x/nether/pull/33), [#34](https://github.com/fzn0x/nether/pull/34) | A note with a schema, its rows the notes beside it, an Obsidian base kept in step both ways ([ADR 0018](../adr/0018-a-database-is-a-note-with-an-obsidian-base-beside-it.md)) |
+| Six views | [#33](https://github.com/fzn0x/nether/pull/33), [#35](https://github.com/fzn0x/nether/pull/35), [#36](https://github.com/fzn0x/nether/pull/36) | Table, board, gallery, list, calendar and timeline, each with its filters, sorts, groups and properties |
+| Relations and rollups | [#37](https://github.com/fzn0x/nether/pull/37), [#38](https://github.com/fzn0x/nether/pull/38) | Links kept both ways in both rows' files; rollups worked out, never written ([ADR 0019](../adr/0019-relations-are-links-both-ways-and-rollups-are-worked-out.md)) |
+| Formulas | [#39](https://github.com/fzn0x/nether/pull/39) | A documented language with its own parser and interpreter ([ADR 0020](../adr/0020-formulas-in-a-language-nether-reads-and-runs-itself.md)) |
+| Query blocks | [#40](https://github.com/fzn0x/nether/pull/40) | Obsidian's `base` code blocks, run live over every note ([ADR 0021](../adr/0021-query-blocks-are-obsidian-bases-in-a-code-block.md)) |
+| CSV export | [#41](https://github.com/fzn0x/nether/pull/41) | A view as it shows ([ADR 0022](../adr/0022-a-database-exports-to-csv-as-its-view-shows-it.md)) |
+| Synced blocks | [#42](https://github.com/fzn0x/nether/pull/42) | Block embeds edited in place, written to their notes ([ADR 0023](../adr/0023-synced-blocks-are-block-embeds-edited-in-place.md)) |
+| Unlinked mentions | [#43](https://github.com/fzn0x/nether/pull/43) | Found through the index, linked where written ([ADR 0024](../adr/0024-unlinked-mentions-found-by-the-index-and-linked-where-written.md)) |
+| The graph view | [#44](https://github.com/fzn0x/nether/pull/44) | Sigma with WebGL, ForceAtlas2 in a worker, smooth at 10,000 notes ([ADR 0025](../adr/0025-graph-view-with-sigma-and-forceatlas2-in-a-worker.md)) |
+| Themes and CSS snippets | [#46](https://github.com/fzn0x/nether/pull/46) | Light, dark or as the system, per vault; themes set the design tokens ([ADR 0026](../adr/0026-themes-and-snippets-are-css-files-of-the-vault.md)) |
+| Importers | [#47](https://github.com/fzn0x/nether/pull/47), [#48](https://github.com/fzn0x/nether/pull/48), [#49](https://github.com/fzn0x/nether/pull/49), [#50](https://github.com/fzn0x/nether/pull/50) | Obsidian vaults and Markdown byte for byte, Notion, Logseq, web pages and CSV ([ADRs 0027 to 0030](../adr/0027-imports-are-plans-made-from-sources-read-only.md)) |
+| A fix | [#45](https://github.com/fzn0x/nether/pull/45) | Two quick adds to a list cell both kept |
 
 ## The gate
 

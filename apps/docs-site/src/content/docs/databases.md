@@ -202,5 +202,5 @@ or a map view. A filter that uses Obsidian's own functions, such as
 `file.hasTag()`, stays in the base, and the view keeps its own filter in
 Nether.
 
-The [decision record](https://github.com/fzn0x/Nether/blob/main/docs/adr/0018-a-database-is-a-note-with-an-obsidian-base-beside-it.md)
+The [decision record](https://github.com/fzn0x/nether/blob/main/docs/adr/0018-a-database-is-a-note-with-an-obsidian-base-beside-it.md)
 has the details.

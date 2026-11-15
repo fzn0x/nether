@@ -65,7 +65,7 @@ offers no update commands. A maintainer sets it up once:
 1. `go tool mygo keygen` writes the key pair; keep the secret key in a
    password manager and in the repository's CI secrets as
    `MYGO_UPDATER_PRIVATE_KEY`.
-2. Add `"updates": { "publicKey": "…", "github": "fzn0x/Nether" }` to
+2. Add `"updates": { "publicKey": "…", "github": "fzn0x/nether" }` to
    `mygo.json`.
 3. Release with `MYGO_UPDATER_PRIVATE_KEY` set, which signs each
    platform's build and writes its update manifest.

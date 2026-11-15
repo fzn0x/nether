@@ -4,8 +4,8 @@
 
 # Nether: Local-first note taking app that you truly own
 
-[![CI](https://github.com/fzn0x/Nether/actions/workflows/ci.yml/badge.svg)](https://github.com/fzn0x/Nether/actions/workflows/ci.yml)
-[![Docs](https://github.com/fzn0x/Nether/actions/workflows/pages.yml/badge.svg)](https://fzn0x.github.io/Nether/)
+[![CI](https://github.com/fzn0x/nether/actions/workflows/ci.yml/badge.svg)](https://github.com/fzn0x/nether/actions/workflows/ci.yml)
+[![Docs](https://github.com/fzn0x/nether/actions/workflows/pages.yml/badge.svg)](https://fzn0x.github.io/nether/)
 [![License: AGPL-3.0-or-later](https://img.shields.io/badge/license-AGPL--3.0--or--later-blue.svg)](#license)
 
 Nether is self-hostable and local-first note taking app combining both
@@ -26,13 +26,13 @@ Notion exports. Self-hosting is available for enterprise.
 >
 > Version 0.1.0, the first public release, with sync and the server,
 > comes next. Until it is out, the
-> [latest release](https://github.com/fzn0x/Nether/releases/latest) is
+> [latest release](https://github.com/fzn0x/nether/releases/latest) is
 > 0.0.1, a developer preview of the desktop app alone
-> ([how to install it](https://fzn0x.github.io/Nether/install/)). Phase 4,
+> ([how to install it](https://fzn0x.github.io/nether/install/)). Phase 4,
 > the platform, is under way, and the
 > [roadmap](docs/roadmap.md#phase-4-platform) ticks it off as it lands.
 
-[Documentation](https://fzn0x.github.io/Nether/) ·
+[Documentation](https://fzn0x.github.io/nether/) ·
 [Roadmap](docs/roadmap.md) · [Requirements](docs/requirements.md) ·
 [Architecture](docs/architecture.md) · [Decisions](docs/adr/)
 
@@ -97,7 +97,7 @@ pnpm vault:generate                     # the 50,000-note reference vault
 
 `docker compose up` in [deploy/docker](deploy/docker/) starts the server
 with PostgreSQL and Valkey; the
-[self-hosting guide](https://fzn0x.github.io/Nether/self-hosting/) goes on
+[self-hosting guide](https://fzn0x.github.io/nether/self-hosting/) goes on
 from there. Run from the repository, the server needs PostgreSQL 16 or
 newer; [its README](apps/server/README.md) shows how to run it, set it up
 and back it up.

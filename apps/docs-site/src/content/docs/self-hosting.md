@@ -15,7 +15,7 @@ Docker Compose 2.24 or later. Get the repository, and start the server
 from its `deploy/docker` folder:
 
 ```sh
-git clone https://github.com/fzn0x/Nether.git
+git clone https://github.com/fzn0x/nether.git
 cd Nether/deploy/docker
 docker compose up -d
 ```
@@ -94,7 +94,7 @@ Settings go in the `.env` file beside `docker-compose.yml`, one
 | `NETHER_POSTGRES_PASSWORD` | `nether` | PostgreSQL's password, read when its volume is first made; set it before the first start |
 
 The server reads every other setting of the
-[server's configuration](https://github.com/fzn0x/Nether/tree/main/apps/server#configuration)
+[server's configuration](https://github.com/fzn0x/nether/tree/main/apps/server#configuration)
 from the same file, such as:
 
 - **Email**, for codes that sign in and mentions:
