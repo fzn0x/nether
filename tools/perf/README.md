@@ -2,8 +2,9 @@
 
 Measures Nether's [performance targets](../../docs/requirements.md#non-functional-requirements)
 on the reference vault of 50,000 notes that
-[`@nether/vault-generator`](../vault-generator/) writes. Four harnesses
-share the work, each measuring the targets that need what it runs:
+[`@nether/vault-generator`](../vault-generator/) writes, and the server's
+under load. Five harnesses share the work, each measuring the targets that
+need what it runs:
 
 | Harness | Targets | Where it runs |
 | --- | --- | --- |
@@ -11,6 +12,7 @@ share the work, each measuring the targets that need what it runs:
 | `pnpm --filter @nether/desktop perf:ui`, the desktop page in Chromium | Switching notes under 100 ms, and typing under 16 ms | A maintainer's machine, before each phase's gate |
 | `pnpm --filter @nether/desktop perf:graph`, the desktop page in Chromium | The graph of 10,000 notes shows in under 3 s and moves at 30 frames a second or better | A maintainer's machine, before each phase's gate |
 | `tools/perf/desktop.ps1`, the desktop app on Windows | Opening to the last note under 1.5 s, idle memory under 300 MB, and picking up another app's edit within 2 s | A maintainer's machine, before each phase's gate |
+| `pnpm --filter @nether/perf sync`, the server in Docker | Co-editing under 200 ms, with 200 people writing at once on a server of 2 vCPU and 4 GB | A maintainer's machine with Docker, before each phase's gate |
 
 Each writes what it measured and exits with 1 when a target is missed.
 None runs in CI, whose shared runners vary too much from run to run to
@@ -116,3 +118,27 @@ The numbers of each phase's gate are in its
 [report](../../docs/reports/), and how the desktop app meets the startup
 and memory targets on a large vault is in
 [ADR 0014](../../docs/adr/0014-load-a-vaults-links-lean-and-after-its-note.md).
+
+## The server under load
+
+```sh
+pnpm --filter @nether/perf sync                   # 200 people for 120 s, into sync-report.json
+pnpm --filter @nether/perf sync --build           # with the image built from this checkout
+pnpm --filter @nether/perf sync --people 20 --seconds 20
+```
+
+It starts [deploy/docker](../../deploy/docker/)'s compose project with the
+limits in `sync.compose.yml`, the server, PostgreSQL and Valkey on 2 vCPU
+and 4 GB together, sets the server up, and makes 200 people in its
+workspace, each with an invitation of their own. They write live, ten to a
+note, each in a paragraph of their own and on a socket of their own, as
+each app has one: a word every two to four seconds, with their caret.
+Every word carries the time it was typed, and the other nine clients on
+the note note when it reaches them. It reports the percentiles of that
+latency, the containers' CPU, as a share of one core, and memory from
+`docker stats` every five seconds, and how late the harness's own timers
+ran, which is its share of the latency. Then it checks that every note is
+the same for everyone with every word, and removes the project.
+
+The clients and the server share one machine, so the latency leaves out
+the network: in one region, add its round trip.
