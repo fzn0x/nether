@@ -37,19 +37,22 @@ the server's admin, with a first workspace:
 docker compose logs server | grep "Set it up"
 ```
 
-Send the code with the admin's name, email address, password (twelve
-characters or more) and the workspace's name:
+Open the server's web app, `http://127.0.0.1:3000`, and choose **Sign
+in**; or, in the desktop app, run **Servers and signing in** and type the
+server's address. Either asks for the setup code, then your name, email
+address, password (twelve characters or more) and the first workspace's
+name, and signs you in as the server's admin. Then invite the others from
+**Workspace members**, as the [servers guide](../servers/) shows.
+
+The code works once. Only someone who can read the server's log can set it
+up, so a new server cannot be claimed by whoever finds it first. Without
+an app at hand, `POST /api/setup` does the same:
 
 ```sh
 curl -X POST http://127.0.0.1:3000/api/setup -H 'content-type: application/json' \
   -d '{"code":"ABCDE-FGHJK-LMNPQ-RSTUV","name":"Ada","email":"ada@example.org",
        "password":"at least twelve characters","workspace":"Team"}'
 ```
-
-The code works once. Only someone who can read the server's log can set it
-up, so a new server cannot be claimed by whoever finds it first. Then sign
-in from the [desktop app or the web app](../servers/) and invite the
-others.
 
 ## Put it behind HTTPS
 
