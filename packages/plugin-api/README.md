@@ -1,6 +1,23 @@
 # @nether/plugin-api
 
-The public, versioned TypeScript SDK that plugins use, and that Nether's
-own features use wherever practical.
+What Nether's plugins import
+([ADR 0055](../../docs/adr/0055-plugins-declare-what-they-add-and-reach-the-app-only-by-messages.md)):
+the manifest's schema, `definePlugin`, and the plugin's side of the
+messages it exchanges with the app. Nether's own features use it too,
+wherever they can.
 
-Roadmap: Phase 4, platform.
+- `readManifest(value)` reads a parsed `manifest.json`, or lists what is
+  wrong with it. `localize(text, language)` picks a name's text for a
+  language.
+- `definePlugin({ activate(context) })` is a plugin module's default
+  export. `activate` attaches the commands its manifest declares, with
+  `context.commands.register(id, run)`.
+- `startPlugin(plugin, transport)` runs a plugin at its end of a
+  connection. `Endpoint` is either end. `pagePair()` connects two ends
+  within the page, and `portTransport(port)` one end of a `MessagePort`.
+- `apiVersion` is this SDK's version, apart from the app's, and
+  `satisfies(version, range)` reads a manifest's `api` range.
+
+This package alone is under the [MIT license](LICENSE), so a plugin may
+use any license. It depends on nothing else in the repository. The app,
+which runs plugins, stays AGPL-3.0-or-later.
