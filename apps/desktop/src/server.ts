@@ -215,6 +215,37 @@ export async function signInWithPassword(
   );
 }
 
+/** Whether the server has no account yet, and waits to be set up with the code in its log (ADR 0031). */
+export async function setupNeeded(fetcher: Fetch, base: string): Promise<boolean> {
+  return record(await request(fetcher, base, "/api/setup")).needed === true;
+}
+
+/** What first-run setup makes: the admin's account and the first workspace. */
+export interface Setup {
+  /** The code the server writes to its log. */
+  readonly code: string;
+  readonly name: string;
+  readonly email: string;
+  readonly password: string;
+  readonly workspace: string;
+}
+
+/** Sets a new server up, once, and signs its admin in. */
+export async function setUpServer(fetcher: Fetch, base: string, setup: Setup): Promise<SignedIn> {
+  return signedIn(
+    await request(fetcher, base, "/api/setup", {
+      body: {
+        code: setup.code.trim(),
+        name: setup.name.trim(),
+        email: setup.email.trim(),
+        password: setup.password,
+        workspace: setup.workspace.trim(),
+      },
+    }),
+    base,
+  );
+}
+
 /** Asks the server to email a code to sign in with. */
 export async function askForCode(fetcher: Fetch, base: string, email: string): Promise<void> {
   await request(fetcher, base, "/api/sign-in-codes", { body: { email: email.trim() } });
