@@ -1,0 +1,18 @@
+# What the sync load harness (src/sync.ts) adds to deploy/docker's
+# docker-compose.yml: the server, PostgreSQL and Valkey together on 2 vCPU
+# and 4 GB, the server size the requirements name for 200 active users.
+services:
+  server:
+    cpus: 1.5
+    mem_limit: 3g
+    environment:
+      # The harness's people all come from this machine: each sends an
+      # address of its own, so the sign-in limits count them apart.
+      NETHER_TRUST_PROXY: "on"
+      NETHER_LOG_LEVEL: warn
+  postgres:
+    cpus: 0.4
+    mem_limit: 768m
+  valkey:
+    cpus: 0.1
+    mem_limit: 256m

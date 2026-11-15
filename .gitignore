@@ -21,6 +21,7 @@ playwright-report/
 blob-report/
 perf-report.json
 perf-ui-report.json
+sync-report.json
 
 # Reference vaults written by the vault generator
 /.vaults/
