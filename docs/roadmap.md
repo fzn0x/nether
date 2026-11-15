@@ -106,6 +106,9 @@ The Notion core, one feature per pull request, in this order:
 
 ## Phase 3: Self-hosted sync and collaboration
 
+Done on 2026-11-15; the [report](reports/phase-3.md) says what shipped,
+what was deferred and the plan for Phase 4.
+
 The first public release, one feature per pull request, in this order:
 
 - [x] Headroom in the desktop app's memory: find what Phase 2 added to it at idle, before sync adds its own. Phase 2's code added about 5 MB, now 2.5 MB with the database, query and dialog code loaded when used; the rest of the rise was the machine, where the Phase 1 build itself now idles at 287 MB. The page's renderer, 208 MB of 291, is where more must come from.
@@ -124,3 +127,19 @@ The first public release, one feature per pull request, in this order:
 - [x] Task assignment: the person property, and "assigned to me": names in person properties, offered as they are typed, and every row and note assigned to the name this device goes by, by database.
 - [x] Backups to disk or S3, with the restore tested in CI; migrations safe across versions: scheduled backups of the database and attachments in one file, restored into an empty database at their schema and migrated on, and the restore run in CI as documented ([ADR 0052](adr/0052-backups-are-the-server-s-own-files-restored-at-their-schema-then-migrated.md)).
 - [x] `docker compose up` with PostgreSQL, Redis and storage: the server's image with the web app, PostgreSQL 18, Valkey for the rate limits and volumes for the files, checked in CI from setup to a restore on a new install ([ADR 0054](adr/0054-docker-compose-starts-the-server-with-postgresql-valkey-and-volumes.md)).
+
+## Phase 4: Platform
+
+One feature per pull request, in this order:
+
+- [ ] Headroom in the desktop app's memory, before plugins add their own
+- [ ] The plugin API: a versioned TypeScript SDK for commands, block types, views, sidebar panels, settings tabs, Markdown post-processors and property types
+- [ ] The plugin sandbox: permissions declared and approved at install, untrusted plugins run isolated
+- [ ] The plugin and theme directory, a GitHub-backed index browsable in the app
+- [ ] Share links with view, comment or edit access, an expiry and a password
+- [ ] Publishing a note or a folder as a site the server serves, on a custom domain
+- [ ] The public REST API with tokens, and webhooks
+- [ ] AI, bring your own: provider settings, the off switch, writing assist, asking your notes, building with AI, and semantic search
+- [ ] Buttons and automations
+- [ ] PDF annotation, with highlights as linkable blocks
+- [ ] The web clipper, for Chrome and Firefox
