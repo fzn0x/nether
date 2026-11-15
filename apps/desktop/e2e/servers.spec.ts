@@ -146,6 +146,57 @@ test("signs in with the server's provider, in the browser", async ({ page, conte
   expect(pageErrors(errors)).toEqual([]);
 });
 
+test("sets a new server up with the code from its log, and signs its admin in", async ({
+  page,
+}) => {
+  const errors = errorsOf(page);
+  const code = "ABCDE-FGHJK-LMNPQ-RSTUV";
+  const sent = await fakeServer(page, {
+    "GET /api/sign-in-methods": () => [200, { password: true, emailCode: false, oidc: null }],
+    "GET /api/setup": () => [200, { needed: true }],
+    "POST /api/setup": (request) =>
+      (request.postDataJSON() as { code: string }).code === code
+        ? [201, { ...session, workspace: { id: "w1", name: "Team" } }]
+        : [403, { message: "That is not the setup code the server wrote to its log." }],
+  });
+  await openSample(page);
+  const dialog = await openServers(page);
+  await dialog.getByRole("textbox", { name: "Server address" }).fill("nether.test");
+  await dialog.getByRole("button", { name: "Continue" }).click();
+  await expect(dialog.getByRole("group", { name: "Set up nether.test" })).toBeVisible();
+  const field = dialog.getByRole("textbox", { name: "Setup code" });
+  await expect(field).toBeFocused();
+  expect(await violations(page)).toEqual([]);
+
+  await field.fill("WRONG-CODE");
+  await dialog.getByRole("textbox", { name: "Your name" }).fill("Ada");
+  await dialog.getByRole("textbox", { name: "Email address" }).fill("ada@example.org");
+  await dialog.getByLabel("Password").fill("a long password");
+  await dialog.getByRole("textbox", { name: "First workspace's name" }).fill("Team");
+  await dialog.getByRole("button", { name: "Set up the server" }).click();
+  await expect(dialog.getByRole("alert")).toHaveText(
+    "That is not the setup code the server wrote to its log.",
+  );
+
+  await field.fill(` ${code} `);
+  await dialog.getByRole("button", { name: "Set up the server" }).click();
+  await expect(dialog.getByRole("status")).toHaveText(
+    "nether.test is set up, and you are signed in as Ada, its admin.",
+  );
+  await expect(dialog.getByRole("list", { name: "Servers" }).getByRole("listitem")).toHaveText(
+    /nether\.test Ada \(ada@example\.org\)/,
+  );
+  const setUp = sent.filter((request) => request.method() === "POST");
+  expect(setUp.at(-1)?.postDataJSON()).toEqual({
+    code,
+    name: "Ada",
+    email: "ada@example.org",
+    password: "a long password",
+    workspace: "Team",
+  });
+  expect(pageErrors(errors)).toEqual([]);
+});
+
 test("says when an address is no Nether server's", async ({ page }) => {
   await fakeServer(page, { "GET /api/sign-in-methods": () => [200, { hello: "world" }] });
   await openSample(page);

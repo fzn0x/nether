@@ -1,5 +1,6 @@
 // Talking to a Nether server: addresses as people type them, answers and
-// failures, and signing in with a provider through a loopback address.
+// failures, first-run setup, and signing in with a provider through a
+// loopback address.
 import { describe, expect, it } from "vitest";
 import {
   type LoopbackWait,
@@ -10,6 +11,8 @@ import {
   readInvitationLink,
   request,
   serverAddress,
+  setUpServer,
+  setupNeeded,
   signInMethods,
   signInWithProvider,
 } from "../src/server.ts";
@@ -151,6 +154,57 @@ describe("request", () => {
     await expect(account(odd.fetcher, base, "t0k")).rejects.toThrow(
       "https://nether.example.org gave an answer Nether cannot read.",
     );
+  });
+});
+
+describe("first-run setup", () => {
+  const base = "https://nether.example.org";
+  const user = { id: "u1", name: "Ada", email: "ada@example.org", instanceAdmin: true };
+  const setup = {
+    code: "ABCDE-FGHJK-LMNPQ-RSTUV",
+    name: "Ada",
+    email: "ada@example.org",
+    password: "a long password",
+    workspace: "Team",
+  };
+
+  it("asks whether the server waits to be set up", async () => {
+    const waiting = fakeFetch({ "GET /api/setup": () => json(200, { needed: true }) });
+    expect(await setupNeeded(waiting.fetcher, base)).toBe(true);
+    const done = fakeFetch({ "GET /api/setup": () => json(200, { needed: false }) });
+    expect(await setupNeeded(done.fetcher, base)).toBe(false);
+  });
+
+  it("sends the code and the admin's account, trimmed but the password, and signs in", async () => {
+    const { fetcher, sent } = fakeFetch({
+      "POST /api/setup": () =>
+        json(201, { token: "t0k", expiresAt: "2027-02-13T00:00:00.000Z", user, workspace: {} }),
+    });
+    const signedIn = await setUpServer(fetcher, base, {
+      code: " ABCDE-FGHJK-LMNPQ-RSTUV ",
+      name: " Ada ",
+      email: " ada@example.org ",
+      password: " a long password ",
+      workspace: " Team ",
+    });
+    expect(signedIn).toEqual({ token: "t0k", user });
+    expect(sent[0]?.body).toEqual({ ...setup, password: " a long password " });
+  });
+
+  it("signs the web app in with its cookie, the answer holding no token", async () => {
+    const { fetcher } = fakeFetch({
+      "POST /api/setup": () =>
+        json(201, { expiresAt: "2027-02-13T00:00:00.000Z", user, workspace: {} }),
+    });
+    expect(await setUpServer(fetcher, base, setup)).toEqual({ token: "", user });
+  });
+
+  it("says why a wrong code is refused, in the server's words", async () => {
+    const refusal = "That is not the setup code the server wrote to its log.";
+    const { fetcher } = fakeFetch({
+      "POST /api/setup": () => json(403, { message: refusal }),
+    });
+    await expect(setUpServer(fetcher, base, { ...setup, code: "WRONG" })).rejects.toThrow(refusal);
   });
 });
 

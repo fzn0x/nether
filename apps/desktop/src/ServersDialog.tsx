@@ -27,6 +27,8 @@ import {
   redeemCode,
   roleName,
   serverAddress,
+  setUpServer,
+  setupNeeded,
   signInMethods,
   signInWithPassword,
   signInWithProvider,
@@ -38,6 +40,8 @@ type Step =
   | { readonly kind: "list" }
   | { readonly kind: "address" }
   | { readonly kind: "signIn"; readonly url: string; readonly methods: SignInMethods }
+  /** A server with no account yet, set up with the code in its log. */
+  | { readonly kind: "setup"; readonly url: string }
   | {
       readonly kind: "code";
       readonly url: string;
@@ -90,6 +94,14 @@ function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+/** Signing in to a server, or setting it up while it has no account; it throws for an address that is no Nether server's. */
+async function firstStep(url: string): Promise<Step> {
+  const methods = await signInMethods(backend.serverFetch, url);
+  // A server that will not say, as behind a proxy that keeps it out, is signed in to.
+  const needed = await setupNeeded(backend.serverFetch, url).catch(() => false);
+  return needed ? { kind: "setup", url } : { kind: "signIn", url, methods };
+}
+
 export function ServersDialog(props: {
   readonly onClose: () => void;
   /** The one server to sign in to, as the web app's own. */
@@ -106,6 +118,8 @@ export function ServersDialog(props: {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [code, setCode] = useState("");
+  const [setupCode, setSetupCode] = useState("");
+  const [workspace, setWorkspace] = useState("");
   const [phrase, setPhrase] = useState("");
   const [invitation, setInvitation] = useState(props.invitation ?? "");
   /** Signing in to the one server, once its ways are known. */
@@ -140,13 +154,10 @@ export function ServersDialog(props: {
       if (props.invitation !== undefined) {
         setStep({ kind: "join" });
       } else if (list.length === 0 && only !== undefined) {
-        // With the one server, the dialog starts at signing in there.
+        // With the one server, the dialog starts at signing in there, or at
+        // setting it up.
         try {
-          const signIn: Step = {
-            kind: "signIn",
-            url: only,
-            methods: await signInMethods(backend.serverFetch, only),
-          };
+          const signIn = await firstStep(only);
           if (!live()) return;
           setOnlySignIn(signIn);
           setStep(signIn);
@@ -208,7 +219,20 @@ export function ServersDialog(props: {
         return;
       }
       void act(async () => {
-        setStep({ kind: "signIn", url, methods: await signInMethods(backend.serverFetch, url) });
+        setStep(await firstStep(url));
+      });
+    } else if (step.kind === "setup") {
+      void act(async () => {
+        const { url } = step;
+        const signedIn = await setUpServer(backend.serverFetch, url, {
+          code: setupCode,
+          name,
+          email,
+          password,
+          workspace,
+        });
+        await finish(url, signedIn);
+        setStatus(t("setUpDone", { server: hostOf(url), name: signedIn.user.name }));
       });
     } else if (step.kind === "signIn") {
       void act(async () => {
@@ -642,6 +666,91 @@ export function ServersDialog(props: {
           {t("invitationJoin")}
         </button>
       </>
+    );
+  } else if (step.kind === "setup") {
+    const { url } = step;
+    primary = t("setUpAction");
+    back =
+      only === undefined
+        ? { kind: "address" }
+        : accounts === undefined || accounts.length === 0
+          ? undefined
+          : { kind: "list" };
+    body = (
+      <fieldset>
+        <legend>{t("setUpServer", { server: hostOf(url) })}</legend>
+        <p className="hint">{t("setUpServerHint")}</p>
+        <label className="field">
+          {t("setupCode")}
+          <input
+            type="text"
+            autoComplete="off"
+            spellCheck={false}
+            required
+            data-autofocus
+            value={setupCode}
+            aria-describedby="setup-code-hint"
+            onChange={(event) => {
+              setSetupCode(event.target.value);
+            }}
+          />
+          <span id="setup-code-hint" className="hint">
+            {t("setupCodeHint")}
+          </span>
+        </label>
+        <label className="field">
+          {t("yourName")}
+          <input
+            type="text"
+            autoComplete="name"
+            required
+            value={name}
+            onChange={(event) => {
+              setName(event.target.value);
+            }}
+          />
+        </label>
+        <label className="field">
+          {t("emailAddress")}
+          <input
+            type="email"
+            autoComplete="username"
+            required
+            value={email}
+            onChange={(event) => {
+              setEmail(event.target.value);
+            }}
+          />
+        </label>
+        <label className="field">
+          {t("password")}
+          <input
+            type="password"
+            autoComplete="new-password"
+            required
+            minLength={12}
+            value={password}
+            aria-describedby="setup-password-hint"
+            onChange={(event) => {
+              setPassword(event.target.value);
+            }}
+          />
+          <span id="setup-password-hint" className="hint">
+            {t("newPasswordHint")}
+          </span>
+        </label>
+        <label className="field">
+          {t("firstWorkspace")}
+          <input
+            type="text"
+            required
+            value={workspace}
+            onChange={(event) => {
+              setWorkspace(event.target.value);
+            }}
+          />
+        </label>
+      </fieldset>
     );
   } else if (step.kind === "signIn") {
     const { url, methods } = step;

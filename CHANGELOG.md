@@ -37,6 +37,10 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - A signed-in browser accepts an invitation into its account with its
   cookie, as the desktop app does with its token.
 - End-to-end tests of the web app against a real server, in CI.
+- Setting a new server up from the app: signing in to a server that has
+  no account yet asks for the setup code from its log, with the admin's
+  name, email address, password and the first workspace's name, in the
+  desktop app and in the web app the server serves.
 - Sessions in a cookie for the web app: signing in with
   `X-Nether-Session: cookie` keeps the token in an `HttpOnly` cookie, with
   a CSRF value sent back on every change; sync and relay sockets take it

@@ -538,6 +538,15 @@ export const messages = {
   continueStep: "Continue",
   back: "Back",
   signInTo: "Sign in to {server}",
+  setUpServer: "Set up {server}",
+  setUpServerHint:
+    "This server has no account yet. Its log has the code that makes the first one, yours, as the server's admin, with a first workspace.",
+  setupCode: "Setup code",
+  setupCodeHint:
+    'The server writes it to its log each time it starts, after "Set it up from the app with this code". With Docker Compose: docker compose logs server.',
+  firstWorkspace: "First workspace's name",
+  setUpAction: "Set up the server",
+  setUpDone: "{server} is set up, and you are signed in as {name}, its admin.",
   emailAddress: "Email address",
   password: "Password",
   signIn: "Sign in",
