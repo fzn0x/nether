@@ -2,7 +2,8 @@
 // starts the compose project, sets the server up with the code from its
 // log, keeps an attachment, serves the web app, counts its rate limits in
 // Valkey and makes a backup; then stops it all, starts it again and finds
-// the account and the attachment kept. CI runs it on the image it built.
+// the account and the attachment kept; then restores the backup on a new
+// install, as the self-hosting guide says. CI runs it on the image it built.
 //
 //   node deploy/docker/check.mjs           # the image NETHER_VERSION names, pulled or built
 //   node deploy/docker/check.mjs --build   # built from this checkout first
@@ -11,7 +12,10 @@
 // and removes the project and its volumes at the end.
 import { spawnSync } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
+import { chmod, mkdtemp, rm } from "node:fs/promises";
 import { createServer } from "node:net";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const file = fileURLToPath(new URL("docker-compose.yml", import.meta.url));
@@ -80,6 +84,8 @@ const admin = {
 };
 const file1 = randomBytes(4096);
 const hash = createHash("sha256").update(file1).digest("hex");
+/** The folder the backup is copied out to, for the restore. */
+let saved;
 
 try {
   await up(build ? ["--build"] : []);
@@ -147,6 +153,38 @@ try {
   });
   const kept = Buffer.from(await got.arrayBuffer());
   check(got.status === 200 && kept.equals(file1), "the attachment is kept, byte for byte");
+
+  // Moving to a new machine, as the self-hosting guide has it: the backup
+  // copied out, every volume gone, then restored into the new database.
+  saved = await mkdtemp(join(tmpdir(), "nether-check-"));
+  // The server's user, not the one running this, reads the folder.
+  await chmod(saved, 0o755);
+  compose(["cp", "server:/data/backups/check.ndjson.gz", join(saved, "check.ndjson.gz")]);
+  compose(["down", "--volumes"]);
+  compose([
+    "run",
+    "--rm",
+    "--volume",
+    `${saved}:/restore:ro`,
+    "server",
+    "node",
+    "dist/admin.js",
+    "restore",
+    "/restore/check.ndjson.gz",
+  ]);
+  await up();
+  const restored = await call("POST", "/api/sessions", {
+    json: { email: admin.email, password: admin.password },
+  });
+  check(restored.status === 201, "a backup restores on a new install, and the admin signs in");
+  const { token: third } = await restored.json();
+  const back = await call("GET", `/api/workspaces/${workspace.id}/attachments/${hash}`, {
+    token: third,
+  });
+  check(
+    back.status === 200 && Buffer.from(await back.arrayBuffer()).equals(file1),
+    "with the attachment, byte for byte",
+  );
   console.log("All checks passed.");
 } catch (error) {
   process.exitCode = 1;
@@ -162,4 +200,5 @@ try {
   } catch (error) {
     console.error(error instanceof Error ? error.message : error);
   }
+  if (saved !== undefined) await rm(saved, { recursive: true, force: true });
 }
