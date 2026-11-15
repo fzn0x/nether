@@ -66,7 +66,7 @@ You need Node.js 24, pnpm 10 and Go 1.27:
 
 ```sh
 git clone https://github.com/fzn0x/nether.git
-cd Nether
+cd nether
 pnpm install
 pnpm --filter @nether/desktop dev
 ```
