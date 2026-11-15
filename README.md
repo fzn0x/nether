@@ -94,7 +94,6 @@ You need Node.js 24, pnpm 10 and, for the desktop app, Go 1.27.
 pnpm install
 pnpm test                               # unit tests
 pnpm --filter @nether/desktop dev       # the desktop app
-VITE_NETHER_SYNC=on pnpm --filter @nether/desktop dev   # with sync's menus
 pnpm vault:generate                     # the 50,000-note reference vault
 ```
 
