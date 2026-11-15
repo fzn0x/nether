@@ -58,6 +58,13 @@ import {
   writes,
 } from "./units.ts";
 
+/**
+ * How far before the record's time to look for notes changed while nothing
+ * watched: files' times can lag the clock, and some file systems keep them
+ * to two seconds. A note looked at for nothing costs one round trip.
+ */
+const clockSlack = 10_000;
+
 /** A note's document, held while it syncs; let go when done. */
 export interface HeldDocument {
   readonly document: Y.Doc;
@@ -75,6 +82,12 @@ export interface SyncVault {
    * moved or removed; gives the way to stop.
    */
   watch(listener: (id?: string) => void): () => void;
+  /**
+   * The notes whose text changed here at or after `time`, in milliseconds
+   * by this device's clock: those changed while nothing watched, as in
+   * another editor while the app was closed.
+   */
+  changedSince(time: number): Iterable<string>;
   /** Holds a note's document: the one the editor shares while it is open. */
   hold(id: string): Promise<HeldDocument>;
   /** Holds a note's comments' document (ADR 0044), which the editor shares while the note is open. */
@@ -135,6 +148,12 @@ export interface SyncRecord {
   readonly vaults?: Readonly<Record<string, Uint8Array>>;
   /** What the channel keeps, as the relay its documents' numbers and what it sent. */
   readonly channel?: unknown;
+  /**
+   * When the engine last saved this while watching the vault, in
+   * milliseconds by this device's clock: notes changed since are sent when
+   * it starts again.
+   */
+  readonly watched?: number;
 }
 
 export interface SyncStore {
@@ -196,6 +215,8 @@ export class VaultSync {
   /** Files the server refused: each one's path, and the hash it refused. */
   readonly #refused = new Map<string, string>();
   readonly #pending = new Set<string>();
+  /** When the engine that kept the record last watched, until this one does. */
+  #watchedBefore: number | undefined;
   /** Notes' comments the server has stored: fetched even where this device has none. */
   readonly #storedComments = new Set<string>();
   /** Notes syncing now, which do not start again until done. */
@@ -324,11 +345,19 @@ export class VaultSync {
       this.#saveSoon();
       this.#schedule();
     });
+    this.#watchedBefore = record?.watched;
     this.#unwatch = this.#options.vault.watch((id) => {
       if (id !== undefined) this.#pending.add(id);
       this.#saveSoon();
       this.#schedule();
     });
+    // What changed while nothing watched, as notes edited while sync was
+    // stopped, or in another editor while the app was closed, goes too.
+    if (record?.watched !== undefined) {
+      for (const id of this.#options.vault.changedSince(record.watched - clockSlack)) {
+        this.#pending.add(id);
+      }
+    }
     const options = this.#options;
     const events = {
       // Connected, or connected again: all of it, from the list on.
@@ -872,6 +901,12 @@ export class VaultSync {
         [...this.#documents].map(([id, document]) => [id, Y.encodeStateAsUpdate(document)]),
       ),
       channel: this.#channel?.state(),
+      // Up to now every change was heard; before it watched, only up to the last time.
+      ...(this.#unwatch !== undefined
+        ? { watched: Date.now() }
+        : this.#watchedBefore === undefined
+          ? {}
+          : { watched: this.#watchedBefore }),
     });
   }
 }

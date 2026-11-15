@@ -19,8 +19,11 @@ knows kept between runs, so edits made offline are sent when it is back.
 
 The engine knows a vault only through `SyncVault`, which the app gives it:
 its notes' paths, their documents (the ones its editor shares), making,
-moving and removing notes, and its other files' hashes and bytes. What a
-device keeps goes through `SyncStore`.
+moving and removing notes, and its other files' hashes and bytes. It hears
+of changes through `watch`, and asks `changedSince` as it starts for the
+notes changed while nothing watched, as in another editor while the app
+was closed, by their files' times since it last saved. What a device keeps
+goes through `SyncStore`.
 
 The tests sync two devices through a real server on PGlite, encrypted
 workspaces and files included, and check the server keeps nothing it can

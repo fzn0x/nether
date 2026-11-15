@@ -160,6 +160,39 @@ describe("syncing a vault", () => {
         laptop.text(offline) === "written offline",
     );
   });
+
+  it("sends edits made while sync was stopped on both devices, which no one else changed", async () => {
+    const served = await startServer();
+    const laptop = new MemoryVault();
+    const ideas = laptop.write("Ideas.md", "ideas");
+    const plan = laptop.write("Plan.md", "plan");
+    const first = await device(served, served.token, laptop);
+    const token = await signIn(served.url);
+    const phone = await device(served, token);
+    await until(() => phone.vault.text(ideas) === "ideas" && phone.vault.text(plan) === "plan");
+    await until(
+      () => first.engine.status.state === "synced" && phone.engine.status.state === "synced",
+    );
+
+    // Both stop, as when each app is closed, and the notes change meanwhile,
+    // as in another editor: no engine watches them change.
+    await first.engine.stop();
+    await phone.engine.stop();
+    laptop.edit(ideas, (text) => {
+      text.insert(text.length, " from the laptop");
+    });
+    phone.vault.edit(plan, (text) => {
+      text.insert(text.length, " from the phone");
+    });
+
+    await device(served, served.token, laptop, first.store);
+    await device(served, token, phone.vault, phone.store);
+    await until(
+      () =>
+        phone.vault.text(ideas) === "ideas from the laptop" &&
+        laptop.text(plan) === "plan from the phone",
+    );
+  });
 });
 
 describe("a closed channel", () => {
