@@ -73,6 +73,12 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   notes are stored, and once for those stored before
   ([ADR 0050](docs/adr/0050-the-server-searches-what-it-can-read-indexed-as-notes-are-stored.md)).
 
+### Fixed
+
+- A note changed while sync was stopped, as in another editor while the
+  app was closed, now syncs when sync starts again. Before, it went to the
+  server only once someone else changed that note.
+
 ## [0.0.1] - 2026-11-01
 
 ### Added

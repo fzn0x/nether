@@ -66,6 +66,14 @@ export class DesktopSyncVault implements SyncVault {
     };
   }
 
+  changedSince(time: number): string[] {
+    // A note's time is its file's, which another editor's change moves too.
+    return this.#vault
+      .notes()
+      .filter((note) => note.modified >= time)
+      .map((note) => note.id);
+  }
+
   /** The vault's other files, with their sizes and times, as one text to compare. */
   #filesSnapshot(): string {
     return this.#vault

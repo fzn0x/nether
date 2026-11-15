@@ -31,6 +31,8 @@ export class MemoryVault implements SyncVault {
   readonly attachments = new Map<string, Uint8Array>();
   /** Each note's comments' document, made when first held. */
   readonly comments = new Map<string, Y.Doc>();
+  /** When each note was last written or edited here, as a file's time. */
+  readonly modified = new Map<string, number>();
   readonly #listeners = new Set<(id?: string) => void>();
 
   paths(): Map<string, string> {
@@ -40,6 +42,10 @@ export class MemoryVault implements SyncVault {
   watch(listener: (id?: string) => void): () => void {
     this.#listeners.add(listener);
     return () => this.#listeners.delete(listener);
+  }
+
+  changedSince(time: number): string[] {
+    return [...this.modified].filter(([, at]) => at >= time).map(([id]) => id);
   }
 
   hold(id: string): Promise<HeldDocument> {
@@ -135,6 +141,7 @@ export class MemoryVault implements SyncVault {
     const document = new Y.Doc();
     document.getText("content").insert(0, text);
     this.notes.set(id, { path, document });
+    this.modified.set(id, Date.now());
     this.#tell();
     this.#tell(id);
     return id;
@@ -144,6 +151,7 @@ export class MemoryVault implements SyncVault {
     const note = this.notes.get(id);
     if (note === undefined) throw new Error(`No note ${id}`);
     change(note.document.getText("content"));
+    this.modified.set(id, Date.now());
     this.#tell(id);
   }
 
