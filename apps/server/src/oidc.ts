@@ -18,7 +18,7 @@ import type { FastifyInstance, FastifyReply } from "fastify";
 import * as client from "openid-client";
 import type { OidcConfig } from "./config.ts";
 import { type Database, type Queryable, readBoolean, readText, readTextOrNull } from "./db.ts";
-import { emailKey, fail, tokenField } from "./http.ts";
+import { emailKey, fail, limitByAddress, tokenField } from "./http.ts";
 import { acceptInvitation, invites, openInvitation } from "./invitations.ts";
 import { newToken, startSession, tokenHash } from "./sessions.ts";
 
@@ -220,7 +220,7 @@ export function registerOidc(
     "/api/oidc/flows",
     {
       schema: { body: startBody },
-      onRequest: app.rateLimit({ max: 30, timeWindow: "5 minutes" }),
+      onRequest: limitByAddress(app, "oidc-flows", 30, "5 minutes"),
     },
     async (request, reply) => {
       const { body } = request;
@@ -271,7 +271,7 @@ export function registerOidc(
 
   app.get<{ Querystring: Callback }>(
     "/api/oidc/callback",
-    { onRequest: app.rateLimit({ max: 30, timeWindow: "5 minutes" }) },
+    { onRequest: limitByAddress(app, "oidc-callback", 30, "5 minutes") },
     async (request, reply) => {
       const state = typeof request.query.state === "string" ? request.query.state : "";
       const { rows } = await db.query(
@@ -341,7 +341,7 @@ export function registerOidc(
     "/api/oidc/redeem",
     {
       schema: { body: redeemBody },
-      onRequest: app.rateLimit({ max: 30, timeWindow: "5 minutes" }),
+      onRequest: limitByAddress(app, "oidc-redeem", 30, "5 minutes"),
     },
     async (request, reply) => {
       const outcome = await db.transaction(async (tx) => {

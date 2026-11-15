@@ -7,7 +7,7 @@
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 import type { FastifyInstance } from "fastify";
 import type { Database } from "./db.ts";
-import { emailField, emailKey, fail, nameField, newPasswordField } from "./http.ts";
+import { emailField, emailKey, fail, limitByAddress, nameField, newPasswordField } from "./http.ts";
 import { hashPassword } from "./passwords.ts";
 import { startSession } from "./sessions.ts";
 
@@ -68,7 +68,7 @@ export function registerSetup(app: FastifyInstance, db: Database, code: string |
     "/api/setup",
     {
       schema: { body: setupBody },
-      onRequest: app.rateLimit({ max: 20, timeWindow: "15 minutes" }),
+      onRequest: limitByAddress(app, "setup", 20, "15 minutes"),
     },
     async (request, reply) => {
       const body = request.body;

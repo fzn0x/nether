@@ -2,6 +2,7 @@
 // and errors in the shape Fastify gives its own, so a client reads every
 // error's `message` the same way.
 import { STATUS_CODES } from "node:http";
+import { normalizeIP } from "@fastify/rate-limit";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { minimumPasswordLength } from "./passwords.ts";
 
@@ -48,18 +49,48 @@ export function tooManyTries(seconds: number): string {
   return `Too many tries: try again in ${String(seconds)} seconds.`;
 }
 
+const limitNames = new WeakMap<FastifyInstance, Set<string>>();
+
+/**
+ * The key a limit counts `key` under. In Redis every limit's counts sit
+ * side by side, so each limit has a name of its own, and one route's tries
+ * never count against another's (ADR 0054).
+ */
+function namedKey(app: FastifyInstance, name: string, key: (request: FastifyRequest) => string) {
+  const names = limitNames.get(app) ?? new Set<string>();
+  if (names.has(name)) throw new Error(`Two rate limits are named ${name}`);
+  names.add(name);
+  limitNames.set(app, names);
+  return (request: FastifyRequest) => `${name}:${key(request)}`;
+}
+
+/** A hook that limits a route's requests from one client address, counted under `name`. */
+export function limitByAddress(
+  app: FastifyInstance,
+  name: string,
+  max: number,
+  timeWindow: string,
+) {
+  return app.rateLimit({
+    max,
+    timeWindow,
+    keyGenerator: namedKey(app, name, (request) => normalizeIP(request.ip)),
+  });
+}
+
 /**
  * A hook that applies a second limit to a route, by a key of its own, such
- * as the account a request names. The rate-limit plugin applies one limit
- * to a request; this checks another beside it.
+ * as the account a request names, counted under `name`. The rate-limit
+ * plugin applies one limit to a request; this checks another beside it.
  */
 export function limitBy(
   app: FastifyInstance,
+  name: string,
   max: number,
   timeWindow: string,
   key: (request: FastifyRequest) => string,
 ) {
-  const check = app.createRateLimit({ max, timeWindow, keyGenerator: key });
+  const check = app.createRateLimit({ max, timeWindow, keyGenerator: namedKey(app, name, key) });
   return async (request: FastifyRequest, reply: FastifyReply) => {
     const limit = await check(request);
     if (limit.isAllowed || !limit.isExceeded) return undefined;

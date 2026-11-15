@@ -338,7 +338,10 @@ export function registerSearch(app: FastifyInstance, db: Database): void {
           },
         },
       },
-      preHandler: [account, limitBy(app, 120, "1 minute", (request) => accountOf(request).id)],
+      preHandler: [
+        account,
+        limitBy(app, "search", 120, "1 minute", (request) => accountOf(request).id),
+      ],
     },
     async (request, reply) => {
       if (request.query.q.trim() === "") return fail(reply, 400, "Type something to search for.");
