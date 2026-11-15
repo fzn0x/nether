@@ -24,13 +24,14 @@ Notion exports. Self-hosting is available for enterprise.
 > from Obsidian, Notion, Logseq, HTML and CSV, within the performance
 > targets on 50,000 notes.
 >
-> Phase 3, sync and collaboration, the first public release, has 15 of its
-> 16 tasks done: the server with accounts and single sign-on, sync with
+> Phase 3, sync and collaboration, the first public release, has all 16
+> of its tasks done: the server with accounts and single sign-on, sync with
 > end-to-end encryption, attachments, version history, spaces and page
 > permissions, live co-editing, comments and mentions, server search, the
-> canvas, task assignment, backups, and the web app the server serves,
-> which installs and works offline. `docker compose up` is what remains;
-> until then, sync stays out of the released app. The
+> canvas, task assignment, backups, the web app the server serves, which
+> installs and works offline, and `docker compose up`, which starts it all.
+> Its gate and the release come next; until then, sync stays out of the
+> released app. The
 > [roadmap](docs/roadmap.md#phase-3-self-hosted-sync-and-collaboration)
 > ticks each task off as it lands.
 
@@ -65,7 +66,7 @@ Notion exports. Self-hosting is available for enterprise.
 | 0. Foundations | Decisions, the repository, CI, the data model, a 50,000-note test vault | ✅ |
 | 1. Local-first notes | The desktop app: a vault on disk, the block and Markdown editor, links and backlinks, tags, search, templates, export | ✅ |
 | 2. Databases and structure | Databases with six views, relations, rollups, formulas, synced blocks, the graph view, importers from Obsidian and Notion | ✅ |
-| 3. Sync and collaboration | The first public release: the server, end-to-end encrypted sync, co-editing, comments, permissions, the web app, the canvas, backups | 🚧 15 of 16 |
+| 3. Sync and collaboration | The first public release: the server, end-to-end encrypted sync, co-editing, comments, permissions, the web app, the canvas, backups | 🚧 16 of 16, the gate next |
 | 4. Platform | Plugins in a sandbox, bring-your-own AI, publishing, the REST API, the web clipper, automations | ❌ |
 | 5. Enterprise, mobile and scale | Single sign-on, SCIM, audit logs, data policies, high availability, the Helm chart, mobile apps | ❌ |
 
@@ -98,9 +99,12 @@ VITE_NETHER_SYNC=on pnpm --filter @nether/desktop dev   # with sync's menus
 pnpm vault:generate                     # the 50,000-note reference vault
 ```
 
-The server needs PostgreSQL 16 or newer;
-[its README](apps/server/README.md) shows how to run it, set it up and
-back it up.
+`docker compose up` in [deploy/docker](deploy/docker/) starts the server
+with PostgreSQL and Valkey; the
+[self-hosting guide](https://fzn0x.github.io/Nether/self-hosting/) goes on
+from there. Run from the repository, the server needs PostgreSQL 16 or
+newer; [its README](apps/server/README.md) shows how to run it, set it up
+and back it up.
 
 [CONTRIBUTING.md](CONTRIBUTING.md) has the rest: every check, how work is
 organized, and how commits are signed off.
