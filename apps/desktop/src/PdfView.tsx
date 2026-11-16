@@ -82,6 +82,8 @@ interface Pending {
 
 const minScale = 0.25;
 const maxScale = 4;
+/** The most pixels a page's canvas holds, 64 MB: past it, a page is drawn finer than the screen no more. */
+const maxPixels = 2 ** 24;
 
 /** Where pdf.js fetches what a PDF needs, as the build copies it (vite.config.ts). */
 function resources() {
@@ -152,6 +154,8 @@ function usePdf(vault: Vault, path: string): { doc?: PDFDocumentProxy; error?: s
       void done.finally(() => {
         worker?.destroy();
         port?.terminate();
+        // What the text layers measured text with, unless another PDF still draws.
+        TextLayer.cleanup();
       });
     };
   }, [vault, path, version]);
@@ -268,7 +272,10 @@ function PdfPage(props: {
       const drawn = canvas.current;
       const container = layer.current;
       if (drawn === null || container === null) return;
-      const ratio = window.devicePixelRatio || 1;
+      const ratio = Math.min(
+        window.devicePixelRatio || 1,
+        Math.sqrt(maxPixels / (viewport.width * viewport.height)),
+      );
       drawn.width = Math.floor(viewport.width * ratio);
       drawn.height = Math.floor(viewport.height * ratio);
       render = proxy.render({
