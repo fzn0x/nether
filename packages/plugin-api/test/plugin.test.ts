@@ -48,6 +48,14 @@ function fakeApp(
     told.push(`register view ${type as string}`);
     return null;
   });
+  app.handle("views.register", (id, callback) => {
+    registered.set(`view-of ${id as string}`, callback as number);
+    return null;
+  });
+  app.handle("views.open", (id) => {
+    told.push(`open ${id as string}`);
+    return null;
+  });
   app.handle("panels.register", (id, callback) => {
     registered.set(`panel ${id as string}`, callback as number);
     told.push(`register panel ${id as string}`);
@@ -243,6 +251,35 @@ describe("startPlugin", () => {
     await app.call("callback", words, "update", "p1", beside("Ideas"));
     await app.call("callback", words, "unmount", "p1");
     expect(seen).toEqual(["Ideas", "unmount"]);
+    endpoint.close();
+    app.close();
+  });
+
+  it("mounts a pane's view of a file, and asks the app to open a view of its own", async () => {
+    const { app, pluginSide, registered, told } = fakeApp();
+    const element = { textContent: "" } as HTMLElement;
+    let openStats: (() => Promise<void>) | undefined;
+    const endpoint = await startPlugin(
+      definePlugin({
+        async activate(context) {
+          await context.views.register("sheet", {
+            mount(into, props) {
+              into.textContent = props.file?.path ?? "";
+              return undefined;
+            },
+          });
+          openStats = () => context.views.open("stats");
+        },
+      }),
+      pluginSide,
+      { element: () => element },
+    );
+    const sheet = registered.get("view-of sheet") ?? 0;
+    await app.call("callback", sheet, "mount", "v1", { theme: "light", file: { path: "a.csv" } });
+    expect(element.textContent).toBe("a.csv");
+    await app.call("callback", sheet, "unmount", "v1");
+    await openStats?.();
+    expect(told).toContain("open stats");
     endpoint.close();
     app.close();
   });

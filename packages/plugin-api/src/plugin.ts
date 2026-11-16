@@ -112,6 +112,33 @@ export interface Panels {
   register(id: string, view: PanelView): Promise<Disposable>;
 }
 
+/** What a pane's view is given when it mounts, and again as it changes. */
+export interface PaneViewProps {
+  /** Whether the page it shows on is light or dark. */
+  readonly theme: "light" | "dark";
+  /** For a view of files, the file open, by its path in the vault. */
+  readonly file?: { readonly path: string };
+}
+
+/** A mounted view of a pane, which the app updates and unmounts. */
+export interface MountedPaneView {
+  update?(props: PaneViewProps): void;
+  unmount?(): void;
+}
+
+/** Fills a pane with a view the manifest declares, drawing into an element of its own. */
+export interface PaneView {
+  mount(element: HTMLElement, props: PaneViewProps): MountedPaneView | undefined;
+}
+
+/** The views a plugin's manifest declares, attached to what draws them. */
+export interface Views {
+  /** Draws the view the manifest declares as `id` with `view`. */
+  register(id: string, view: PaneView): Promise<Disposable>;
+  /** Opens a view of its own, one the manifest declares with no extensions, in the pane. */
+  open(id: string): Promise<void>;
+}
+
 /**
  * Where a plugin's views mount: the element made for each, by the slot
  * the app names for it. A built-in plugin is given the page's, and a
@@ -143,6 +170,7 @@ export interface PluginContext {
   readonly codeBlocks: CodeBlocks;
   readonly blocks: Blocks;
   readonly panels: Panels;
+  readonly views: Views;
   readonly settings: Settings;
 }
 
@@ -338,6 +366,17 @@ export async function startPlugin(
           id,
           viewCallback((element, props: PanelProps) => view.mount(element, props)),
         ),
+    },
+    views: {
+      register: (id, view) =>
+        attach(
+          "views",
+          id,
+          viewCallback((element, props: PaneViewProps) => view.mount(element, props)),
+        ),
+      async open(id) {
+        await endpoint.call("views.open", id);
+      },
     },
   };
   await plugin.activate(context);
