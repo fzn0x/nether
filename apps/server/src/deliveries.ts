@@ -20,8 +20,9 @@ export const maxAttempts = retryDelays.length + 1;
 /** Days a webhook may fail with no success before it is turned off. */
 export const failingDays = 3;
 
-/** How many events a webhook gets in one round, before others' turn. */
+/** How many events a webhook gets in one round, and for how long, before others' turn. */
 const perRound = 20;
+const roundMs = 15_000;
 
 export interface DeliveryOptions extends SendOptions {
   /** What tells a webhook's maker it was turned off, when the server sends email. */
@@ -143,8 +144,10 @@ async function record(
 /** Sends a webhook its due events, oldest first, one at a time; gives how many it tried. */
 async function sendTo(db: Database, hook: Claimed, options: DeliveryOptions): Promise<number> {
   let tried = 0;
+  // A slow address holds the round, and so every other webhook, for 15 seconds at most.
+  const until = Date.now() + roundMs;
   try {
-    while (tried < perRound) {
+    while (tried < perRound && Date.now() < until) {
       const { rows } = await db.query(
         `SELECT id, body, attempts FROM webhook_deliveries
           WHERE webhook_id = $1 AND status = 'waiting' AND next_at <= now()
