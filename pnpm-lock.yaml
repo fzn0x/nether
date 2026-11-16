@@ -74,6 +74,9 @@ importers:
       '@nether/markdown':
         specifier: workspace:*
         version: link:../../packages/markdown
+      '@nether/pdf':
+        specifier: workspace:*
+        version: link:../../packages/pdf
       '@nether/plugin-api':
         specifier: workspace:*
         version: link:../../packages/plugin-api

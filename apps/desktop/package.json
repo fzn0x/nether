@@ -29,6 +29,7 @@
     "@nether/editor": "workspace:*",
     "@nether/graph": "workspace:*",
     "@nether/markdown": "workspace:*",
+    "@nether/pdf": "workspace:*",
     "@nether/plugin-api": "workspace:*",
     "@nether/search": "workspace:*",
     "@nether/storage": "workspace:*",
