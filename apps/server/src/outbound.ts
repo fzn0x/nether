@@ -49,6 +49,7 @@ for (const [network, bits] of [
   // IPv4-mapped addresses are checked as IPv4: BlockList matches IPv4
   // addresses against ::ffff:0:0/96, so that range is not listed here.
   ["::", 96], // unspecified, loopback, and IPv4-compatible
+  ["::ffff:0:0:0", 96], // IPv4-translated (RFC 2765), not routed, nor public
   ["64:ff9b::", 96], // NAT64, which reaches IPv4 addresses
   ["64:ff9b:1::", 48], // local NAT64
   ["100::", 64], // discard
