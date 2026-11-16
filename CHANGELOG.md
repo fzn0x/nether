@@ -121,6 +121,13 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   ([ADR 0060](docs/adr/0060-webhooks-tell-of-notes-made-changed-and-removed-signed-and-sent-to-public-addresses.md)).
   A note made through the API at a path an app had just taken leaves
   nothing behind.
+- API tokens and webhooks in the app, which completes the REST API: API
+  tokens on a server, under each account in Servers and signing in and in
+  the Sync menu, list, make with the password again, show once to copy,
+  and revoke an account's tokens; Workspace webhooks, in the Sync menu,
+  add, edit, turn off and on, give a new secret, test and remove a
+  workspace's webhooks, with their recent events. Webhooks also refuse
+  IPv4-translated addresses as not public.
 
 ### Changed
 
