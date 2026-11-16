@@ -351,6 +351,8 @@ export const messages = {
   menuView: "View",
   menuSync: "Sync",
   menuSettings: "Settings",
+  menuPlugins: "Plugins",
+  pluginFailed: "The plugin {plugin} failed: {message}",
   templateSettings: "Templates and periodic notes",
   templates: "Templates",
   templatesFolder: "Templates folder",

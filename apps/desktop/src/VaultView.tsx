@@ -17,7 +17,7 @@ import {
   useSyncExternalStore,
 } from "react";
 import type { Indexer } from "./indexer.ts";
-import { t } from "./messages.ts";
+import { directionOf, language, t } from "./messages.ts";
 import type { VaultInfo } from "./mygo.ts";
 import { backend } from "./backend.ts";
 import { BookmarkList } from "./BookmarkList.tsx";
@@ -31,10 +31,19 @@ import { AssignedPanel } from "./AssignedPanel.tsx";
 import { TextPromptDialog } from "./TextPromptDialog.tsx";
 import { myName, setMyName } from "./people.ts";
 import { DeleteFolderDialog } from "./DeleteFolderDialog.tsx";
-import { commandShown, shownEntries, syncShown } from "./features.ts";
+import { commandShown, shownEntries } from "./features.ts";
 import { SidebarResizer, useSidebarWidth } from "./SidebarResizer.tsx";
 import { builtInTheme } from "./appearance.ts";
-import { type CommandId, commandIds, defaultHotkeys } from "./commands.ts";
+import {
+  type CommandId,
+  commandIds,
+  coreMenus,
+  defaultHotkeys,
+  menuOfCommand,
+} from "./commands.ts";
+import { builtinPlugins } from "./plugins/builtins.ts";
+import { PluginHost } from "./plugins/host.ts";
+import { type Command, CommandRegistry } from "./plugins/registry.ts";
 import { ExportDialog } from "./ExportDialog.tsx";
 import { MergeNoteDialog } from "./MergeNoteDialog.tsx";
 import { MoveNoteDialog } from "./MoveNoteDialog.tsx";
@@ -86,6 +95,48 @@ import { useSync } from "./useSync.ts";
 import { usePeople, useNotifications } from "./useNotifications.ts";
 import { queueMention } from "./notify.ts";
 import { useCanvasFiles, useFolders, useNotes, useVault } from "./useVault.ts";
+
+/** What the app's own commands do as the latest render has it. */
+interface CommandState {
+  /** What each does, or undefined where it cannot run now. */
+  readonly run: Readonly<Record<CommandId, (() => void) | undefined>>;
+  readonly nameNow: (id: CommandId) => string;
+}
+
+/**
+ * A registry holding the app's own commands, those this build shows, each
+ * running what the latest render says it does.
+ */
+function coreRegistry(state: { readonly current: CommandState | undefined }): CommandRegistry {
+  const registry = new CommandRegistry();
+  for (const id of commandIds) {
+    if (!commandShown(id)) continue;
+    registry.add({
+      id,
+      name: () => t(`command_${id}`),
+      nameNow: () => state.current?.nameNow(id) ?? t(`command_${id}`),
+      menu: menuOfCommand[id],
+      keys: defaultHotkeys[id] ?? [],
+      icon: commandIcons[id],
+      ...(id === "trashNote" ? { danger: true } : {}),
+      enabled: () => state.current?.run[id] !== undefined,
+      run: () => {
+        state.current?.run[id]?.();
+      },
+    });
+  }
+  return registry;
+}
+
+/** The label each menu of the menu bar has. */
+const menuLabels = {
+  file: "menuFile",
+  note: "menuNote",
+  view: "menuView",
+  sync: "menuSync",
+  settings: "menuSettings",
+  plugins: "menuPlugins",
+} as const;
 
 // The editor and the Markdown parser load on their own, so the vault's notes
 // show while they do. Not through lazy(): a lazy component waits on its
@@ -348,7 +399,19 @@ export function VaultView(props: {
   const [noteDialog, setNoteDialog] = useState<
     { readonly kind: "rename" | "move" | "merge" | "tags"; readonly id: NoteId } | undefined
   >();
-  const { hotkeys, chosen: chosenHotkeys, save: saveHotkeys } = useHotkeys(vault);
+  // Every command, the app's own and its plugins' (ADR 0055): the app's
+  // run what the latest render says they do.
+  const commandState = useRef<CommandState | undefined>(undefined);
+  const [registry] = useState(() => coreRegistry(commandState));
+  const commands = useSyncExternalStore(
+    useCallback((listener: () => void) => registry.subscribe(listener), [registry]),
+    () => registry.all(),
+  );
+  const {
+    hotkeys,
+    chosen: chosenHotkeys,
+    save: saveHotkeys,
+  } = useHotkeys(vault, registry.defaults());
   // Whether the app updates itself, and checks on its own.
   const [updates, setUpdates] = useState({ available: false, automatic: false });
   const readUpdates = useCallback(() => {
@@ -384,6 +447,24 @@ export function VaultView(props: {
       }
     | undefined
   >();
+  // The built-in plugins, whose commands show at once and whose code loads
+  // when one is first chosen; what goes wrong with one shows as a notice.
+  useEffect(() => {
+    const host = new PluginHost(registry, {
+      language,
+      direction: directionOf(language),
+      onError: (plugin, message) => {
+        setNotice({ text: t("pluginFailed", { plugin, message }) });
+      },
+    });
+    for (const builtin of builtinPlugins) {
+      const problems = host.add(builtin);
+      if (problems.length > 0) setNotice({ text: problems.join(" ") });
+    }
+    return () => {
+      host.close();
+    };
+  }, [registry]);
   const { settings, save } = useTemplateSettings(vault);
   const version = useGraph(graph);
 
@@ -1218,27 +1299,27 @@ export function VaultView(props: {
   ]);
 
   // Shortcuts run their commands, before the editors, which have their own uses for keys.
-  const latest = useRef({ run, hotkeys });
-  latest.current = { run, hotkeys };
+  const latest = useRef(hotkeys);
+  latest.current = hotkeys;
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (listening.current) return;
       const keys = eventKeys(event);
       if (keys === undefined) return;
-      const id = commandFor(latest.current.hotkeys, keys) as CommandId | undefined;
-      const command = id === undefined ? undefined : latest.current.run[id];
-      if (command === undefined) return;
+      const id = commandFor(latest.current, keys);
+      const command = id === undefined ? undefined : registry.get(id);
+      if (command?.enabled() !== true) return;
       event.preventDefault();
       event.stopPropagation();
-      command();
+      command.run();
     };
     window.addEventListener("keydown", onKeyDown, true);
     return () => {
       window.removeEventListener("keydown", onKeyDown, true);
     };
-  }, []);
+  }, [registry]);
 
-  const keysOf = (id: CommandId) => hotkeys[id]?.[0];
+  const keysOf = (id: string) => hotkeys[id]?.[0];
   const ariaOf = (id: CommandId) => {
     const keys = keysOf(id);
     return keys === undefined ? undefined : ariaKeys(keys);
@@ -1307,95 +1388,46 @@ export function VaultView(props: {
         ? t("command_bookmarkRemove")
         : t(`command_${id}`);
 
+  commandState.current = { run, nameNow: commandName };
+
   /**
    * The menus' items, each a command; one that cannot run now shows, but
    * cannot be chosen, and one this build leaves out does not show at all.
+   * Plugins' commands come after a menu's own, and in a Plugins menu
+   * unless they name another; a menu with no items does not show.
    */
-  const menuOf = (
-    label: string,
-    icon: Menu["icon"],
-    ids: readonly (CommandId | "separator")[],
-  ): Menu => ({
-    label,
-    icon,
-    entries: shownEntries(ids).map((id) => {
-      if (id === "separator") return id;
-      const command = run[id];
-      const keys = keysOf(id);
-      return {
-        label: commandName(id),
-        run: () => {
-          command?.();
+  const menuItem = (command: Command): MenuEntry => {
+    const keys = keysOf(command.id);
+    return {
+      label: (command.nameNow ?? command.name)(),
+      run: command.run,
+      disabled: !command.enabled(),
+      ...(command.danger === true ? { danger: true } : {}),
+      ...(command.icon === undefined ? {} : { icon: command.icon }),
+      ...(keys === undefined ? {} : { keys }),
+    };
+  };
+  const pluginCommands = commands.filter((command) => command.plugin !== undefined);
+  const menus: readonly Menu[] = [...coreMenus, { name: "plugins" as const, entries: [] }].flatMap(
+    ({ name, entries }) => {
+      const own = shownEntries(entries, (id) => registry.get(id) !== undefined).flatMap(
+        (id): MenuEntry[] => {
+          if (id === "separator") return [id];
+          const command = registry.get(id);
+          return command === undefined ? [] : [menuItem(command)];
         },
-        disabled: command === undefined,
-        danger: id === "trashNote",
-        icon: commandIcons[id],
-        ...(keys === undefined ? {} : { keys }),
-      };
-    }),
-  });
-  const menus: readonly Menu[] = [
-    menuOf(t("menuFile"), menuIcons.file, [
-      "newNote",
-      "newFolder",
-      "newDatabase",
-      "newCanvas",
-      "dayNote",
-      "weekNote",
-      "monthNote",
-      "separator",
-      "import",
-      "export",
-      "separator",
-      "closeVault",
-    ]),
-    menuOf(t("menuNote"), menuIcons.note, [
-      "rename",
-      "bookmark",
-      "toggleSource",
-      "history",
-      "comment",
-      "splitRight",
-      "separator",
-      "trashNote",
-    ]),
-    menuOf(t("menuView"), menuIcons.view, [
-      "palette",
-      "switcher",
-      "search",
-      "openGraph",
-      "separator",
-      "showNotes",
-      "showTags",
-      "showTrash",
-      "showAssigned",
-      "separator",
-      "nextTab",
-      "previousTab",
-      "closeTab",
-    ]),
-    ...(syncShown
-      ? [
-          menuOf(t("menuSync"), menuIcons.sync, [
-            "servers",
-            "sync",
-            "members",
-            "spaces",
-            "share",
-            "notifications",
-          ]),
-        ]
-      : []),
-    menuOf(t("menuSettings"), menuIcons.settings, [
-      "templateSettings",
-      "myName",
-      "appearance",
-      "shortcuts",
-      "separator",
-      "checkUpdates",
-      "updateChecks",
-    ]),
-  ];
+      );
+      const added = pluginCommands.filter((command) => command.menu === name).map(menuItem);
+      const items = [
+        ...own,
+        ...(own.length > 0 && added.length > 0 ? ["separator" as const] : []),
+        ...added,
+      ];
+      return items.length === 0
+        ? []
+        : [{ label: t(menuLabels[name]), icon: menuIcons[name], entries: items }];
+    },
+  );
 
   return (
     <div
@@ -2023,19 +2055,15 @@ export function VaultView(props: {
         : null}
       {dialog === "palette" ? (
         <CommandPalette
-          commands={commandIds.flatMap((id) =>
-            run[id] === undefined
-              ? []
-              : [
-                  {
-                    id,
-                    name: commandName(id),
-                    keys: hotkeys[id] ?? [],
-                  },
-                ],
-          )}
+          commands={commands
+            .filter((command) => command.enabled())
+            .map((command) => ({
+              id: command.id,
+              name: (command.nameNow ?? command.name)(),
+              keys: hotkeys[command.id] ?? [],
+            }))}
           onRun={(id) => {
-            run[id as CommandId]?.();
+            registry.get(id)?.run();
           }}
           onClose={() => {
             setDialog(undefined);
@@ -2044,8 +2072,8 @@ export function VaultView(props: {
       ) : null}
       {dialog === "shortcuts" ? (
         <ShortcutsDialog
-          commands={commandIds.filter(commandShown).map((id) => ({ id, name: t(`command_${id}`) }))}
-          defaults={defaultHotkeys}
+          commands={commands.map((command) => ({ id: command.id, name: command.name() }))}
+          defaults={registry.defaults()}
           chosen={chosenHotkeys}
           onListening={setListening}
           onSave={saveHotkeys}

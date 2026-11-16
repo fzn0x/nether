@@ -40,6 +40,7 @@ export default defineConfig({
           ],
         },
         { label: "Servers", items: ["servers", "self-hosting"] },
+        { label: "Plugins", items: ["plugins"] },
       ],
     }),
   ],
