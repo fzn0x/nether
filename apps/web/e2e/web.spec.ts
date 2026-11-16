@@ -383,5 +383,17 @@ test("a PDF pasted into a note opens, and is highlighted, under the server's pol
     .poll(() => fileText(page, "attachments/Reading highlights.md"))
     .toContain("[[Reading.pdf#page=1&selection=2,18,2,33|Reading, page 1]]\n> linkable blocks\n");
   expect(await violations(page)).toEqual([]);
+
+  // Offline, pdf.js, its worker and what it fetches come from the service worker.
+  await page.evaluate(async () => navigator.serviceWorker.ready);
+  await page.context().setOffline(true);
+  await page.reload();
+  await page.getByRole("button", { name: /^Team/ }).click();
+  // The PDF's tab is open again, as the vault was left.
+  await expect(page.getByRole("tab", { name: "Reading" })).toHaveAttribute("aria-selected", "true");
+  await expect(
+    page.getByRole("group", { name: "Page 1 of 2" }).locator(".pdf-mark-highlight").first(),
+  ).toBeVisible();
+  await page.context().setOffline(false);
   expect(problems).toEqual([]);
 });
