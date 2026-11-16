@@ -31,6 +31,8 @@ export interface Workspace {
   readonly role: string;
   /** Whether its members' apps encrypt it, so the server cannot read it (ADR 0038). */
   readonly encrypted: boolean;
+  /** Whether its members' apps offer AI in it, as its owners and admins choose (ADR 0068). */
+  readonly ai: boolean;
 }
 
 /** Where the browser comes back to after a provider, and the wait for it. */
@@ -341,9 +343,26 @@ export async function account(
         name: text(workspace.name, base),
         role: text(workspace.role, base),
         encrypted: workspace.encryption === "end-to-end",
+        // A server from before the switch offers it always.
+        ai: workspace.ai !== false,
       };
     }),
   };
+}
+
+/** Turns AI on or off for a workspace's members, as its owners and admins may. */
+export async function setWorkspaceAi(
+  fetcher: Fetch,
+  base: string,
+  token: string,
+  workspaceId: string,
+  on: boolean,
+): Promise<void> {
+  await request(fetcher, base, `/api/workspaces/${workspaceId}`, {
+    method: "PATCH",
+    token,
+    body: { ai: on },
+  });
 }
 
 /** Signs a session out on the server; the app forgets its token either way. */
@@ -401,6 +420,7 @@ export async function makeWorkspace(
     name: text(answer.name, base),
     role: text(answer.role, base),
     encrypted: answer.encryption === "end-to-end",
+    ai: answer.ai !== false,
   };
 }
 
