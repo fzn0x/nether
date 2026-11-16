@@ -211,8 +211,10 @@ other files, so PDFs open offline too.
   Obsidian, not in other PDF readers.
 - An open PDF costs its bytes, a worker, and the pages near the screen.
   Nothing is loaded before a PDF opens. The app's files grow by pdf.js and
-  its worker, about 1.8 MB, and what pdf.js fetches when a PDF needs it,
-  about 1.9 MB.
+  the view, 0.46 MB, its worker, 1.2 MB, and what pdf.js fetches when a
+  PDF needs it, 1.9 MB.
+- A page's canvas holds at most 16 million pixels, 64 MB: zoomed past
+  that, a page is drawn no finer.
 - PDF annotation comes in parts, one pull request each:
   1. The view of PDFs, highlighting by selection and by Find, the list
      with comments, and links to pages, passages and highlights that open
@@ -222,9 +224,9 @@ other files, so PDFs open offline too.
      colors; and the PDF's own outline and links.
   3. PDFs embedded in a note drawn by pdf.js too, on Linux as well, and a
      highlight's embed showing its passage as the PDF draws it; and
-     highlights of an area, for figures and scanned pages. Embeds load
-     from the same origin as plugin frames, so this part waits for the
-     sandbox's `frame-src`.
+     highlights of an area, for figures and scanned pages. Embeds are
+     frames now, and the sandbox's next part decides the page's
+     `frame-src`, so this part follows it.
 - Selections counted by a later pdf.js may differ from Obsidian's for the
   same PDF. The words keep each highlight in its place, and the link
   keeps the page.
