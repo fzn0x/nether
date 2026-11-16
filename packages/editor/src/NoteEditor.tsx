@@ -13,7 +13,7 @@ import { EditorContent, useEditor } from "@tiptap/react";
 import { useEffect, useMemo, useRef } from "react";
 import { BlockKeys } from "./actions.ts";
 import { BlockHandle } from "./BlockHandle.tsx";
-import { blockCommands } from "./commands.ts";
+import { type BlockEntry, blockCommands, entryCommand } from "./commands.ts";
 import {
   CommentHighlights,
   blockAnchor,
@@ -97,6 +97,8 @@ export interface NoteEditorProps {
   readonly collaboration?: NoteCollaboration;
   /** The note's comment threads, with `document`. */
   readonly comments?: NoteCommentsView;
+  /** What plugins add to the slash menu, after the built-in blocks; it may change while the note is open. */
+  readonly slashEntries?: readonly BlockEntry[];
 }
 
 export function NoteEditor(props: NoteEditorProps) {
@@ -115,6 +117,7 @@ export function NoteEditor(props: NoteEditorProps) {
     previews,
     collaboration,
     comments,
+    slashEntries,
   } = props;
   // The latest callbacks, so the editor need not be made again when they change.
   const changed = useRef(onChange);
@@ -131,7 +134,12 @@ export function NoteEditor(props: NoteEditorProps) {
     return true;
   };
 
-  const commands = useMemo(() => blockCommands(words), [words]);
+  const builtIn = useMemo(() => blockCommands(words), [words]);
+  // What the slash menu offers when it opens, so plugins' entries need not make the editor again.
+  const commands = useRef(builtIn);
+  useEffect(() => {
+    commands.current = [...builtIn, ...(slashEntries ?? []).map(entryCommand)];
+  }, [builtIn, slashEntries]);
 
   const editor = useEditor(
     {
@@ -163,7 +171,7 @@ export function NoteEditor(props: NoteEditorProps) {
             ]),
         FileDrop.configure({ files }),
         Placeholder.configure({ placeholder }),
-        SlashMenu.configure({ commands, words }),
+        SlashMenu.configure({ commands: () => commands.current, words }),
         LinkMenu.configure({ links, words }),
         BlockKeys,
       ],
@@ -238,7 +246,7 @@ export function NoteEditor(props: NoteEditorProps) {
       {editable ? (
         <BlockHandle
           editor={editor}
-          commands={commands}
+          commands={builtIn}
           words={words}
           onComment={
             comments?.onComment === undefined

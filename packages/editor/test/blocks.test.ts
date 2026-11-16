@@ -90,7 +90,6 @@ describe("finding commands", () => {
     expect(findCommands("h2", commands).map((item) => item.id)).toEqual(["heading2"]);
     expect(findCommands("LIST num", commands).map((item) => item.id)).toEqual(["numberedList"]);
     expect(findCommands("latex", commands).map((item) => item.id)).toEqual(["math"]);
-    expect(findCommands("mermaid", commands).map((item) => item.id)).toEqual(["diagram"]);
     expect(findCommands("ading", commands)).toEqual([]);
   });
 
@@ -116,8 +115,6 @@ describe("inserting blocks", () => {
     ["toggle", "details"],
     ["code", "codeBlock"],
     ["math", "mathBlock"],
-    ["diagram", "codeBlock"],
-    ["query", "codeBlock"],
     ["divider", "horizontalRule"],
     ["table", "table"],
     ["columns", "columns"],
@@ -137,23 +134,6 @@ describe("inserting blocks", () => {
       if (typeof node.attrs.id === "string") ids.push(node.attrs.id);
     });
     expect(new Set(ids).size).toBe(ids.length);
-  });
-
-  it("makes a diagram a Mermaid code block", () => {
-    const editor = editorWith({ type: "doc", content: [{ type: "paragraph" }] });
-    editor.commands.setTextSelection(1);
-    command("diagram").run(editor);
-    const code = editor.getJSON().content.find((node) => node.type === "codeBlock");
-    expect(code?.attrs?.language).toBe("mermaid");
-  });
-
-  it("makes a query a base code block", () => {
-    const editor = editorWith({ type: "doc", content: [{ type: "paragraph" }] });
-    editor.commands.setTextSelection(1);
-    command("query").run(editor);
-    const code = editor.getJSON().content.find((node) => node.type === "codeBlock");
-    expect(code?.attrs?.language).toBe("base");
-    expect(findCommands("dataview", commands).map((item) => item.id)).toEqual(["query"]);
   });
 });
 

@@ -15,8 +15,6 @@ export const builtInBlocks = [
   "toggle",
   "code",
   "math",
-  "diagram",
-  "query",
   "divider",
   "table",
   "columns",
@@ -53,6 +51,8 @@ export interface EditorWords {
   /** Rendered math, which opens its LaTeX. */
   readonly showMath: string;
   readonly codeLanguage: string;
+  /** What a plugin's block says when nothing here shows it, before its type. */
+  readonly missingPlugin: string;
   /** A field for the path or URL of an image or file block that has none. */
   readonly fileLink: string;
   readonly chooseFile: string;
@@ -100,8 +100,6 @@ export const englishWords: EditorWords = {
     toggle: { title: "Toggle", keywords: "details collapse fold" },
     code: { title: "Code", keywords: "snippet program pre" },
     math: { title: "Math", keywords: "equation latex formula tex katex" },
-    diagram: { title: "Diagram", keywords: "mermaid chart flowchart graph" },
-    query: { title: "Query", keywords: "base dataview filter search find" },
     divider: { title: "Divider", keywords: "rule separator hr line" },
     table: { title: "Table", keywords: "grid rows" },
     columns: { title: "Columns", keywords: "side layout split" },
@@ -121,6 +119,7 @@ export const englishWords: EditorWords = {
   editMath: "LaTeX",
   showMath: "Math, press Enter to edit",
   codeLanguage: "Language",
+  missingPlugin: "No plugin here shows this block:",
   fileLink: "Path or URL of the file",
   chooseFile: "Choose a file",
   missingFile: "Not in the vault",

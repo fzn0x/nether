@@ -9,8 +9,8 @@ import { popupMenu } from "./PopupMenu.tsx";
 import { type EditorWords, englishWords } from "./words.ts";
 
 export interface SlashMenuOptions {
-  /** The commands the menu offers: the built-in blocks, and any a plugin adds. */
-  readonly commands: readonly BlockCommand[];
+  /** The commands the menu offers, as they are when it opens: the built-in blocks, and any a plugin adds. */
+  readonly commands: () => readonly BlockCommand[];
   readonly words: EditorWords;
 }
 
@@ -20,7 +20,8 @@ export const SlashMenu = Extension.create<SlashMenuOptions>({
   name: "slashMenu",
 
   addOptions() {
-    return { commands: blockCommands(englishWords), words: englishWords };
+    const commands = blockCommands(englishWords);
+    return { commands: () => commands, words: englishWords };
   },
 
   addProseMirrorPlugins() {
@@ -31,7 +32,7 @@ export const SlashMenu = Extension.create<SlashMenuOptions>({
         pluginKey: slashMenuKey,
         char: "/",
         allow: ({ state, range }) => state.doc.resolve(range.from).parent.type.spec.code !== true,
-        items: ({ query }) => findCommands(query, commands),
+        items: ({ query }) => findCommands(query, commands()),
         command: ({
           editor,
           range,
