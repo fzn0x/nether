@@ -1,8 +1,9 @@
-// Runs plugins and answers their calls (ADR 0055). Until the sandbox, only
-// built-in plugins run: each is a manifest and a module, the module loaded
-// when what its manifest declares is first used, a command chosen, a code
-// block drawn, a block or a panel shown, and connected through the page by
-// the same messages a sandboxed plugin will send through a port.
+// Runs plugins and answers their calls (ADR 0055). A plugin is a manifest
+// and its code, which starts when what the manifest declares is first used:
+// a command chosen, a code block drawn, a block or a panel shown. A
+// built-in plugin's module runs in the page; a plugin from a folder of the
+// vault runs in a sandboxed frame (ADR 0058), and sends the same messages
+// through a port.
 import {
   type BlockViewProps,
   type CodeBlockOutput,
@@ -22,12 +23,14 @@ import {
   isJsonObject,
   localize,
   pagePair,
+  portTransport,
   readManifest,
   satisfies,
   settingValues,
   startPlugin,
 } from "@nether/plugin-api";
 import { canBeShortcut } from "../shortcuts.ts";
+import { type FrameOpener, openFrame } from "./frame.ts";
 import type { BlockDrawing, BlockRegistry } from "./blocks.ts";
 import type {
   CodeBlockDrawing,
@@ -87,6 +90,35 @@ export interface BuiltinPlugin {
   readonly appLayouts?: boolean;
 }
 
+/**
+ * A plugin from the vault's `.nether/plugins/<id>/`, which this device
+ * approved; it runs in a sandboxed frame, with no host (ADR 0058).
+ */
+export interface FolderPlugin {
+  /** As its manifest.json holds it. */
+  readonly manifest: unknown;
+  /** Its main.js, as approved. */
+  readonly code: string;
+}
+
+/**
+ * What a plugin from a folder adds that it cannot yet: what shows in the
+ * page, until its views run in frames of their own (ADR 0058).
+ */
+export function folderProblems(manifest: Manifest): readonly string[] {
+  const { blocks, panels, views, layouts, propertyTypes } = manifest.contributes;
+  const added = [
+    ...(blocks.length > 0 ? ["blocks"] : []),
+    ...(panels.length > 0 ? ["panels"] : []),
+    ...(views.length > 0 ? ["views"] : []),
+    ...(layouts.length > 0 ? ["layouts"] : []),
+    ...(propertyTypes.length > 0 ? ["property types"] : []),
+  ];
+  return added.length === 0
+    ? []
+    : [`It adds ${added.join(", ")}, which a plugin from a vault cannot add yet.`];
+}
+
 /** The registries plugins add to. */
 export interface Registries {
   readonly commands: CommandRegistry;
@@ -108,11 +140,26 @@ export interface HostOptions {
   readonly onError?: (plugin: string, message: string) => void;
   /** Asked to open a plugin's view of its own, `plugin-id:view`, in the pane. */
   readonly onOpenView?: (id: string) => void;
+  /** Opens a plugin from a folder's frame: a sandboxed frame, unless a test says otherwise. */
+  readonly openFrame?: FrameOpener;
+  /** How long a plugin from a folder may take to start, in milliseconds. */
+  readonly startTime?: number;
+}
+
+/** Where a plugin's code comes from: the app, or a folder of the vault, run in a frame. */
+type Source =
+  | { readonly kind: "builtin"; readonly load: BuiltinPlugin["load"] }
+  | { readonly kind: "frame"; readonly code: string; readonly network: boolean };
+
+/** A plugin running: the app's end of its connection, and what stops it. */
+interface Running {
+  readonly app: Endpoint;
+  stop(): void;
 }
 
 interface Added {
   readonly manifest: Manifest;
-  readonly load: BuiltinPlugin["load"];
+  readonly source: Source;
   /** What takes away what its manifest declares. */
   readonly removers: (() => void)[];
   /** The commands its code attached, each to the callback that runs it. */
@@ -132,7 +179,7 @@ interface Added {
   /** The property types its code attached views to, each to the callback that runs the view. */
   readonly propertyViews: Map<string, number>;
   /** Its connection, once its code has been asked for. */
-  running?: Promise<readonly [Endpoint, Endpoint]> | undefined;
+  running?: Promise<Running> | undefined;
 }
 
 function errorText(error: unknown): string {
@@ -194,6 +241,13 @@ function paneProps(props: PaneViewProps): Json {
   return { theme: props.theme, ...(file === undefined ? {} : { file: { path: file.path } }) };
 }
 
+/** What a plugin from a folder drew, cleaned for the page (ADR 0058). */
+async function cleaned(output: CodeBlockOutput, network: boolean): Promise<CodeBlockOutput> {
+  if (output === null || !("html" in output)) return output;
+  const { cleanHtml } = await import("./clean.ts");
+  return { html: cleanHtml(output.html, network) };
+}
+
 /** What a plugin drew, as the SDK says it may be. */
 function readOutput(value: Json): CodeBlockOutput {
   if (value === null) return null;
@@ -227,6 +281,28 @@ export class PluginHost {
   add(builtin: BuiltinPlugin): readonly string[] {
     const { manifest, problems } = readManifest(builtin.manifest);
     if (manifest === undefined) return problems;
+    return this.#add(
+      manifest,
+      { kind: "builtin", load: builtin.load },
+      builtin.appLayouts === true,
+    );
+  }
+
+  /**
+   * Adds a plugin from a folder of the vault, which this device approved:
+   * as a built-in one, but its code runs in a sandboxed frame, with the
+   * network only if it asks for it, and what it draws is cleaned.
+   */
+  addFolder(folder: FolderPlugin): readonly string[] {
+    const { manifest, problems } = readManifest(folder.manifest);
+    if (manifest === undefined) return problems;
+    const notYet = folderProblems(manifest);
+    if (notYet.length > 0) return notYet;
+    const network = manifest.permissions.includes("network");
+    return this.#add(manifest, { kind: "frame", code: folder.code, network }, false);
+  }
+
+  #add(manifest: Manifest, source: Source, appLayouts: boolean): readonly string[] {
     if (this.#plugins.has(manifest.id)) return [`A plugin ${manifest.id} is there already.`];
     if (!satisfies(apiVersion, manifest.api)) {
       return [`It works with API ${manifest.api}, and the app speaks ${apiVersion}.`];
@@ -255,7 +331,7 @@ export class PluginHost {
     if (taken.length > 0) return taken;
     const plugin: Added = {
       manifest,
-      load: builtin.load,
+      source,
       removers: [],
       attached: new Map(),
       drawers: new Map(),
@@ -317,7 +393,7 @@ export class PluginHost {
     for (const layout of manifest.contributes.layouts) {
       plugin.removers.push(
         this.#registries.layouts.add({
-          layout: builtin.appLayouts === true ? layout.id : `${manifest.id}/${layout.id}`,
+          layout: appLayouts ? layout.id : `${manifest.id}/${layout.id}`,
           plugin: manifest.id,
           name: () => localize(layout.name, language),
           load: () => this.#layoutDrawing(plugin, layout.id),
@@ -363,7 +439,7 @@ export class PluginHost {
     if (plugin?.running === undefined) return;
     const values = settingValues(plugin.manifest.contributes.settings, stored);
     plugin.running
-      .then(([app]) => app.call("settings.changed", values))
+      .then(({ app }) => app.call("settings.changed", values))
       .catch((error: unknown) => {
         this.#options.onError?.(id, errorText(error));
       });
@@ -381,8 +457,8 @@ export class PluginHost {
     this.#plugins.delete(id);
     for (const remove of plugin.removers) remove();
     void plugin.running?.then(
-      (ends) => {
-        for (const end of ends) end.close();
+      (running) => {
+        running.stop();
       },
       () => undefined,
     );
@@ -395,7 +471,7 @@ export class PluginHost {
 
   async #run(plugin: Added, command: string): Promise<void> {
     try {
-      const [app] = await this.#start(plugin);
+      const { app } = await this.#start(plugin);
       const callback = plugin.attached.get(command);
       if (callback === undefined) throw new Error(`Its code did not attach ${command}.`);
       await app.call("callback", callback);
@@ -406,7 +482,7 @@ export class PluginHost {
 
   /** Starts a plugin for a code block, and gives what its code attached to draw the block's language. */
   async #drawing(plugin: Added, language: string): Promise<CodeBlockDrawing> {
-    const [app] = await this.#start(plugin);
+    const { app } = await this.#start(plugin);
     const view = plugin.views.get(language);
     const missing = () => new Error(`Its code did not attach ${language} code blocks.`);
     if (view === undefined && !plugin.drawers.has(language)) throw missing();
@@ -419,7 +495,9 @@ export class PluginHost {
               const callback = plugin.drawers.get(language);
               if (callback === undefined) throw missing();
               const context = { language, info, theme, target };
-              return readOutput(await app.call("callback", callback, source, context));
+              const output = readOutput(await app.call("callback", callback, source, context));
+              const from = plugin.source;
+              return from.kind === "frame" ? cleaned(output, from.network) : output;
             },
           }
         : {}),
@@ -428,7 +506,7 @@ export class PluginHost {
 
   /** Starts a plugin for a block, and gives what mounts its view of the block's type. */
   async #blockDrawing(plugin: Added, type: string): Promise<BlockDrawing> {
-    const [app] = await this.#start(plugin);
+    const { app } = await this.#start(plugin);
     const missing = () => new Error(`Its code did not attach a view of ${type} blocks.`);
     if (!plugin.blockViews.has(type)) throw missing();
     return {
@@ -443,7 +521,7 @@ export class PluginHost {
 
   /** Starts a plugin for a panel, and gives what fills it. */
   async #panelDrawing(plugin: Added, panel: string): Promise<PanelDrawing> {
-    const [app] = await this.#start(plugin);
+    const { app } = await this.#start(plugin);
     const missing = () => new Error(`Its code did not attach a view of the ${panel} panel.`);
     const view = plugin.panelViews.get(panel);
     if (view === undefined) throw missing();
@@ -459,7 +537,7 @@ export class PluginHost {
 
   /** Starts a plugin for a view of a pane, and gives what fills it. */
   async #paneDrawing(plugin: Added, id: string): Promise<PaneViewDrawing> {
-    const [app] = await this.#start(plugin);
+    const { app } = await this.#start(plugin);
     const missing = () => new Error(`Its code did not attach the ${id} view.`);
     const view = plugin.paneViews.get(id);
     if (view === undefined) throw missing();
@@ -475,7 +553,7 @@ export class PluginHost {
 
   /** Starts a plugin for a database's view of its layout, and gives what shows it. */
   async #layoutDrawing(plugin: Added, id: string): Promise<LayoutDrawing> {
-    const [app] = await this.#start(plugin);
+    const { app } = await this.#start(plugin);
     const missing = () => new Error(`Its code did not attach the ${id} layout.`);
     const view = plugin.layoutViews.get(id);
     if (view === undefined) throw missing();
@@ -493,7 +571,7 @@ export class PluginHost {
 
   /** Starts a plugin for a value of a property type of its own, and gives what shows it. */
   async #propertyDrawing(plugin: Added, id: string): Promise<PropertyTypeDrawing> {
-    const [app] = await this.#start(plugin);
+    const { app } = await this.#start(plugin);
     const missing = () => new Error(`Its code did not attach a view of the ${id} type.`);
     if (!plugin.propertyViews.has(id)) throw missing();
     return {
@@ -542,7 +620,7 @@ export class PluginHost {
     };
   }
 
-  #start(plugin: Added): Promise<readonly [Endpoint, Endpoint]> {
+  #start(plugin: Added): Promise<Running> {
     plugin.running ??= this.#connect(plugin).catch((error: unknown) => {
       // The next time it is needed, it is tried again.
       plugin.running = undefined;
@@ -551,9 +629,102 @@ export class PluginHost {
     return plugin.running;
   }
 
-  async #connect(plugin: Added): Promise<readonly [Endpoint, Endpoint]> {
+  #connect(plugin: Added): Promise<Running> {
+    const { source } = plugin;
+    return source.kind === "frame"
+      ? this.#connectFrame(plugin, source)
+      : this.#connectBuiltin(plugin, source);
+  }
+
+  /** Runs a built-in plugin's module in the page, with the host. */
+  async #connectBuiltin(
+    plugin: Added,
+    source: Extract<Source, { kind: "builtin" }>,
+  ): Promise<Running> {
     const [appSide, pluginSide] = (this.#options.connect ?? pagePair)();
-    const app = new Endpoint(appSide);
+    const { app, isReady, host } = this.#answer(plugin, appSide);
+    const { id } = plugin.manifest;
+    try {
+      const { default: builtin } = await source.load();
+      // Besides what crosses as messages, a built-in plugin gets the host.
+      const withHost: Plugin = { activate: (context) => builtin.activate({ ...context, host }) };
+      // A built-in plugin's end runs here, in the page, and its views mount
+      // in the elements the app makes for them.
+      const surface = {
+        element: (slot: string) => {
+          const at = this.#slots.get(slot);
+          return at?.plugin === id ? at.element : undefined;
+        },
+      };
+      const [end] = await Promise.all([startPlugin(withHost, pluginSide, surface), isReady]);
+      return {
+        app,
+        stop() {
+          app.close();
+          end.close();
+        },
+      };
+    } catch (error) {
+      app.close();
+      throw error;
+    }
+  }
+
+  /**
+   * Runs a plugin from a folder in a sandboxed frame of its own: it is
+   * running once it says it is ready; what goes wrong in the frame before
+   * then, or its taking too long, stops it.
+   */
+  async #connectFrame(plugin: Added, source: Extract<Source, { kind: "frame" }>): Promise<Running> {
+    const { id } = plugin.manifest;
+    let started = false;
+    let fail: (error: Error) => void = () => undefined;
+    const failed = new Promise<never>((_resolve, reject) => {
+      fail = reject;
+    });
+    // Only what goes wrong before it starts stops it.
+    failed.catch(() => undefined);
+    const frame = (this.#options.openFrame ?? openFrame)({
+      code: source.code,
+      network: source.network,
+      onFailure: (message) => {
+        if (started) this.#options.onError?.(id, message);
+        else fail(new Error(message));
+      },
+    });
+    const { app, isReady } = this.#answer(plugin, portTransport(frame.port));
+    const timer = setTimeout(() => {
+      fail(new Error("It did not start in time."));
+    }, this.#options.startTime ?? 10_000);
+    try {
+      await Promise.race([isReady, failed]);
+    } catch (error) {
+      app.close();
+      frame.close();
+      throw error;
+    } finally {
+      clearTimeout(timer);
+    }
+    started = true;
+    return {
+      app,
+      stop() {
+        app.close();
+        frame.close();
+      },
+    };
+  }
+
+  /**
+   * Answers a plugin's calls at the app's end of its connection: what it
+   * attaches, and what its views change. Gives that end, what settles once
+   * the plugin says it is ready, and the host a built-in plugin gets.
+   */
+  #answer(
+    plugin: Added,
+    transport: Transport,
+  ): { readonly app: Endpoint; readonly isReady: Promise<void>; readonly host: AppHost } {
+    const app = new Endpoint(transport);
     const { id, contributes } = plugin.manifest;
     /** Checks that the manifest declares `value` among `ids`, to attach to it. */
     const declared = (ids: ReadonlySet<string>, what: string, value: unknown): string => {
@@ -684,23 +855,6 @@ export class PluginHost {
         },
       },
     };
-    try {
-      const { default: builtin } = await plugin.load();
-      // Besides what crosses as messages, a built-in plugin gets the host.
-      const withHost: Plugin = { activate: (context) => builtin.activate({ ...context, host }) };
-      // A built-in plugin's end runs here, in the page, and its views mount
-      // in the elements the app makes for them.
-      const surface = {
-        element: (slot: string) => {
-          const at = this.#slots.get(slot);
-          return at?.plugin === id ? at.element : undefined;
-        },
-      };
-      const [end] = await Promise.all([startPlugin(withHost, pluginSide, surface), isReady]);
-      return [app, end];
-    } catch (error) {
-      app.close();
-      throw error;
-    }
+    return { app, isReady, host };
   }
 }
