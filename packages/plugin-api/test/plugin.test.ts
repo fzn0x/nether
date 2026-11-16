@@ -27,6 +27,16 @@ function fakeApp(
     told.push(`unregister ${id as string}`);
     return null;
   });
+  app.handle("codeBlocks.register", (language, callback) => {
+    registered.set(`block ${language as string}`, callback as number);
+    told.push(`register block ${language as string}`);
+    return null;
+  });
+  app.handle("codeBlocks.unregister", (language) => {
+    registered.delete(`block ${language as string}`);
+    told.push(`unregister block ${language as string}`);
+    return null;
+  });
   app.handle("ready", () => {
     told.push("ready");
     return null;
@@ -80,6 +90,38 @@ describe("startPlugin", () => {
     await expect(app.call("callback", "not a number")).rejects.toThrow(
       "The plugin has no such callback.",
     );
+    endpoint.close();
+    app.close();
+  });
+
+  it("draws code blocks the app asks for, with what the app says about each", async () => {
+    const { app, pluginSide, registered, told } = fakeApp();
+    let disposable: { dispose(): Promise<void> } | undefined;
+    const endpoint = await startPlugin(
+      definePlugin({
+        async activate(context) {
+          disposable = await context.codeBlocks.register("abc", (source, block) =>
+            source === ""
+              ? null
+              : source === "bad"
+                ? { error: "Not ABC." }
+                : { html: `<b>${source}</b> ${block.language} ${block.theme} ${block.target}` },
+          );
+        },
+      }),
+      pluginSide,
+    );
+    const callback = registered.get("block abc") ?? 0;
+    const block = { language: "abc", info: "abc x=1", theme: "dark", target: "editor" };
+    expect(await app.call("callback", callback, "X:1", block)).toEqual({
+      html: "<b>X:1</b> abc dark editor",
+    });
+    expect(await app.call("callback", callback, "bad", block)).toEqual({ error: "Not ABC." });
+    expect(await app.call("callback", callback, "", block)).toBeNull();
+    // Whatever else the app passes as the code is no code.
+    expect(await app.call("callback", callback, 3, block)).toBeNull();
+    await disposable?.dispose();
+    expect(told).toContain("unregister block abc");
     endpoint.close();
     app.close();
   });

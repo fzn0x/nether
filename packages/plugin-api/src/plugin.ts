@@ -17,6 +17,39 @@ export interface Commands {
   register(id: string, run: () => void | Promise<void>): Promise<Disposable>;
 }
 
+/** Where a code block is drawn: below its code in a note open in the app, or in its place in an HTML page, as an export. */
+export type CodeBlockTarget = "editor" | "html";
+
+/** What the app says about a code block it asks a plugin to draw. */
+export interface CodeBlockContext {
+  /** The fence's language, lowercase, as the manifest declares it. */
+  readonly language: string;
+  /** The fence's whole info string, as `mermaid title="Flow"`. */
+  readonly info: string;
+  /** Whether the page it shows on is light or dark. */
+  readonly theme: "light" | "dark";
+  readonly target: CodeBlockTarget;
+}
+
+/**
+ * What a code block shows: HTML, an error the app shows in its place, or
+ * nothing, which leaves the code alone. Draw with plain HTML and SVG: the
+ * app may take scripts and event handlers out.
+ */
+export type CodeBlockOutput = { readonly html: string } | { readonly error: string } | null;
+
+/** Draws a code block's text, which the app passes as written. */
+export type CodeBlockRenderer = (
+  source: string,
+  context: CodeBlockContext,
+) => CodeBlockOutput | Promise<CodeBlockOutput>;
+
+/** The code block languages a plugin's manifest declares, attached to what draws them. */
+export interface CodeBlocks {
+  /** Draws code blocks in the language the manifest declares as `language` with `render`. */
+  register(language: string, render: CodeBlockRenderer): Promise<Disposable>;
+}
+
 /** What a plugin is given when it starts. */
 export interface PluginContext {
   /** The plugin's ID, from its manifest. */
@@ -28,6 +61,7 @@ export interface PluginContext {
   /** Which way the app's text runs. */
   readonly direction: "ltr" | "rtl";
   readonly commands: Commands;
+  readonly codeBlocks: CodeBlocks;
 }
 
 /** A plugin, as its module's default export is. */
@@ -40,6 +74,9 @@ export interface Plugin {
 export function definePlugin(plugin: Plugin): Plugin {
   return plugin;
 }
+
+/** What the app calls back: a command to run, a block to draw. */
+type Callback = (...args: Json[]) => Promise<Json>;
 
 /** What the app answers a plugin's `hello` with. */
 export interface Hello {
@@ -69,38 +106,53 @@ function readHello(value: Json): Hello {
  */
 export async function startPlugin(plugin: Plugin, transport: Transport): Promise<Endpoint> {
   const endpoint = new Endpoint(transport);
-  const callbacks = new Map<number, () => void | Promise<void>>();
+  const callbacks = new Map<number, Callback>();
   let next = 0;
-  endpoint.handle("callback", async (id) => {
+  endpoint.handle("callback", async (id, ...args) => {
     const run = typeof id === "number" ? callbacks.get(id) : undefined;
     if (run === undefined) throw new Error("The plugin has no such callback.");
-    await run();
-    return null;
+    return (await run(...args)) ?? null;
   });
   const hello = readHello(await endpoint.call("hello", apiVersion));
   if (!satisfies(hello.api, `^${apiVersion}`)) {
     endpoint.close();
     throw new Error(`The plugin was built for API ${apiVersion}, and the app speaks ${hello.api}.`);
   }
+  /** Tells the app that `run` answers for what the manifest declares as `id` among `kind`. */
+  async function attach(kind: string, id: string, run: Callback): Promise<Disposable> {
+    const callback = ++next;
+    callbacks.set(callback, run);
+    try {
+      await endpoint.call(`${kind}.register`, id, callback);
+    } catch (error) {
+      callbacks.delete(callback);
+      throw error;
+    }
+    return {
+      async dispose() {
+        if (!callbacks.delete(callback)) return;
+        await endpoint.call(`${kind}.unregister`, id);
+      },
+    };
+  }
   const context: PluginContext = {
     ...hello,
     commands: {
-      async register(id, run) {
-        const callback = ++next;
-        callbacks.set(callback, run);
-        try {
-          await endpoint.call("commands.register", id, callback);
-        } catch (error) {
-          callbacks.delete(callback);
-          throw error;
-        }
-        return {
-          async dispose() {
-            if (!callbacks.delete(callback)) return;
-            await endpoint.call("commands.unregister", id);
-          },
-        };
-      },
+      register: (id, run) =>
+        attach("commands", id, async () => {
+          await run();
+          return null;
+        }),
+    },
+    codeBlocks: {
+      register: (language, render) =>
+        attach("codeBlocks", language, async (source, context) => {
+          const output = await render(
+            typeof source === "string" ? source : "",
+            context as unknown as CodeBlockContext,
+          );
+          return output ?? null;
+        }),
     },
   };
   await plugin.activate(context);

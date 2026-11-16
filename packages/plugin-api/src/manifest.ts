@@ -21,9 +21,20 @@ export interface CommandContribution {
   readonly keys: readonly string[];
 }
 
+/**
+ * A code block's language a plugin draws, as `mermaid` for a block fenced
+ * with ` ```mermaid `. The code stays as it is written; what the plugin
+ * draws shows below it in the editor, and takes its place in HTML.
+ */
+export interface CodeBlockContribution {
+  /** Lowercase here; the app matches a fence's language whatever its case. */
+  readonly language: string;
+}
+
 /** What a plugin adds. */
 export interface Contributions {
   readonly commands: readonly CommandContribution[];
+  readonly codeBlocks: readonly CodeBlockContribution[];
 }
 
 export interface Manifest {
@@ -48,6 +59,8 @@ export type ManifestResult =
 const pluginIdPattern = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const commandIdPattern = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;
 const languagePattern = /^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$/;
+/** A fence's language, as `mermaid`, `c++` or `objective-c`. */
+const codeLanguagePattern = /^[a-z0-9][a-z0-9_+#.-]*$/;
 
 function isObject(value: unknown): value is Readonly<Record<string, unknown>> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -66,24 +79,38 @@ function isLocalized(value: unknown): value is Localized {
   );
 }
 
-function readCommands(value: unknown, problems: string[]): CommandContribution[] {
+/** Reads `contributes.<field>`, a list of objects, with `read` for each; nothing is an empty list. */
+function readList<T>(
+  value: unknown,
+  field: string,
+  problems: string[],
+  read: (item: Readonly<Record<string, unknown>>, where: string) => T | undefined,
+): T[] {
   if (value === undefined) return [];
   if (!Array.isArray(value)) {
-    problems.push("contributes.commands is not a list.");
+    problems.push(`contributes.${field} is not a list.`);
     return [];
   }
-  const commands: CommandContribution[] = [];
-  const seen = new Set<string>();
+  const contributions: T[] = [];
   for (const [at, item] of (value as unknown[]).entries()) {
-    const where = `contributes.commands[${String(at)}]`;
+    const where = `contributes.${field}[${String(at)}]`;
     if (!isObject(item)) {
       problems.push(`${where} is not an object.`);
       continue;
     }
+    const contribution = read(item, where);
+    if (contribution !== undefined) contributions.push(contribution);
+  }
+  return contributions;
+}
+
+function readCommands(value: unknown, problems: string[]): CommandContribution[] {
+  const seen = new Set<string>();
+  return readList(value, "commands", problems, (item, where) => {
     const { id, name, menu, keys } = item;
     if (typeof id !== "string" || !commandIdPattern.test(id)) {
       problems.push(`${where}.id is not letters, digits, hyphens and underscores.`);
-      continue;
+      return undefined;
     }
     if (seen.has(id)) problems.push(`${where}.id "${id}" is there twice.`);
     seen.add(id);
@@ -95,14 +122,27 @@ function readCommands(value: unknown, problems: string[]): CommandContribution[]
     if (!Array.isArray(keyList) || !keyList.every((key) => typeof key === "string")) {
       problems.push(`${where}.keys is not a list of shortcuts.`);
     }
-    commands.push({
+    return {
       id,
       name: isLocalized(name) ? name : id,
       menu: menuNames.includes(menu as MenuName) ? (menu as MenuName) : "plugins",
       keys: Array.isArray(keyList) ? keyList.filter((key) => typeof key === "string") : [],
-    });
-  }
-  return commands;
+    };
+  });
+}
+
+function readCodeBlocks(value: unknown, problems: string[]): CodeBlockContribution[] {
+  const seen = new Set<string>();
+  return readList(value, "codeBlocks", problems, (item, where) => {
+    const { language } = item;
+    if (typeof language !== "string" || !codeLanguagePattern.test(language)) {
+      problems.push(`${where}.language is not a code block's language in lowercase, as mermaid.`);
+      return undefined;
+    }
+    if (seen.has(language)) problems.push(`${where}.language "${language}" is there twice.`);
+    seen.add(language);
+    return { language };
+  });
 }
 
 /** Reads a manifest as parsed from its JSON, or says everything wrong with it. */
@@ -131,6 +171,10 @@ export function readManifest(value: unknown): ManifestResult {
     problems.push("contributes is not an object.");
   }
   const commands = readCommands(isObject(contributes) ? contributes.commands : undefined, problems);
+  const codeBlocks = readCodeBlocks(
+    isObject(contributes) ? contributes.codeBlocks : undefined,
+    problems,
+  );
   if (problems.length > 0) return { problems };
   return {
     manifest: {
@@ -141,7 +185,7 @@ export function readManifest(value: unknown): ManifestResult {
       ...(description === undefined ? {} : { description: description as Localized }),
       ...(author === undefined ? {} : { author: author as string }),
       ...(authorUrl === undefined ? {} : { authorUrl: authorUrl as string }),
-      contributes: { commands },
+      contributes: { commands, codeBlocks },
     },
   };
 }
