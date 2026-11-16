@@ -39,6 +39,31 @@ test("source mode shows a note's Markdown, and edits there come back as blocks",
   expect(errors).toEqual([]);
 });
 
+test("a block from a plugin the app does not have shows its type, and keeps what it holds", async ({
+  page,
+}) => {
+  const errors = errorsOf(page);
+  const notes = await openSample(page);
+  await notes.getByRole("button", { name: /Welcome/ }).click();
+  await page.getByRole("button", { name: "Markdown source" }).click();
+  await expect(sourceOf(page, "Welcome")).toBeFocused();
+  await page.keyboard.press("ControlOrMeta+End");
+  // As written, without the brackets the source editor would close.
+  await page.keyboard.insertText(
+    '\n```sketch-app/board\n{\n  "attrs": {\n    "cards": 2\n  }\n}\n```\n',
+  );
+  await settle(page);
+  await page.keyboard.press("ControlOrMeta+/");
+  const editor = page.getByRole("textbox", { name: "Welcome, note text" });
+  await expect(editor.locator(".plugin-missing")).toHaveText(
+    "No plugin here shows this block: sketch-app/board",
+  );
+  await page.keyboard.press("ControlOrMeta+/");
+  await expect(sourceOf(page, "Welcome")).toContainText("```sketch-app/board");
+  await expect(sourceOf(page, "Welcome")).toContainText('"cards": 2');
+  expect(errors).toEqual([]);
+});
+
 test("a line break written in source stays a new line when its paragraph is edited", async ({
   page,
 }) => {

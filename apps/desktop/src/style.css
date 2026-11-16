@@ -1254,6 +1254,20 @@ button {
   font-weight: 400;
 }
 
+/* A plugin's block: its plugin's view, or its type when no plugin here shows it. */
+.nether-editor .plugin-block {
+  margin-block: 0.5rem;
+}
+
+.nether-editor .plugin-missing {
+  margin: 0;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  color: var(--muted);
+  font-size: 0.875rem;
+}
+
 /* Math: rendered by KaTeX, and a field for its LaTeX while editing. */
 .nether-editor .math-render {
   padding: 0;

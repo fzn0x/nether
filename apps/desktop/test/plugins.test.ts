@@ -1,9 +1,10 @@
 // The plugin host and its registries (ADR 0055): a built-in plugin's
-// commands and code block languages are there before its code loads, its
-// code loads when one is first used, and the same plugin runs within the
-// page and through a port, as a sandboxed one will.
+// commands, code block languages and block types are there before its
+// code loads, its code loads when one is first used, and the same plugin
+// runs within the page and through a port, as a sandboxed one will.
 import {
   type CodeBlockContext,
+  type JsonObject,
   type Plugin,
   type Transport,
   definePlugin,
@@ -11,6 +12,7 @@ import {
 } from "@nether/plugin-api";
 import { describe, expect, it } from "vitest";
 import { coreMenus, commandIds } from "../src/commands.ts";
+import { BlockRegistry, slashEntries } from "../src/plugins/blocks.ts";
 import { builtinPlugins } from "../src/plugins/builtins.ts";
 import { CodeBlockRegistry, type CodeBlockView } from "../src/plugins/codeBlocks.ts";
 import { type BuiltinContext, PluginHost } from "../src/plugins/host.ts";
@@ -80,9 +82,12 @@ describe("CodeBlockRegistry", () => {
     });
     const remove = registry.add(processor("abc"));
     expect(registry.get("ABC")?.plugin).toBe("abc");
+    const all = registry.all();
+    expect(registry.all()).toBe(all);
     remove();
     remove();
     expect(registry.get("abc")).toBeUndefined();
+    expect(registry.all()).toEqual([]);
     expect(told).toBe(2);
   });
 
@@ -188,6 +193,57 @@ const editorBlock: CodeBlockContext = {
   target: "editor",
 };
 
+const tallies = {
+  id: "tally",
+  name: "Tally",
+  version: "1.0.0",
+  api: "^0.1",
+  contributes: {
+    blocks: [
+      {
+        type: "count",
+        name: { en: "Tally", fr: "Comptage" },
+        keywords: { fr: "compter" },
+        attrs: { count: 0 },
+      },
+      { type: "forgotten", name: "Never attached" },
+    ],
+  },
+};
+
+/** A plugin whose view of a tally shows its count, and counts up when asked. */
+function tallier(extra?: (context: BuiltinContext) => Promise<void>) {
+  const seen: string[] = [];
+  let countUp: (() => Promise<void>) | undefined;
+  const module = {
+    async activate(context: BuiltinContext) {
+      await context.blocks.register("count", {
+        mount(element, props, block) {
+          let count = typeof props.attrs.count === "number" ? props.attrs.count : 0;
+          element.textContent = String(count);
+          countUp = () => block.setAttrs({ count: ++count });
+          return {
+            update(next) {
+              seen.push(`update ${JSON.stringify(next.attrs)} ${next.theme}`);
+            },
+            unmount() {
+              seen.push("unmount");
+            },
+          };
+        },
+      });
+      await extra?.(context);
+    },
+  };
+  return {
+    seen,
+    countUp: () => countUp?.(),
+    load: () => Promise.resolve({ default: module }),
+  };
+}
+
+const shown = { attrs: { count: 1 }, editable: true, theme: "light" } as const;
+
 /** Waits for what a command set going to finish, as menus run commands without waiting. */
 async function settle(): Promise<void> {
   for (let turn = 0; turn < 20; turn++) await new Promise((resolve) => setTimeout(resolve, 0));
@@ -207,9 +263,10 @@ for (const [name, connect] of Object.entries(connections)) {
       registry: CommandRegistry,
       errors: string[] = [],
       codeBlocks = new CodeBlockRegistry(),
+      blocks = new BlockRegistry(),
     ) =>
       new PluginHost(
-        { commands: registry, codeBlocks },
+        { commands: registry, codeBlocks, blocks },
         {
           language: "fr",
           direction: "ltr",
@@ -380,12 +437,107 @@ for (const [name, connect] of Object.entries(connections)) {
       expect(String(refused)).toBe('Error: The manifest declares no code block "zzz".');
       plugins.close();
     });
+
+    it("shows a plugin's block with its view, mounted in the element the app made for it", async () => {
+      const blocks = new BlockRegistry();
+      const plugins = host(new CommandRegistry(), [], new CodeBlockRegistry(), blocks);
+      const { seen, countUp, load } = tallier();
+      expect(plugins.add({ manifest: tallies, load })).toEqual([]);
+      const count = blocks.get("tally/count");
+      expect(count?.slash.name()).toBe("Comptage");
+      expect(count?.slash.keywords()).toBe("compter");
+      expect(blocks.get("tally/forgotten")?.slash.keywords()).toBe("");
+      expect(count?.attrs).toEqual({ count: 0 });
+      const element = { textContent: "" } as HTMLElement;
+      const changes: JsonObject[] = [];
+      const drawing = await count?.load();
+      const view = await drawing?.mount(element, shown, (attrs) => {
+        changes.push(attrs);
+      });
+      expect(element.textContent).toBe("1");
+      await countUp();
+      expect(changes).toEqual([{ count: 2 }]);
+      await view?.update({ ...shown, attrs: { count: 2 }, theme: "dark" });
+      view?.unmount();
+      view?.unmount();
+      await settle();
+      // Once unmounted, the view hears nothing more.
+      await view?.update(shown);
+      expect(seen).toEqual(['update {"count":2} dark', "unmount"]);
+      plugins.remove("tally");
+      expect(blocks.get("tally/count")).toBeUndefined();
+    });
+
+    it("says when its code attached no view of a block, or one its manifest does not declare", async () => {
+      const blocks = new BlockRegistry();
+      const plugins = host(new CommandRegistry(), [], new CodeBlockRegistry(), blocks);
+      const { load } = tallier();
+      plugins.add({ manifest: tallies, load });
+      await expect(blocks.get("tally/forgotten")?.load()).rejects.toThrow(
+        "Its code did not attach a view of forgotten blocks.",
+      );
+      const other = new BlockRegistry();
+      const refusing = host(new CommandRegistry(), [], new CodeBlockRegistry(), other);
+      refusing.add({
+        manifest: tallies,
+        load: tallier(async (context) => {
+          await context.blocks.register("zzz", { mount: () => undefined });
+        }).load,
+      });
+      await expect(other.get("tally/count")?.load()).rejects.toThrow(
+        'The manifest declares no block "zzz".',
+      );
+      plugins.close();
+      refusing.close();
+    });
+
+    it("lets a plugin take a block's view away again", async () => {
+      const blocks = new BlockRegistry();
+      const plugins = host(new CommandRegistry(), [], new CodeBlockRegistry(), blocks);
+      let undo: (() => Promise<void>) | undefined;
+      plugins.add({
+        manifest: tallies,
+        load: tallier(async (context) => {
+          const again = await context.blocks.register("forgotten", { mount: () => undefined });
+          undo = () => again.dispose();
+        }).load,
+      });
+      const drawing = await blocks.get("tally/forgotten")?.load();
+      await undo?.();
+      await expect(drawing?.mount({} as HTMLElement, shown, () => undefined)).rejects.toThrow(
+        "Its code did not attach a view of forgotten blocks.",
+      );
+      plugins.close();
+    });
+
+    it("says when a view cannot mount, and keeps no slot for it", async () => {
+      const blocks = new BlockRegistry();
+      const plugins = host(new CommandRegistry(), [], new CodeBlockRegistry(), blocks);
+      plugins.add({
+        manifest: tallies,
+        load: tallier(async (context) => {
+          await context.blocks.register("forgotten", {
+            mount: () => {
+              throw new Error("No room.");
+            },
+          });
+        }).load,
+      });
+      const drawing = await blocks.get("tally/forgotten")?.load();
+      await expect(drawing?.mount({} as HTMLElement, shown, () => undefined)).rejects.toThrow(
+        "No room.",
+      );
+      plugins.close();
+    });
   });
 }
 
 describe("PluginHost, adding", () => {
-  const plugins = (codeBlocks = new CodeBlockRegistry(), commands = new CommandRegistry()) =>
-    new PluginHost({ commands, codeBlocks }, { language: "en", direction: "ltr" });
+  const plugins = (
+    codeBlocks = new CodeBlockRegistry(),
+    commands = new CommandRegistry(),
+    blocks = new BlockRegistry(),
+  ) => new PluginHost({ commands, codeBlocks, blocks }, { language: "en", direction: "ltr" });
   const load = fixture().load;
 
   it("keeps out a plugin whose manifest is wrong, or which needs another API", () => {
@@ -422,13 +574,81 @@ describe("PluginHost, adding", () => {
     for (const builtin of builtinPlugins) expect(host.add(builtin)).toEqual([]);
     expect(codeBlocks.get("mermaid")?.plugin).toBe("mermaid");
     expect(codeBlocks.get("base")?.plugin).toBe("query");
+    // The slash menu's Diagram and Query come from them.
+    expect(
+      slashEntries(codeBlocks.all(), []).map(({ id, title, insert }) => [
+        id,
+        title,
+        "codeBlock" in insert ? insert.text.split("\n")[0] : "",
+      ]),
+    ).toEqual([
+      ["code:mermaid", "Diagram", "flowchart LR"],
+      ["code:base", "Query", "views:"],
+    ]);
+  });
+
+  it("offers a plugin's blocks in the slash menu, after its code blocks", () => {
+    const codeBlocks = new CodeBlockRegistry();
+    const blocks = new BlockRegistry();
+    const host = plugins(codeBlocks, new CommandRegistry(), blocks);
+    host.add({ manifest: tallies, load: tallier().load });
+    host.add({
+      manifest: {
+        ...drawing,
+        contributes: { codeBlocks: [{ language: "abc", name: "Tune", text: "X:1" }] },
+      },
+      load,
+    });
+    expect(slashEntries(codeBlocks.all(), blocks.all())).toEqual([
+      {
+        id: "code:abc",
+        title: "Tune",
+        keywords: "",
+        insert: { codeBlock: "abc", text: "X:1" },
+      },
+      {
+        id: "block:tally/count",
+        title: "Tally",
+        // No English keywords: the first there are.
+        keywords: "compter",
+        insert: { pluginBlock: "tally/count", attrs: { count: 0 } },
+      },
+      {
+        id: "block:tally/forgotten",
+        title: "Never attached",
+        keywords: "",
+        insert: { pluginBlock: "tally/forgotten", attrs: {} },
+      },
+    ]);
+  });
+
+  it("keeps a block type for the plugin that had it", () => {
+    const blocks = new BlockRegistry();
+    const processor = blocks.all();
+    blocks.add({
+      type: "a/b",
+      plugin: "a",
+      slash: { name: () => "B", keywords: () => "" },
+      attrs: {},
+      load: () => Promise.reject(new Error("unused")),
+    });
+    expect(blocks.all()).not.toBe(processor);
+    expect(() => {
+      blocks.add({
+        type: "a/b",
+        plugin: "a",
+        slash: { name: () => "B", keywords: () => "" },
+        attrs: {},
+        load: () => Promise.reject(new Error("unused")),
+      });
+    }).toThrow("A block type a/b is there already.");
   });
 
   it("says when a plugin's code cannot load", async () => {
     const registry = new CommandRegistry();
     const errors: string[] = [];
     const host = new PluginHost(
-      { commands: registry, codeBlocks: new CodeBlockRegistry() },
+      { commands: registry, codeBlocks: new CodeBlockRegistry(), blocks: new BlockRegistry() },
       {
         language: "en",
         direction: "ltr",

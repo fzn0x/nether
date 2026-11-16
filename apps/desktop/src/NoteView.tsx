@@ -2,7 +2,7 @@
 // It shows as blocks, or as its Markdown source, which Ctrl or Cmd and /
 // switches between. In a vault linked to a workspace, its comments show
 // beside it, their text highlighted in it (ADR 0044).
-import type { NoteId } from "@nether/core";
+import type { JsonObject, NoteId } from "@nether/core";
 import {
   type CommentAnchor,
   type CommentAuthor,
@@ -16,6 +16,7 @@ import type { Vault } from "@nether/storage";
 import { type ReactNode, Suspense, lazy, useEffect, useMemo, useRef, useState } from "react";
 import { type Exporter, type VaultMedia, backend } from "./backend.ts";
 import { CodeOutput } from "./CodeOutput.tsx";
+import { PluginBlockOutput } from "./PluginBlockOutput.tsx";
 import { CommentsPanel } from "./CommentsPanel.tsx";
 import { readIndexRow } from "./indexer.ts";
 import { t } from "./messages.ts";
@@ -30,7 +31,8 @@ import { useGraph } from "./useGraph.ts";
 import { useComments } from "./useComments.ts";
 import { type GoLive, useLive } from "./useLive.ts";
 import { useNote } from "./useNote.ts";
-import type { CodeBlockRegistry } from "./plugins/codeBlocks.ts";
+import { useSlashEntries } from "./plugins/blocks.ts";
+import type { Registries } from "./plugins/host.ts";
 
 export type NoteMode = "blocks" | "source";
 
@@ -64,8 +66,8 @@ export default function NoteView(props: {
   /** Where a database's view is exported. */
   readonly exporter: Exporter;
   readonly graph: LinkGraph;
-  /** What plugins draw code blocks with, by language. */
-  readonly codeBlocks: CodeBlockRegistry;
+  /** What plugins add: the code blocks they draw and their blocks, with their slash menu entries. */
+  readonly plugins: Registries;
   readonly id: NoteId;
   /** Where a link asked to go in this note. */
   readonly focus: (NotePart & { readonly key: number }) | undefined;
@@ -113,7 +115,7 @@ export default function NoteView(props: {
     media,
     exporter,
     graph,
-    codeBlocks,
+    plugins,
     id,
     focus,
     mode,
@@ -172,6 +174,8 @@ export default function NoteView(props: {
       request: commentRequest,
     };
   }, [comments, draft, activeThread, canComment, commentRequest]);
+  // What plugins add to the slash menu.
+  const slashEntries = useSlashEntries(plugins.codeBlocks, plugins.blocks);
   // The editor takes focus when the user switches modes, not when a note opens.
   const [switched, setSwitched] = useState(false);
   const files = useMemo(
@@ -196,7 +200,7 @@ export default function NoteView(props: {
       // What plugins draw below a code block: a diagram, the notes a query finds.
       renderCode: (language: string, info: string, source: string) => (
         <CodeOutput
-          codeBlocks={codeBlocks}
+          codeBlocks={plugins.codeBlocks}
           language={language}
           info={info}
           source={source}
@@ -208,8 +212,23 @@ export default function NoteView(props: {
           }}
         />
       ),
+      // A plugin's block shows as its plugin shows it.
+      renderBlock: (
+        type: string,
+        attrs: JsonObject,
+        editable: boolean,
+        setAttrs: (attrs: JsonObject) => void,
+      ) => (
+        <PluginBlockOutput
+          blocks={plugins.blocks}
+          type={type}
+          attrs={attrs}
+          editable={editable}
+          onChange={setAttrs}
+        />
+      ),
     }),
-    [vault, media, graph, codeBlocks, id, onOpenNote, onOpenTag],
+    [vault, media, graph, plugins, id, onOpenNote, onOpenTag],
   );
 
   const toggle = async () => {
@@ -357,6 +376,7 @@ export default function NoteView(props: {
               placeholder={t("emptyNote")}
               files={files}
               links={links}
+              slashEntries={slashEntries}
               previews={linkPreviews(vault)}
               autofocus={switched}
               {...(focus === undefined ? {} : { focus })}
