@@ -127,6 +127,16 @@ describe("viewIdOf", () => {
 });
 
 describe("writeDatabase", () => {
+  it("writes a plugin's type with the app's type it stores as", () => {
+    const value = {
+      properties: [{ key: "rating", type: "stars/rating", stores: "number" }],
+      views: [],
+    };
+    const schema = readDatabase(value, resolve);
+    expect(schema.properties).toEqual([{ key: "rating", type: "number", plugin: "stars/rating" }]);
+    expect(writeDatabase(schema, linkTo)).toEqual(value);
+  });
+
   it("writes a schema back as its note held it", () => {
     const value = parseMarkdown(note).properties.find((entry) => entry.key === "database")?.value;
     expect(writeDatabase(readDatabase(value, resolve), linkTo)).toEqual(value);
