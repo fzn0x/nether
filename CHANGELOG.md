@@ -121,6 +121,12 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   ([ADR 0060](docs/adr/0060-webhooks-tell-of-notes-made-changed-and-removed-signed-and-sent-to-public-addresses.md)).
   A note made through the API at a path an app had just taken leaves
   nothing behind.
+- Share links, first part: a page shared on its own gets links that open
+  it, with its subpages and their images, to anyone who has one, in the
+  web app, to read, with no account. A link can expire and have a
+  password; those with full access make, copy and revoke them in the
+  Share dialog, and revoking one ends what it opened
+  ([ADR 0071](docs/adr/0071-a-share-link-opens-one-shared-page-to-anyone-with-it-through-the-web-app.md)).
 
 ### Changed
 
