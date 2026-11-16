@@ -49,7 +49,8 @@ once you turn them on in the settings. A week starts on Monday.
 ## Settings
 
 Open the **Settings** menu at the top of the sidebar and choose
-**Templates and periodic notes settings** to set:
+**Templates and periodic notes settings**, or press Ctrl+, (Cmd+, on
+macOS). The Templates tab of the vault's settings sets:
 
 - the folder your templates are in, and how `{{date}}` and `{{time}}` are
   written;

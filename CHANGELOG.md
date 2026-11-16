@@ -26,6 +26,13 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Plugins can add panels, as tabs in the sidebar and as sections beside a
   note, which the app names and their view fills; a folded one mounts
   only when opened.
+- One settings dialog with tabs: Templates, Appearance, Keyboard
+  shortcuts, Plugins, then a tab for each plugin with settings. The
+  Plugins tab turns built-in plugins on and off for the vault, kept in
+  `.nether/plugins.json`, and a plugin's settings are fields the app
+  draws, kept in `.nether/plugins/<id>/data.json`. A Plugins command opens
+  its tab.
+- The Backlinks plugin can leave out the text around each link.
 
 ### Changed
 
@@ -42,6 +49,8 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - The sidebar's Tags and Assigned, and the outline, backlinks and unlinked
   mentions beside a note, are built-in plugins' panels. The sidebar's tabs
   are now Notes, Search and Trash, then Tags and Assigned.
+- Templates and periodic notes, Appearance and Keyboard shortcuts are tabs
+  of the settings dialog, where they were dialogs of their own.
 
 - The desktop app keeps one copy of each link target, tag, heading and
   property value its notes' indexes repeat, as the vault's links load: on
