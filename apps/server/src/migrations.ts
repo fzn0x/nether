@@ -383,6 +383,15 @@ export const migrations: readonly Migration[] = [
       CREATE INDEX note_search_by_path ON note_search (workspace_id, path COLLATE "C", note);
     `,
   },
+  {
+    version: 15,
+    name: "the switch that turns AI off for a workspace",
+    sql: `
+      -- Whether its members' apps offer AI in it (ADR 0068): on until an
+      -- owner or admin turns it off.
+      ALTER TABLE workspaces ADD COLUMN ai boolean NOT NULL DEFAULT true;
+    `,
+  },
 ];
 
 /** The schema version this server writes and reads. */

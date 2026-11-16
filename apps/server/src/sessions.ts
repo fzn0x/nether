@@ -309,7 +309,7 @@ export function registerSessions(app: FastifyInstance, db: Database): void {
   app.get("/api/me", { preHandler: account }, async (request) => {
     const me = accountOf(request);
     const { rows } = await db.query(
-      `SELECT w.id, w.name, w.encryption, m.role
+      `SELECT w.id, w.name, w.encryption, w.ai, m.role
          FROM memberships m JOIN workspaces w ON w.id = m.workspace_id
         WHERE m.user_id = $1 ORDER BY w.created_at, w.name`,
       [me.id],
@@ -321,6 +321,8 @@ export function registerSessions(app: FastifyInstance, db: Database): void {
         name: readText(row, "name"),
         role: readText(row, "role"),
         encryption: readText(row, "encryption"),
+        // Whether its members' apps offer AI in it (ADR 0068).
+        ai: readBoolean(row, "ai"),
       })),
     };
   });
