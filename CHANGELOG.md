@@ -103,6 +103,21 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   The list beside the pages shows, comments on, links to and removes
   them. A link to a page, a passage or a highlight opens the PDF there,
   and a link to a file a view opens no longer makes a note of its name.
+- AI from a provider you bring, first part: `@nether/ai`, streamed chat
+  and embeddings from any OpenAI-compatible endpoint (OpenAI, Ollama,
+  vLLM, LM Studio) or Anthropic's Messages API, over fetch, with no
+  vendor's SDK. The desktop app's settings have an AI tab, where
+  providers are set up, each key kept in the system's keychain, and where
+  a vault uses the default, one of its own, or none; an end-to-end
+  encrypted workspace's vault uses none until one is chosen for it. A
+  workspace's owners and admins turn AI off for it, which the app asks
+  before each request. Until a vault has a provider, nothing of AI shows.
+  Writing assist, Ctrl or Cmd and J, rewrites, fixes the grammar of,
+  summarizes, translates or continues the selection, beside the note,
+  naming where the text goes first; the reply streams into a preview and
+  goes into the note as one edit that one undo takes out
+  ([ADR 0068](docs/adr/0068-ai-comes-from-the-users-own-provider-reached-from-their-device.md),
+  [ADR 0069](docs/adr/0069-writing-assist-streams-into-a-preview-and-goes-in-as-one-edit.md)).
 
 ### Changed
 

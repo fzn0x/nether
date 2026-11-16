@@ -23,6 +23,7 @@ export default defineConfig({
             "vaults",
             "folders",
             "writing",
+            "ai",
             "properties",
             "databases",
             "formulas",
