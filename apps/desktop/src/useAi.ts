@@ -51,6 +51,9 @@ export interface VaultAi {
   readonly lookUpWorkspace: () => void;
 }
 
+/** How long a request waits on the workspace's server before what it last said holds. */
+const askLimit = 5000;
+
 /** What the workspace's server says of its switch now, kept for when it cannot be reached. */
 async function askServer(vault: Vault, link: VaultLink): Promise<WorkspaceAi> {
   const token = await backend.serverToken(link.server);
@@ -148,7 +151,16 @@ export function useAi(vault: Vault | undefined, link: VaultLink | undefined): Va
     const { vault: open, link: linked, workspace: known } = latest.current;
     if (open === undefined || linked === undefined) return true;
     try {
-      const fresh = await askServer(open, linked);
+      // A server that does not answer soon holds no request back for long.
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const late = new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(() => {
+          reject(new Error("late"));
+        }, askLimit);
+      });
+      const fresh = await Promise.race([askServer(open, linked), late]).finally(() => {
+        clearTimeout(timer);
+      });
       setWorkspaceState(fresh);
       return fresh.on;
     } catch {
