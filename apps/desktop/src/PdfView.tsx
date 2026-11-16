@@ -9,8 +9,12 @@
 import type { NoteId } from "@nether/core";
 import type { LinkGraph } from "@nether/graph";
 import {
+  type PdfMarked,
   type PdfPassage,
+  type PdfRect,
   type TextItem,
+  isArea,
+  markedOf,
   commentMarkdown,
   findOnPage,
   locatePassage,
@@ -62,7 +66,8 @@ import {
 
 /** Words chosen to highlight, from a selection or from Find. */
 interface Pending {
-  readonly passage: PdfPassage;
+  readonly passage: PdfMarked;
+  /** None for an area. */
   readonly words: string;
 }
 
@@ -371,26 +376,27 @@ export default function PdfView(props: {
   }, [vault, graph, refresh, linksLoaded]);
 
   // Where each highlight's passage is now, by its selection and its words.
-  const [located, setLocated] = useState<ReadonlyMap<string, PdfPassage | null>>(new Map());
+  const [located, setLocated] = useState<ReadonlyMap<string, PdfMarked | null>>(new Map());
   useEffect(() => {
     if (doc === undefined) return;
     const controller = new AbortController();
     void (async () => {
-      const found = new Map<string, PdfPassage | null>();
+      const found = new Map<string, PdfMarked | null>();
+      // An area is found by its box alone, on its page if the PDF still has it (ADR 0067).
+      const place = async (passage: PdfMarked, words: string) =>
+        isArea(passage)
+          ? passage.page <= doc.numPages
+            ? passage
+            : undefined
+          : locatePassage(passage, words, doc.numPages, itemsOf);
       for (const item of highlights) {
         const { passage, words } = item.highlight;
-        found.set(
-          keyOf(item),
-          (await locatePassage(passage, words, doc.numPages, itemsOf)) ?? null,
-        );
+        found.set(keyOf(item), (await place(passage, words)) ?? null);
       }
       // Other links, by their selection alone, as Obsidian and PDF++ find them (ADR 0062).
       for (const item of links) {
         const { passage } = item.link;
-        found.set(
-          linkKeyOf(item),
-          (await locatePassage(passage, "", doc.numPages, itemsOf)) ?? null,
-        );
+        found.set(linkKeyOf(item), (await place(passage, "")) ?? null);
       }
       if (!controller.signal.aborted) setLocated(found);
     })().catch(report);
@@ -450,11 +456,53 @@ export default function PdfView(props: {
     });
   };
 
+  // Drawing an area to highlight (ADR 0067): by a drag on a page, or a box the keyboard moves.
+  const [drawing, setDrawing] = useState(false);
+  const [areaFocus, setAreaFocus] = useState(0);
+  const startArea = async () => {
+    if (drawing) {
+      setDrawing(false);
+      setPending(undefined);
+      return;
+    }
+    setDrawing(true);
+    setMatches(undefined);
+    document.getSelection()?.removeAllRanges();
+    if (doc === undefined) return;
+    // A box in the middle of the page shown, for the keyboard to move.
+    const [x1 = 0, y1 = 0, x2 = 0, y2 = 0] = (await doc.getPage(current)).view;
+    const width = x2 - x1;
+    const height = y2 - y1;
+    const rect: PdfRect = [
+      x1 + width * 0.25,
+      y1 + height * 0.35,
+      x1 + width * 0.75,
+      y1 + height * 0.65,
+    ];
+    setPending({ passage: { page: current, rect }, words: "" });
+    setAreaFocus((key) => key + 1);
+  };
+  const area = {
+    drawing,
+    focusKey: areaFocus,
+    onArea: (page: number, rect: PdfRect) => {
+      setPending({ passage: { page, rect }, words: "" });
+    },
+    onDone: () => {
+      void highlight();
+    },
+    onCancel: () => {
+      setDrawing(false);
+      setPending(undefined);
+      scroller.current?.focus();
+    },
+  };
+
   // The color new highlights take: PDF++'s name, yellow writing none (ADR 0062).
   const [color, setColor] = useState<string>(highlightColors[0]?.name ?? "yellow");
   const highlight = async () => {
     if (pending === undefined) return;
-    const { page, selection } = pending.passage;
+    const { page } = pending.passage;
     const colored = color === highlightColors[0]?.name ? undefined : color;
     try {
       const added = await addPdfHighlight(
@@ -463,7 +511,7 @@ export default function PdfView(props: {
         highlightsHome(highlights),
         t("pdfHighlightsName", { name }),
         {
-          passage: { page, selection, ...(colored === undefined ? {} : { color: colored }) },
+          passage: colored === undefined ? pending.passage : { ...pending.passage, color: colored },
           words: pending.words,
           name: t("pdfPageName", { name, page: pending.passage.page }),
         },
@@ -473,7 +521,12 @@ export default function PdfView(props: {
       setMatches(undefined);
       document.getSelection()?.removeAllRanges();
       setChosen(`${added.note}:${added.id}`);
-      setStatus(t("pdfHighlighted", { words: pending.words }));
+      setDrawing(false);
+      setStatus(
+        isArea(pending.passage)
+          ? t("pdfAreaHighlighted", { page })
+          : t("pdfHighlighted", { words: pending.words }),
+      );
       await refresh();
     } catch (problem) {
       report(problem);
@@ -533,7 +586,7 @@ export default function PdfView(props: {
   };
 
   // A link's place: its page, and its passage marked, a highlight's chosen in the list.
-  const [linked, setLinked] = useState<PdfPassage | undefined>();
+  const [linked, setLinked] = useState<PdfMarked | undefined>();
   const asked = useRef<number | undefined>(undefined);
   useEffect(() => {
     if (
@@ -549,14 +602,16 @@ export default function PdfView(props: {
     const place = readPdfPlace(at.part);
     if (place === undefined) return;
     const page = Math.min(place.page, sizes.length);
-    if (place.selection === undefined) {
+    const marked = markedOf({ ...place, page });
+    if (marked === undefined) {
       setLinked(undefined);
       goTo(page);
       return;
     }
-    const passage = { page, selection: place.selection };
-    const sameAs = (own: PdfPassage) =>
-      own.page === place.page && JSON.stringify(own.selection) === JSON.stringify(place.selection);
+    const passage = marked;
+    const sameAs = (own: PdfMarked) =>
+      own.page === place.page &&
+      JSON.stringify([own.selection, own.rect]) === JSON.stringify([place.selection, place.rect]);
     // A highlight of the passage first, then another note's link to it.
     const same = highlights.find((item) => sameAs(item.highlight.passage));
     const sameLink = links.find((item) => sameAs(item.link.passage));
@@ -576,9 +631,14 @@ export default function PdfView(props: {
   // What each page marks.
   const marksByPage = useMemo(() => {
     const byPage = new Map<number, Mark[]>();
-    const add = (passage: PdfPassage, key: string, kind: MarkKind, color?: string) => {
+    const add = (passage: PdfMarked, key: string, kind: MarkKind, color?: string) => {
       const list = byPage.get(passage.page) ?? [];
-      list.push({ key, kind, selection: passage.selection, color: cssColor(color) });
+      list.push({
+        key,
+        kind,
+        ...(isArea(passage) ? { rect: passage.rect } : { selection: passage.selection }),
+        color: cssColor(color),
+      });
       byPage.set(passage.page, list);
     };
     const marked = (key: string, color: string | undefined) => {
@@ -591,6 +651,7 @@ export default function PdfView(props: {
     for (const item of links) marked(linkKeyOf(item), item.link.passage.color);
     if (linked !== undefined) add(linked, "focus", "focus");
     if (pending !== undefined && matches !== undefined) add(pending.passage, "match", "match");
+    if (pending !== undefined && isArea(pending.passage)) add(pending.passage, "area", "area");
     return byPage;
   }, [highlights, links, located, chosen, linked, pending, matches]);
 
@@ -714,6 +775,17 @@ export default function PdfView(props: {
             }}
           >
             {t("pdfHighlight")}
+          </button>
+          <button
+            type="button"
+            className="quiet"
+            aria-pressed={drawing}
+            title={t("pdfAreaHint")}
+            onClick={() => {
+              void startArea();
+            }}
+          >
+            {t("pdfArea")}
           </button>
           <label className="pdf-color">
             <span className="pdf-color-swatch" style={{ background: cssColor(color) }} />
@@ -846,6 +918,7 @@ export default function PdfView(props: {
                 onError={report}
                 register={register}
                 onLink={onLink}
+                area={area}
               />
             ))
           )}
@@ -874,8 +947,11 @@ export default function PdfView(props: {
                   const lost = where === null;
                   const page = where?.page ?? item.highlight.passage.page;
                   const comment = commentMarkdown(item.highlight.comment);
-                  const words =
-                    item.highlight.words === "" ? t("pdfNoWords") : item.highlight.words;
+                  const words = isArea(item.highlight.passage)
+                    ? t("pdfAreaWords")
+                    : item.highlight.words === ""
+                      ? t("pdfNoWords")
+                      : item.highlight.words;
                   return (
                     <li key={key} className={key === chosen ? "chosen" : undefined}>
                       <button
@@ -1050,7 +1126,11 @@ export default function PdfView(props: {
                               } as CSSProperties
                             }
                           >
-                            {item.link.words === "" ? t("pdfNoWords") : item.link.words}
+                            {item.link.words !== ""
+                              ? item.link.words
+                              : isArea(item.link.passage)
+                                ? t("pdfAreaWords")
+                                : t("pdfNoWords")}
                           </span>
                         </button>
                         <span

@@ -4155,6 +4155,31 @@ kbd {
   outline: 2px dashed var(--accent);
 }
 
+/* An area being drawn (ADR 0067): a drag draws it, and the keyboard moves the box. */
+.pdf-draw {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  cursor: crosshair;
+  touch-action: none;
+}
+
+.pdf-mark-area {
+  background: rgb(80 150 255 / 18%);
+  outline: 2px dashed var(--accent);
+}
+
+.pdf-area {
+  z-index: 4;
+  padding: 0;
+  border: 0;
+  pointer-events: none;
+}
+
+.pdf-area:focus-visible {
+  outline: 3px solid var(--accent);
+}
+
 .pdf-highlights,
 .pdf-panel {
   flex: 0 0 18rem;

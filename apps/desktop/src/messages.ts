@@ -886,6 +886,17 @@ export const messages = {
   pdfLinkTo: "Open {address}",
   pdfBack: "Back",
   pdfBackHint: "Back to where the last link or outline entry was followed from",
+  // Areas of a page, and PDFs embedded in notes (ADR 0067).
+  pdfArea: "Area",
+  pdfAreaHint: "Drag a box on a page, or move this one with the arrow keys, to highlight an area",
+  pdfAreaBox:
+    "Area on page {page}: {left}% across, {top}% down, {width}% wide, {height}% high. Arrow keys move it, Shift and arrow keys resize it, Enter highlights it, Escape leaves it.",
+  pdfAreaHighlighted: "Highlighted an area of page {page}.",
+  pdfAreaWords: "An area of the page",
+  pdfEmbed: "{name}, a PDF",
+  pdfEmbedPage: "Page {page} of {count}",
+  pdfEmbedOpen: "Open",
+  pdfEmbedOpenHint: "Open {name} in a tab, at the page shown",
 } as const;
 
 export type MessageKey = keyof typeof messages;
