@@ -93,6 +93,9 @@ func main() {
 	// the page's requests to them, which Go makes, outside the page's CORS.
 	mygo.Bind(NewServers(data, mygo.Secrets))
 	mygo.Use(fetch.Plugin)
+	// The AI providers set up here, their keys in the keychain too (ADR
+	// 0068); their requests go through the same fetch.
+	mygo.Bind(NewAI(data, mygo.Secrets))
 	// Sync's WebSocket, which Go opens, outside the page's mixed-content rules.
 	mygo.Use(websocket.Plugin)
 	// Checks for updates in the background, when the build has an update key.
