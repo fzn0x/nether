@@ -42,6 +42,11 @@ function fakeApp(
     told.push(`register view ${type as string}`);
     return null;
   });
+  app.handle("panels.register", (id, callback) => {
+    registered.set(`panel ${id as string}`, callback as number);
+    told.push(`register panel ${id as string}`);
+    return null;
+  });
   app.handle("blocks.change", (slot, attrs) => {
     told.push(`change ${slot as string} ${JSON.stringify(attrs)}`);
     return null;
@@ -193,6 +198,45 @@ describe("startPlugin", () => {
     await expect(app.call("callback", tally, "dance", "s1", props)).rejects.toThrow(
       'A view cannot "dance".',
     );
+    endpoint.close();
+    app.close();
+  });
+
+  it("mounts a panel's view, tells it of the note it is beside, and unmounts it", async () => {
+    const { app, pluginSide, registered } = fakeApp();
+    const element = { textContent: "" } as HTMLElement;
+    const seen: string[] = [];
+    const endpoint = await startPlugin(
+      definePlugin({
+        async activate(context) {
+          await context.panels.register("words", {
+            mount(into, props) {
+              into.textContent = props.note?.title ?? "";
+              return {
+                update(next) {
+                  seen.push(next.note?.title ?? "");
+                },
+                unmount() {
+                  seen.push("unmount");
+                },
+              };
+            },
+          });
+        },
+      }),
+      pluginSide,
+      { element: () => element },
+    );
+    const words = registered.get("panel words") ?? 0;
+    const beside = (title: string) => ({
+      theme: "dark",
+      note: { id: "n1", title, path: `${title}.md` },
+    });
+    await app.call("callback", words, "mount", "p1", beside("Roadmap"));
+    expect(element.textContent).toBe("Roadmap");
+    await app.call("callback", words, "update", "p1", beside("Ideas"));
+    await app.call("callback", words, "unmount", "p1");
+    expect(seen).toEqual(["Ideas", "unmount"]);
     endpoint.close();
     app.close();
   });
