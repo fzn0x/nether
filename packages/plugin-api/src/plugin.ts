@@ -257,6 +257,37 @@ export interface Settings {
   onChange(listener: (values: JsonObject) => void): Disposable;
 }
 
+/** A note of the vault, as a plugin lists it. */
+export interface VaultNote {
+  /** Its ID, which stays when it is renamed or moved. */
+  readonly id: string;
+  /** Its path in the vault, as `Projects/Plan.md`. */
+  readonly path: string;
+  readonly title: string;
+}
+
+/**
+ * The vault's notes and files, as far as the plugin's manifest asks
+ * (ADR 0064): reading with `vault:read`, changing with `vault:write`. The
+ * app refuses any other call, and any path in a hidden folder.
+ */
+export interface PluginVault {
+  /** The vault's notes. */
+  notes(): Promise<readonly VaultNote[]>;
+  /** A note's Markdown, frontmatter and all, as it is now. */
+  read(path: string): Promise<string>;
+  /** The paths of the vault's files that are not notes, as images and PDFs. */
+  files(): Promise<readonly string[]>;
+  /** A file's bytes, up to 20 MB. */
+  readFile(path: string): Promise<Uint8Array>;
+  /** Changes a note to `text`, or makes it, as an edit the app makes; its path ends in `.md`. */
+  write(path: string, text: string): Promise<void>;
+  /** Moves a note to the vault's trash. */
+  remove(path: string): Promise<void>;
+  /** Calls `listener` with the paths of notes as they change. */
+  onChange(listener: (paths: readonly string[]) => void): Promise<Disposable>;
+}
+
 /** What a plugin is given when it starts. */
 export interface PluginContext {
   /** The plugin's ID, from its manifest. */
@@ -275,6 +306,7 @@ export interface PluginContext {
   readonly layouts: Layouts;
   readonly propertyTypes: PropertyTypes;
   readonly settings: Settings;
+  readonly vault: PluginVault;
 }
 
 /** A plugin, as its module's default export is. */
@@ -325,6 +357,29 @@ function readHello(value: Json): Hello {
     direction: hello.direction,
     settings: hello.settings,
   };
+}
+
+/** Bytes the app sends as Base64, as a `Uint8Array`. */
+function fromBase64(text: string): Uint8Array {
+  const binary = atob(text);
+  const bytes = new Uint8Array(binary.length);
+  for (let at = 0; at < binary.length; at++) bytes[at] = binary.charCodeAt(at);
+  return bytes;
+}
+
+function readTexts(value: Json): string[] {
+  return Array.isArray(value) ? value.filter((each) => typeof each === "string") : [];
+}
+
+function readNotes(value: Json): VaultNote[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((each) => {
+    if (!isJsonObject(each)) return [];
+    const { id, path, title } = each;
+    return typeof id === "string" && typeof path === "string" && typeof title === "string"
+      ? [{ id, path, title }]
+      : [];
+  });
 }
 
 /**
@@ -411,6 +466,12 @@ export async function startPlugin(
         }
       });
   }
+  const changeListeners = new Set<(paths: readonly string[]) => void>();
+  endpoint.handle("vault.changed", (paths) => {
+    const changed = readTexts(paths ?? null);
+    for (const listener of changeListeners) listener(changed);
+    return null;
+  });
   let settings = hello.settings;
   const settingsListeners = new Set<(values: JsonObject) => void>();
   endpoint.handle("settings.changed", (values) => {
@@ -436,6 +497,40 @@ export async function startPlugin(
           dispose() {
             settingsListeners.delete(each);
             return Promise.resolve();
+          },
+        };
+      },
+    },
+    vault: {
+      notes: async () => readNotes(await endpoint.call("vault.notes")),
+      async read(path) {
+        const text = await endpoint.call("vault.read", path);
+        if (typeof text !== "string") throw new Error("The app gave no note.");
+        return text;
+      },
+      files: async () => readTexts(await endpoint.call("vault.files")),
+      async readFile(path) {
+        const data = await endpoint.call("vault.readFile", path);
+        if (typeof data !== "string") throw new Error("The app gave no file.");
+        return fromBase64(data);
+      },
+      async write(path, text) {
+        await endpoint.call("vault.write", path, text);
+      },
+      async remove(path) {
+        await endpoint.call("vault.remove", path);
+      },
+      async onChange(listener) {
+        // A new function each time, so that each has its own disposal.
+        const each = (paths: readonly string[]) => {
+          listener(paths);
+        };
+        if (changeListeners.size === 0) await endpoint.call("vault.watch");
+        changeListeners.add(each);
+        return {
+          async dispose() {
+            if (!changeListeners.delete(each)) return;
+            if (changeListeners.size === 0) await endpoint.call("vault.unwatch");
           },
         };
       },

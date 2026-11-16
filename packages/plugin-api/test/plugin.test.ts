@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Json } from "../src/json.ts";
-import { definePlugin, startPlugin } from "../src/plugin.ts";
+import { type PluginContext, definePlugin, startPlugin } from "../src/plugin.ts";
 import { Endpoint, pagePair } from "../src/protocol.ts";
 import { apiVersion } from "../src/version.ts";
 
@@ -410,6 +410,86 @@ describe("startPlugin", () => {
       app.call("callback", tally, "mount", "s2", { ...props, attrs: { fail: true } }),
     ).rejects.toThrow("It cannot draw that.");
     expect(released).toEqual(["s1", "s2"]);
+    endpoint.close();
+    app.close();
+  });
+
+  it("reaches the vault through the app, and hears of the notes that change", async () => {
+    const { app, pluginSide, told } = fakeApp();
+    app.handle("vault.notes", () => [
+      { id: "n1", path: "Ideas.md", title: "Ideas" },
+      { id: 2, path: "Odd.md" },
+    ]);
+    app.handle("vault.read", (path) => `# ${path as string}\n`);
+    app.handle("vault.files", () => ["pic.png", 3]);
+    app.handle("vault.readFile", () => btoa("png"));
+    app.handle("vault.write", (path, text) => {
+      told.push(`write ${path as string} ${text as string}`);
+      return null;
+    });
+    app.handle("vault.remove", (path) => {
+      told.push(`remove ${path as string}`);
+      return null;
+    });
+    app.handle("vault.watch", () => {
+      told.push("watch");
+      return null;
+    });
+    app.handle("vault.unwatch", () => {
+      told.push("unwatch");
+      return null;
+    });
+    let reached: PluginContext["vault"] | undefined;
+    const endpoint = await startPlugin(
+      definePlugin({
+        activate(context) {
+          reached = context.vault;
+        },
+      }),
+      pluginSide,
+    );
+    if (reached === undefined) throw new Error("No vault.");
+    // What does not read as a note or a path is left out.
+    expect(await reached.notes()).toEqual([{ id: "n1", path: "Ideas.md", title: "Ideas" }]);
+    expect(await reached.read("Ideas.md")).toBe("# Ideas.md\n");
+    expect(await reached.files()).toEqual(["pic.png"]);
+    expect(new TextDecoder().decode(await reached.readFile("pic.png"))).toBe("png");
+    await reached.write("Ideas.md", "More.");
+    await reached.remove("Ideas.md");
+    const heard: string[] = [];
+    const first = await reached.onChange((paths) => heard.push(`first ${paths.join()}`));
+    const second = await reached.onChange((paths) => heard.push(`second ${paths.join()}`));
+    await app.call("vault.changed", ["Ideas.md", 4]);
+    await first.dispose();
+    await first.dispose();
+    await app.call("vault.changed", ["Plan.md"]);
+    await second.dispose();
+    expect(heard).toEqual(["first Ideas.md", "second Ideas.md", "second Plan.md"]);
+    expect(told.filter((each) => !each.startsWith("hello") && each !== "ready")).toEqual([
+      "write Ideas.md More.",
+      "remove Ideas.md",
+      "watch",
+      "unwatch",
+    ]);
+    endpoint.close();
+    app.close();
+  });
+
+  it("says when the app gives no note or no file", async () => {
+    const { app, pluginSide } = fakeApp();
+    app.handle("vault.read", () => null);
+    app.handle("vault.readFile", () => null);
+    let reached: PluginContext["vault"] | undefined;
+    const endpoint = await startPlugin(
+      definePlugin({
+        activate(context) {
+          reached = context.vault;
+        },
+      }),
+      pluginSide,
+    );
+    await expect(reached?.read("Ideas.md")).rejects.toThrow("The app gave no note.");
+    await expect(reached?.readFile("pic.png")).rejects.toThrow("The app gave no file.");
     endpoint.close();
     app.close();
   });
