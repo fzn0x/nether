@@ -209,9 +209,9 @@ The work comes in four pull requests:
 ## Consequences
 
 - The server's image carries the editor's dependencies, TipTap,
-  ProseMirror, highlight.js and KaTeX among them: about 40 MB more on
-  disk, 65 MB where it was 25. A package of the editor's document code
-  alone would take most of that back, if the size matters.
+  ProseMirror, highlight.js and KaTeX among them: its installed
+  dependencies take 91 MB where they took 35. A package of the editor's
+  document code alone would take most of that back, if the size matters.
 - The server's build only emits, with `noCheck`. Seen through pnpm's links,
   as the build sees workspace packages, their own dependencies do not
   resolve for the type checker. The typecheck script checks the whole
