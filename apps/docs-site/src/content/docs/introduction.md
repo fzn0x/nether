@@ -57,10 +57,11 @@ diagrams, panels, canvas, graph and database layouts are built-in plugins
 on it. Plugins from a vault run in a sandbox, with only what each device
 approved for them, and plugins and themes install from Nether's
 directory. The server's [REST API](../api/) reads and writes notes,
-databases and search for scripts, with personal access tokens. [PDFs](../pdfs/)
-open in a view of their own, to be highlighted and commented on, each
-highlight Markdown that Obsidian reads. The [roadmap](../roadmap/) lists
-what each phase delivers.
+databases and search for scripts, with personal access tokens, and its
+webhooks tell other services when notes change. [PDFs](../pdfs/) open in a
+view of their own, to be highlighted and commented on, each highlight
+Markdown that Obsidian reads. The [roadmap](../roadmap/) lists what each
+phase delivers.
 
 The full requirements, the architecture and the decision records live in
 the [repository](https://github.com/fzn0x/nether/tree/main/docs).

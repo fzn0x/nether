@@ -383,6 +383,74 @@ export const migrations: readonly Migration[] = [
       CREATE INDEX note_search_by_path ON note_search (workspace_id, path COLLATE "C", note);
     `,
   },
+  {
+    version: 15,
+    name: "webhooks",
+    sql: `
+      -- A workspace's webhooks (ADR 0060), made by an owner or admin who stays
+      -- their maker, and go when the maker leaves the workspace. The secret
+      -- is kept as it is, since the server signs with it.
+      CREATE TABLE webhooks (
+        id uuid PRIMARY KEY,
+        workspace_id uuid NOT NULL,
+        maker_id uuid NOT NULL,
+        url text NOT NULL,
+        secret text NOT NULL,
+        events text[] NOT NULL,
+        enabled boolean NOT NULL DEFAULT true,
+        -- Since when its deliveries fail with no success between, and why.
+        failing_since timestamptz,
+        last_error text,
+        -- Until when a node is sending to it, so one node sends to it at a time.
+        sending_until timestamptz,
+        created_at timestamptz NOT NULL DEFAULT now(),
+        FOREIGN KEY (workspace_id, maker_id)
+          REFERENCES memberships (workspace_id, user_id) ON DELETE CASCADE
+      );
+
+      CREATE INDEX webhooks_by_workspace ON webhooks (workspace_id);
+
+      -- Notes changed in a workspace with webhooks, one row a note, each told
+      -- when it is due: 30 seconds after its last store, at most five
+      -- minutes after its first.
+      CREATE TABLE webhook_changes (
+        workspace_id uuid NOT NULL REFERENCES workspaces (id) ON DELETE CASCADE,
+        note text NOT NULL,
+        kind text NOT NULL CHECK (kind IN ('created', 'updated', 'deleted')),
+        -- Where it last was, which a removed note's event carries.
+        path text NOT NULL,
+        first_at timestamptz NOT NULL,
+        last_at timestamptz NOT NULL,
+        due_at timestamptz NOT NULL,
+        PRIMARY KEY (workspace_id, note)
+      );
+
+      CREATE INDEX webhook_changes_by_due ON webhook_changes (due_at);
+
+      -- Events for a webhook: waiting, sent or failed, kept seven days after.
+      -- The body is the same on every try.
+      CREATE TABLE webhook_deliveries (
+        id uuid PRIMARY KEY,
+        webhook_id uuid NOT NULL REFERENCES webhooks (id) ON DELETE CASCADE,
+        type text NOT NULL,
+        body text NOT NULL,
+        status text NOT NULL CHECK (status IN ('waiting', 'sent', 'failed')),
+        attempts integer NOT NULL DEFAULT 0,
+        next_at timestamptz,
+        -- The last answer's status, or why there was none.
+        answer integer,
+        error text,
+        created_at timestamptz NOT NULL DEFAULT now(),
+        finished_at timestamptz
+      );
+
+      CREATE INDEX webhook_deliveries_waiting ON webhook_deliveries (webhook_id, next_at)
+        WHERE status = 'waiting';
+      CREATE INDEX webhook_deliveries_by_webhook ON webhook_deliveries (webhook_id, created_at);
+      CREATE INDEX webhook_deliveries_finished ON webhook_deliveries (finished_at)
+        WHERE status <> 'waiting';
+    `,
+  },
 ];
 
 /** The schema version this server writes and reads. */

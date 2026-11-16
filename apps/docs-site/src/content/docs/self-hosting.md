@@ -107,6 +107,9 @@ from the same file, such as:
   `NETHER_STORAGE=s3` with `NETHER_S3_ENDPOINT`, `NETHER_S3_BUCKET`,
   `NETHER_S3_ACCESS_KEY` and `NETHER_S3_SECRET_KEY`.
 - **Scheduled backups**: `NETHER_BACKUP=disk`, below.
+- **Webhooks to your own network**: webhooks reach public addresses only.
+  `NETHER_WEBHOOK_PRIVATE=192.168.1.20` lets them reach that one, or a
+  range as `10.0.0.0/8`, or `on` any; those may use `http://`.
 
 ## Update it
 
