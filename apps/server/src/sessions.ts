@@ -161,7 +161,7 @@ function decoyHash(): Promise<string> {
  * the account's password, or, for an account without one, by signing in
  * within the last few minutes.
  */
-async function signedInAgain(
+export async function signedInAgain(
   db: Database,
   account: Account,
   password: string | undefined,
@@ -207,7 +207,7 @@ const passwordBody = {
   properties: { current: passwordField, password: newPasswordField },
 } as const;
 
-const wrongPassword = "That password is not this account's.";
+export const wrongPassword = "That password is not this account's.";
 
 /** The routes of signing in and out, of one's sessions, and of one's account. */
 export function registerSessions(app: FastifyInstance, db: Database): void {

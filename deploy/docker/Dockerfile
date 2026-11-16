@@ -35,6 +35,12 @@ WORKDIR /app
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY tools/stubs/elkjs/ tools/stubs/elkjs/
 COPY apps/server/package.json apps/server/
+# The workspace packages the server runs: @nether/search, and the editor's
+# document code with @nether/core and @nether/markdown for the public API
+# (ADR 0059).
+COPY packages/core/package.json packages/core/
+COPY packages/editor/package.json packages/editor/
+COPY packages/markdown/package.json packages/markdown/
 COPY packages/search/package.json packages/search/
 RUN --mount=type=cache,id=pnpm-store,target=/root/.local/share/pnpm/store \
     pnpm install --prod --frozen-lockfile --ignore-scripts --filter "@nether/server..."
@@ -51,6 +57,9 @@ ENV NODE_ENV=production \
     NETHER_BACKUP_PATH=/data/backups
 WORKDIR /app
 COPY --from=dependencies /app/ ./
+COPY --from=build /src/packages/core/src/ packages/core/src/
+COPY --from=build /src/packages/editor/src/ packages/editor/src/
+COPY --from=build /src/packages/markdown/src/ packages/markdown/src/
 COPY --from=build /src/packages/search/src/ packages/search/src/
 COPY --from=build /src/apps/server/dist/ apps/server/dist/
 COPY --from=build /src/apps/web/dist/ apps/web/dist/

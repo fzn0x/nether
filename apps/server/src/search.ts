@@ -12,7 +12,7 @@ import { accountOf, signedIn } from "./sessions.ts";
 import { accessible, general } from "./units.ts";
 
 /** The most results one search gives. */
-const maxResults = 50;
+export const maxResults = 50;
 
 /** What a note's state holds that search reads. */
 export interface NoteContent {
@@ -43,9 +43,16 @@ function linesOf(node: Y.XmlElement | Y.XmlFragment, lines: string[]): void {
   }
 }
 
-/** The text of something inline, as a mention or a hard break: its own text, if any. */
+/**
+ * The text of something inline, as a mention or a hard break: its own text,
+ * if any. A tag the editor keeps as a node of its own reads as it is written.
+ */
 function inlineText(node: Y.XmlElement | Y.XmlHook): string {
   if (!(node instanceof Y.XmlElement)) return "";
+  if (node.nodeName === "tag") {
+    const name: unknown = node.getAttribute("name");
+    return typeof name === "string" && name !== "" ? `#${name}` : "";
+  }
   return node
     .toArray()
     .map((child) => (child instanceof Y.XmlText ? textOf(child) : inlineText(child)))
@@ -252,18 +259,21 @@ export interface SearchResult {
 
 /**
  * Searches the notes an account may open, in every workspace it is a member
- * of that the server can read; names the encrypted ones it could not.
+ * of that the server can read, or in `only` that one; names the encrypted
+ * ones it could not.
  */
 export async function search(
   db: Queryable,
   userId: string,
   text: string,
   limit = maxResults,
+  only?: string,
 ): Promise<{ readonly results: SearchResult[]; readonly encrypted: string[] }> {
   const { rows: workspaces } = await db.query(
     `SELECT w.id, w.name, w.encryption FROM memberships m
-     JOIN workspaces w ON w.id = m.workspace_id WHERE m.user_id = $1`,
-    [userId],
+     JOIN workspaces w ON w.id = m.workspace_id
+     WHERE m.user_id = $1 AND ($2::uuid IS NULL OR w.id = $2::uuid)`,
+    [userId, only ?? null],
   );
   const encrypted: string[] = [];
   const pairs: { workspace: string; unit: string }[] = [];
