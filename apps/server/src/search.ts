@@ -89,14 +89,14 @@ export function noteContent(state: Uint8Array): NoteContent {
 }
 
 /** A vault document's notes: each note's ID, and its path. */
-function pathsOf(state: Uint8Array | undefined): Map<string, string> {
+export function pathsOf(state: Uint8Array | undefined): Map<string, string> {
   if (state === undefined) return new Map();
   const document = new Y.Doc();
   Y.applyUpdate(document, state);
   return new Map(document.getMap<string>("notes").entries());
 }
 
-function titleOf(path: string): string {
+export function titleOf(path: string): string {
   return path.slice(path.lastIndexOf("/") + 1).replace(/\.md$/i, "");
 }
 
