@@ -44,6 +44,23 @@ describe("places in a PDF, as Obsidian links to them", () => {
     expect(readPdfPlace(writePdfPlace(place))).toEqual(place);
   });
 
+  it("reads PDF++'s color as written, and writes it after the passage", () => {
+    expect(readPdfPlace("page=1&selection=4,0,5,20&color=Red")).toEqual({
+      page: 1,
+      selection: { beginIndex: 4, beginOffset: 0, endIndex: 5, endOffset: 20 },
+      color: "Red",
+    });
+    expect(readPdfPlace("page=1&selection=4,0,5,20&color=255, 0,0")?.color).toBe("255, 0,0");
+    expect(readPdfPlace("page=1&color=")).toEqual({ page: 1 });
+    const colored = {
+      page: 1,
+      selection: { beginIndex: 4, beginOffset: 0, endIndex: 5, endOffset: 20 },
+      color: "red",
+    };
+    expect(writePdfPlace(colored)).toBe("page=1&selection=4,0,5,20&color=red");
+    expect(readPdfPlace(writePdfPlace(colored))).toEqual(colored);
+  });
+
   it("tells links to a passage from other links, and PDFs from other files", () => {
     expect(namesPassage("page=1&selection=0,0,0,4")).toBe(true);
     expect(namesPassage("page=1")).toBe(false);

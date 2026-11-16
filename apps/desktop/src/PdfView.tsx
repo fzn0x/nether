@@ -3,18 +3,24 @@
 // its highlights marked on the pages and listed beside them, each a
 // callout in a note that links to its passage. Words are highlighted from
 // a selection, or from Find, so the keyboard alone can highlight; a
-// highlight's comment is written in its callout.
+// highlight's comment is written in its callout. Every other note's link
+// to a passage shows too, highlights and links in PDF++'s colors, and the
+// PDF's own outline and links go to their places (ADR 0062).
 import type { NoteId } from "@nether/core";
 import type { LinkGraph } from "@nether/graph";
 import {
   type PdfPassage,
   type PdfSelection,
   type TextItem,
+  colorValue,
   commentMarkdown,
   findOnPage,
   locatePassage,
+  highlightColors,
+  offeredColor,
   passageWords,
   readPdfPlace,
+  writePdfPlace,
 } from "@nether/pdf";
 import type { Vault } from "@nether/storage";
 import {
@@ -37,16 +43,21 @@ import {
   useRef,
   useState,
 } from "react";
+import { backend } from "./backend.ts";
 import { t } from "./messages.ts";
 import type { NotePart } from "./noteLinks.ts";
+import { type PdfDestination, PdfOutline, destinationOf, webAddress } from "./PdfOutline.tsx";
 import {
   type NoteHighlight,
+  type NotePassageLink,
+  type PdfMarks,
   addPdfHighlight,
   highlightLink,
   highlightsHome,
   notesWithPassages,
-  readPdfHighlights,
+  readPdfMarks,
   removePdfHighlight,
+  setHighlightColor,
   setHighlightComment,
 } from "./pdfHighlights.ts";
 
@@ -65,6 +76,17 @@ interface Mark {
   readonly key: string;
   readonly kind: MarkKind;
   readonly selection: PdfSelection;
+  /** A highlight's color, as CSS; none for the default. */
+  readonly color?: string | undefined;
+}
+
+/** A link of the PDF's own on a page (ADR 0062): its box, and where it goes. */
+interface PageLink {
+  readonly left: number;
+  readonly top: number;
+  readonly width: number;
+  readonly height: number;
+  readonly to: PdfDestination | { readonly url: string };
 }
 
 /** A place to show, and a key new each time it is asked, even for the same place. */
@@ -107,6 +129,33 @@ function nameOf(path: string): string {
 
 function keyOf(item: NoteHighlight): string {
   return `${item.note}:${item.highlight.id}`;
+}
+
+function linkKeyOf(item: NotePassageLink): string {
+  return `link:${item.note}:${item.link.block}:${writePdfPlace(item.link.passage)}`;
+}
+
+const noPdfMarks: PdfMarks = { highlights: [], links: [] };
+
+/** A color's name in words: the offered colors' in the app's language, any other as written. */
+function colorName(color: string | undefined): string {
+  switch (offeredColor(color)) {
+    case "yellow":
+      return t("pdfColorYellow");
+    case "red":
+      return t("pdfColorRed");
+    case "note":
+      return t("pdfColorBlue");
+    case "important":
+      return t("pdfColorPurple");
+    default:
+      return color ?? t("pdfColorYellow");
+  }
+}
+
+/** A color as CSS, CSS's own names known by the page. */
+function cssColor(color: string | undefined): string | undefined {
+  return colorValue(color, (name) => CSS.supports("color", name));
 }
 
 /** The PDF at `path`, loaded through the vault's files, again when the file changes. */
@@ -247,9 +296,12 @@ function PdfPage(props: {
   readonly onSize: (page: number, size: Size) => void;
   readonly onError: (error: unknown) => void;
   readonly register: (page: number, element: HTMLElement | null) => void;
+  /** Follows a link of the PDF's own. */
+  readonly onLink: (to: PageLink["to"]) => void;
 }) {
   const { doc, number, count, size, scale, near, marks, focus, textOf, onText, onSize, onError } =
     props;
+  const [links, setLinks] = useState<readonly PageLink[]>([]);
   const page = useRef<HTMLDivElement | null>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
   const layer = useRef<HTMLDivElement>(null);
@@ -291,6 +343,35 @@ function PdfPage(props: {
       if (cancelled()) return;
       setDivs(text.textDivs);
       onText(number, text.textDivs);
+      // Its links, to its own pages or to the web; others do nothing, so they are left out.
+      const found: PageLink[] = [];
+      for (const annotation of (await proxy.getAnnotations({ intent: "display" })) as unknown[]) {
+        const { subtype, rect, dest, url } = annotation as {
+          subtype?: unknown;
+          rect?: unknown;
+          dest?: unknown;
+          url?: unknown;
+        };
+        if (subtype !== "Link" || !Array.isArray(rect) || rect.length !== 4) continue;
+        const web = webAddress(url);
+        const to = web !== undefined ? { url: web } : await destinationOf(doc, dest);
+        if (to === undefined) continue;
+        const [x1, y1, x2, y2] = rect as number[];
+        const [left = 0, top = 0] = viewport.convertToViewportPoint(x1 ?? 0, y1 ?? 0) as number[];
+        const [right = 0, bottom = 0] = viewport.convertToViewportPoint(
+          x2 ?? 0,
+          y2 ?? 0,
+        ) as number[];
+        found.push({
+          left: Math.min(left, right),
+          top: Math.min(top, bottom),
+          width: Math.abs(right - left),
+          height: Math.abs(bottom - top),
+          to,
+        });
+      }
+      if (cancelled()) return;
+      setLinks(found);
       await render.promise;
     })().catch((error: unknown) => {
       if (cancelled() || (error instanceof Error && error.name === "RenderingCancelledException")) {
@@ -305,6 +386,7 @@ function PdfPage(props: {
       render?.cancel();
       text?.cancel();
       setDivs(undefined);
+      setLinks([]);
       onText(number, undefined);
       container?.replaceChildren();
       if (drawn !== null) {
@@ -319,6 +401,7 @@ function PdfPage(props: {
     readonly {
       key: string;
       kind: MarkKind;
+      color: string | undefined;
       left: number;
       top: number;
       width: number;
@@ -338,6 +421,7 @@ function PdfPage(props: {
           ...box,
           key: `${mark.key}:${String(index)}`,
           kind: mark.kind,
+          color: mark.color,
         })),
       ),
     );
@@ -386,11 +470,38 @@ function PdfPage(props: {
               top: `${String(box.top)}px`,
               width: `${String(box.width)}px`,
               height: `${String(box.height)}px`,
+              ...(box.color === undefined ? {} : { "--mark-color": box.color }),
             }}
           />
         ))}
       </div>
       <div ref={layer} className="textLayer" />
+      {links.length === 0 ? null : (
+        <div className="pdf-links">
+          {links.map((link, index) => (
+            <button
+              key={index}
+              type="button"
+              className="pdf-link"
+              aria-label={
+                "url" in link.to
+                  ? t("pdfLinkTo", { address: link.to.url })
+                  : t("pdfGoToPage", { page: link.to.page })
+              }
+              title={"url" in link.to ? link.to.url : t("pdfGoToPage", { page: link.to.page })}
+              style={{
+                left: `${String(link.left)}px`,
+                top: `${String(link.top)}px`,
+                width: `${String(link.width)}px`,
+                height: `${String(link.height)}px`,
+              }}
+              onClick={() => {
+                props.onLink(link.to);
+              }}
+            />
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -531,13 +642,50 @@ export default function PdfView(props: {
     setCurrent(found);
   };
   const [focus, setFocus] = useState<Focus | undefined>();
-  const goTo = useCallback((page: number, mark?: string) => {
+  const scaleNow = useRef(1);
+  scaleNow.current = scale ?? 1;
+  /** Shows a page, at a height on it at 100% when given, and a mark on it once drawn. */
+  const goTo = useCallback((page: number, mark?: string, y?: number) => {
     const element = elements.current.get(page);
     const root = scroller.current;
-    if (element !== undefined && root !== null) root.scrollTop = element.offsetTop - 8;
+    if (element !== undefined && root !== null) {
+      root.scrollTop = element.offsetTop + (y ?? 0) * scaleNow.current - 8;
+    }
     setCurrent(page);
     setFocus({ page, ...(mark === undefined ? {} : { mark }), key: Date.now() });
   }, []);
+
+  // Where the PDF's own links and outline were followed from, for Back.
+  const [back, setBack] = useState<readonly number[]>([]);
+  const follow = useCallback(
+    async (dest: unknown) => {
+      if (doc === undefined) return;
+      const place = await destinationOf(doc, dest);
+      if (place === undefined) return;
+      const from = scroller.current?.scrollTop ?? 0;
+      setBack((current) => [...current.slice(-49), from]);
+      goTo(place.page, undefined, place.y);
+    },
+    [doc, goTo],
+  );
+  const goBack = () => {
+    const to = back.at(-1);
+    if (to === undefined || scroller.current === null) return;
+    scroller.current.scrollTop = to;
+    setBack(back.slice(0, -1));
+  };
+  const onLink = useCallback(
+    (to: PdfDestination | { readonly url: string }) => {
+      if ("url" in to) {
+        void backend.openUrl(to.url);
+        return;
+      }
+      const from = scroller.current?.scrollTop ?? 0;
+      setBack((current) => [...current.slice(-49), from]);
+      goTo(to.page, undefined, to.y);
+    },
+    [goTo],
+  );
 
   // The text layers drawn, by page, to read a selection from.
   const layers = useRef(new Map<number, readonly HTMLElement[]>());
@@ -590,8 +738,8 @@ export default function PdfView(props: {
     };
   }, [itemsOf, report]);
 
-  // The PDF's highlights, from every note that links to a passage of it.
-  const [highlights, setHighlights] = useState<readonly NoteHighlight[]>([]);
+  // The PDF's highlights, and every other link to a passage of it, from every note that links to one.
+  const [{ highlights, links }, setMarks] = useState<PdfMarks>(noPdfMarks);
   // Whether they were read once the vault's links were in, which a link's place waits for.
   const [listed, setListed] = useState(false);
   const written = useRef(new Set<NoteId>());
@@ -599,7 +747,7 @@ export default function PdfView(props: {
   const refresh = useCallback(() => {
     const notes = new Set([...notesWithPassages(vault, graph, path), ...written.current]);
     known.current = notes;
-    return readPdfHighlights(vault, notes, path).then(setHighlights, report);
+    return readPdfMarks(vault, notes, path).then(setMarks, report);
   }, [vault, graph, path, report]);
   useEffect(() => {
     const controller = new AbortController();
@@ -643,12 +791,20 @@ export default function PdfView(props: {
           (await locatePassage(passage, words, doc.numPages, itemsOf)) ?? null,
         );
       }
+      // Other links, by their selection alone, as Obsidian and PDF++ find them (ADR 0062).
+      for (const item of links) {
+        const { passage } = item.link;
+        found.set(
+          linkKeyOf(item),
+          (await locatePassage(passage, "", doc.numPages, itemsOf)) ?? null,
+        );
+      }
       if (!controller.signal.aborted) setLocated(found);
     })().catch(report);
     return () => {
       controller.abort();
     };
-  }, [doc, highlights, itemsOf, report]);
+  }, [doc, highlights, links, itemsOf, report]);
 
   const [chosen, setChosen] = useState<string | undefined>();
 
@@ -701,8 +857,12 @@ export default function PdfView(props: {
     });
   };
 
+  // The color new highlights take: PDF++'s name, yellow writing none (ADR 0062).
+  const [color, setColor] = useState<string>(highlightColors[0]?.name ?? "yellow");
   const highlight = async () => {
     if (pending === undefined) return;
+    const { page, selection } = pending.passage;
+    const colored = color === highlightColors[0]?.name ? undefined : color;
     try {
       const added = await addPdfHighlight(
         vault,
@@ -710,7 +870,7 @@ export default function PdfView(props: {
         highlightsHome(highlights),
         t("pdfHighlightsName", { name }),
         {
-          passage: pending.passage,
+          passage: { page, selection, ...(colored === undefined ? {} : { color: colored }) },
           words: pending.words,
           name: t("pdfPageName", { name, page: pending.passage.page }),
         },
@@ -721,6 +881,17 @@ export default function PdfView(props: {
       document.getSelection()?.removeAllRanges();
       setChosen(`${added.note}:${added.id}`);
       setStatus(t("pdfHighlighted", { words: pending.words }));
+      await refresh();
+    } catch (problem) {
+      report(problem);
+    }
+  };
+
+  const recolor = async (item: NoteHighlight, next: string) => {
+    try {
+      const colored = next === highlightColors[0]?.name ? undefined : next;
+      const saved = await setHighlightColor(vault, item.note, item.highlight.id, colored);
+      setStatus(saved ? t("pdfColorSaved", { color: colorName(next) }) : t("pdfHighlightGone"));
       await refresh();
     } catch (problem) {
       report(problem);
@@ -758,11 +929,14 @@ export default function PdfView(props: {
       },
     );
   };
-  const show = (item: NoteHighlight) => {
-    const key = keyOf(item);
+  /** Shows a highlight or a link by its key: chosen in the list, and its place, when it has one. */
+  const showAt = (key: string) => {
     setChosen(key);
     const passage = located.get(key);
     if (passage !== undefined && passage !== null) goTo(passage.page, key);
+  };
+  const show = (item: NoteHighlight) => {
+    showAt(keyOf(item));
   };
 
   // A link's place: its page, and its passage marked, a highlight's chosen in the list.
@@ -788,45 +962,50 @@ export default function PdfView(props: {
       return;
     }
     const passage = { page, selection: place.selection };
-    const same = highlights.find((item) => {
-      const { passage: own } = item.highlight;
-      return (
-        own.page === place.page && JSON.stringify(own.selection) === JSON.stringify(place.selection)
-      );
-    });
-    if (same === undefined) {
+    const sameAs = (own: PdfPassage) =>
+      own.page === place.page && JSON.stringify(own.selection) === JSON.stringify(place.selection);
+    // A highlight of the passage first, then another note's link to it.
+    const same = highlights.find((item) => sameAs(item.highlight.passage));
+    const sameLink = links.find((item) => sameAs(item.link.passage));
+    const key =
+      same !== undefined ? keyOf(same) : sameLink === undefined ? undefined : linkKeyOf(sameLink);
+    if (key === undefined) {
       setLinked(passage);
       goTo(page, "focus");
       return;
     }
-    const key = keyOf(same);
     setChosen(key);
     setLinked(undefined);
     const where = located.get(key);
     goTo(where === undefined || where === null ? page : where.page, key);
-  }, [at, listed, sizes.length, scale, highlights, located, goTo]);
+  }, [at, listed, sizes.length, scale, highlights, links, located, goTo]);
 
   // What each page marks.
   const marksByPage = useMemo(() => {
     const byPage = new Map<number, Mark[]>();
-    const add = (passage: PdfPassage, key: string, kind: MarkKind) => {
+    const add = (passage: PdfPassage, key: string, kind: MarkKind, color?: string) => {
       const list = byPage.get(passage.page) ?? [];
-      list.push({ key, kind, selection: passage.selection });
+      list.push({ key, kind, selection: passage.selection, color: cssColor(color) });
       byPage.set(passage.page, list);
     };
-    for (const item of highlights) {
-      const key = keyOf(item);
+    const marked = (key: string, color: string | undefined) => {
       const passage = located.get(key);
       if (passage !== undefined && passage !== null) {
-        add(passage, key, key === chosen ? "chosen" : "highlight");
+        add(passage, key, key === chosen ? "chosen" : "highlight", color);
       }
-    }
+    };
+    for (const item of highlights) marked(keyOf(item), item.highlight.passage.color);
+    for (const item of links) marked(linkKeyOf(item), item.link.passage.color);
     if (linked !== undefined) add(linked, "focus", "focus");
     if (pending !== undefined && matches !== undefined) add(pending.passage, "match", "match");
     return byPage;
-  }, [highlights, located, chosen, linked, pending, matches]);
+  }, [highlights, links, located, chosen, linked, pending, matches]);
 
-  const [listOpen, setListOpen] = useState(true);
+  // What the panel beside the pages shows: the highlights, the PDF's outline, or nothing.
+  const [panel, setPanel] = useState<"highlights" | "outline" | undefined>("highlights");
+  const togglePanel = (which: "highlights" | "outline") => {
+    setPanel((open) => (open === which ? undefined : which));
+  };
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     const mod = event.ctrlKey || event.metaKey;
     if (mod && !event.altKey && event.key.toLowerCase() === "f" && !event.shiftKey) {
@@ -857,6 +1036,15 @@ export default function PdfView(props: {
       <div className="pdf-toolbar">
         <h1 className="pdf-title">{name}</h1>
         <div className="pdf-tools" role="toolbar" aria-label={t("pdfTools", { name })}>
+          <button
+            type="button"
+            className="quiet"
+            disabled={back.length === 0}
+            title={t("pdfBackHint")}
+            onClick={goBack}
+          >
+            {t("pdfBack")}
+          </button>
           <button
             type="button"
             className="quiet"
@@ -934,15 +1122,41 @@ export default function PdfView(props: {
           >
             {t("pdfHighlight")}
           </button>
+          <label className="pdf-color">
+            <span className="pdf-color-swatch" style={{ background: cssColor(color) }} />
+            <select
+              aria-label={t("pdfHighlightColor")}
+              value={color}
+              onChange={(event) => {
+                setColor(event.target.value);
+              }}
+            >
+              {highlightColors.map((each) => (
+                <option key={each.name} value={each.name}>
+                  {colorName(each.name)}
+                </option>
+              ))}
+            </select>
+          </label>
           <button
             type="button"
             className="quiet"
-            aria-pressed={listOpen}
+            aria-pressed={panel === "highlights"}
             onClick={() => {
-              setListOpen((open) => !open);
+              togglePanel("highlights");
             }}
           >
             {t("pdfHighlights")}
+          </button>
+          <button
+            type="button"
+            className="quiet"
+            aria-pressed={panel === "outline"}
+            onClick={() => {
+              togglePanel("outline");
+            }}
+          >
+            {t("pdfOutline")}
           </button>
         </div>
       </div>
@@ -1038,11 +1252,23 @@ export default function PdfView(props: {
                 onSize={onSize}
                 onError={report}
                 register={register}
+                onLink={onLink}
               />
             ))
           )}
         </div>
-        {listOpen ? (
+        {panel === "outline" && doc !== undefined ? (
+          <PdfOutline
+            doc={doc}
+            onGo={(dest) => {
+              void follow(dest);
+            }}
+            onOpenUrl={(url) => {
+              void backend.openUrl(url);
+            }}
+          />
+        ) : null}
+        {panel === "highlights" ? (
           <aside className="pdf-highlights" aria-labelledby="pdf-highlights-title">
             <h2 id="pdf-highlights-title">{t("pdfHighlights")}</h2>
             {highlights.length === 0 ? (
@@ -1069,8 +1295,19 @@ export default function PdfView(props: {
                       >
                         <span className="pdf-highlight-page">
                           {lost ? t("pdfNotFound") : t("pdfOnPage", { page })}
+                          {", "}
+                          {colorName(item.highlight.passage.color)}
                         </span>
-                        <span className="pdf-highlight-words">{words}</span>
+                        <span
+                          className="pdf-highlight-words"
+                          style={
+                            {
+                              "--mark-color": cssColor(item.highlight.passage.color),
+                            } as CSSProperties
+                          }
+                        >
+                          {words}
+                        </span>
                       </button>
                       {editing?.key === key ? (
                         <form
@@ -1152,6 +1389,25 @@ export default function PdfView(props: {
                         >
                           {t("pdfShowInNote")}
                         </button>
+                        <select
+                          className="pdf-highlight-recolor"
+                          aria-label={t("pdfColor")}
+                          value={offeredColor(item.highlight.passage.color) ?? ""}
+                          onChange={(event) => {
+                            void recolor(item, event.target.value);
+                          }}
+                        >
+                          {offeredColor(item.highlight.passage.color) === undefined ? (
+                            <option value="" disabled>
+                              {colorName(item.highlight.passage.color)}
+                            </option>
+                          ) : null}
+                          {highlightColors.map((each) => (
+                            <option key={each.name} value={each.name}>
+                              {colorName(each.name)}
+                            </option>
+                          ))}
+                        </select>
                         <button
                           type="button"
                           className="quiet danger"
@@ -1166,6 +1422,67 @@ export default function PdfView(props: {
                   );
                 })}
               </ol>
+            )}
+            {links.length === 0 ? null : (
+              <>
+                <h3 id="pdf-linked-title">{t("pdfLinkedFromNotes")}</h3>
+                <ol aria-labelledby="pdf-linked-title">
+                  {links.map((item) => {
+                    const key = linkKeyOf(item);
+                    const where = located.get(key);
+                    const page = where?.page ?? item.link.passage.page;
+                    const title = vault.note(item.note)?.title ?? "";
+                    return (
+                      <li key={key} className={key === chosen ? "chosen" : undefined}>
+                        <button
+                          type="button"
+                          className="pdf-highlight-go"
+                          aria-current={key === chosen ? "true" : undefined}
+                          onClick={() => {
+                            showAt(key);
+                          }}
+                        >
+                          <span className="pdf-highlight-page">
+                            {where === null ? t("pdfNotFound") : t("pdfOnPage", { page })}
+                            {", "}
+                            {colorName(item.link.passage.color)}
+                            {", "}
+                            {t("pdfFromNote", { note: title })}
+                          </span>
+                          <span
+                            className="pdf-highlight-words"
+                            style={
+                              {
+                                "--mark-color": cssColor(item.link.passage.color),
+                              } as CSSProperties
+                            }
+                          >
+                            {item.link.words === "" ? t("pdfNoWords") : item.link.words}
+                          </span>
+                        </button>
+                        <span
+                          className="pdf-highlight-actions"
+                          role="group"
+                          aria-label={t("pdfLinkActions", { page, note: title })}
+                        >
+                          <button
+                            type="button"
+                            className="quiet"
+                            onClick={() => {
+                              onOpenNote(
+                                item.note,
+                                item.written ? { block: item.link.block } : undefined,
+                              );
+                            }}
+                          >
+                            {t("pdfShowInNote")}
+                          </button>
+                        </span>
+                      </li>
+                    );
+                  })}
+                </ol>
+              </>
             )}
           </aside>
         ) : null}

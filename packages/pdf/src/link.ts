@@ -1,7 +1,8 @@
 // A place in a PDF, as Obsidian links to it (ADR 0061): a page,
 // `paper.pdf#page=3`, or a passage on it, as Copy link to selection
-// writes it, `paper.pdf#page=3&selection=4,0,5,20`. What else the part
-// after `#` says, as `height=400` or PDF++'s `color=red`, is left alone.
+// writes it, `paper.pdf#page=3&selection=4,0,5,20`, with PDF++'s color
+// after it, `&color=red` (ADR 0062). What else the part after `#` says,
+// as `height=400`, is left alone.
 
 /**
  * A passage on a page: the first and last of the page's text items, as
@@ -16,10 +17,12 @@ export interface PdfSelection {
   readonly endOffset: number;
 }
 
-/** A place in a PDF: a page, from 1, and a passage on it. */
+/** A place in a PDF: a page, from 1, a passage on it, and the passage's color. */
 export interface PdfPlace {
   readonly page: number;
   readonly selection?: PdfSelection;
+  /** PDF++'s `color`, as written: a name of its palette, or `r,g,b`. */
+  readonly color?: string;
 }
 
 /** A place with its passage, which a highlight always has. */
@@ -59,15 +62,22 @@ export function readPdfPlace(part: string): PdfPlace | undefined {
   const page = whole(params.get("page"));
   if (page === undefined || page < 1) return undefined;
   const selection = readSelection(params.get("selection"));
-  return selection === undefined ? { page } : { page, selection };
+  const color = params.get("color")?.trim() ?? "";
+  return {
+    page,
+    ...(selection === undefined ? {} : { selection }),
+    ...(color === "" ? {} : { color }),
+  };
 }
 
-/** The part of a link after its `#` for a place, as Obsidian writes it. */
+/** The part of a link after its `#` for a place, as Obsidian writes it, and PDF++ its color. */
 export function writePdfPlace(place: PdfPlace): string {
-  const page = `page=${String(place.page)}`;
-  if (place.selection === undefined) return page;
-  const { beginIndex, beginOffset, endIndex, endOffset } = place.selection;
-  return `${page}&selection=${[beginIndex, beginOffset, endIndex, endOffset].join(",")}`;
+  let part = `page=${String(place.page)}`;
+  if (place.selection !== undefined) {
+    const { beginIndex, beginOffset, endIndex, endOffset } = place.selection;
+    part += `&selection=${[beginIndex, beginOffset, endIndex, endOffset].join(",")}`;
+  }
+  return place.color === undefined ? part : `${part}&color=${place.color}`;
 }
 
 /** Whether the part of a link after its `#` names a passage, as a highlight's link does. */

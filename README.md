@@ -36,9 +36,10 @@ Notion exports. Self-hosting is available for enterprise.
 > install from its directory; the
 > server's [REST API](https://fzn0x.github.io/nether/api/) reads and writes
 > notes, databases and search with personal access tokens, and its webhooks
-> tell other services when notes change; PDFs open to be highlighted and
-> commented on, each highlight Markdown that Obsidian reads; and the
-> [roadmap](docs/roadmap.md#phase-4-platform) ticks off the rest as it lands.
+> tell other services when notes change; PDFs open to be highlighted in
+> PDF++'s colors and commented on, each highlight Markdown that Obsidian
+> reads; and the [roadmap](docs/roadmap.md#phase-4-platform) ticks off the
+> rest as it lands.
 
 [Documentation](https://fzn0x.github.io/nether/) ·
 [Roadmap](docs/roadmap.md) · [Requirements](docs/requirements.md) ·
