@@ -43,9 +43,16 @@ function linesOf(node: Y.XmlElement | Y.XmlFragment, lines: string[]): void {
   }
 }
 
-/** The text of something inline, as a mention or a hard break: its own text, if any. */
+/**
+ * The text of something inline, as a mention or a hard break: its own text,
+ * if any. A tag the editor keeps as a node of its own reads as it is written.
+ */
 function inlineText(node: Y.XmlElement | Y.XmlHook): string {
   if (!(node instanceof Y.XmlElement)) return "";
+  if (node.nodeName === "tag") {
+    const name: unknown = node.getAttribute("name");
+    return typeof name === "string" && name !== "" ? `#${name}` : "";
+  }
   return node
     .toArray()
     .map((child) => (child instanceof Y.XmlText ? textOf(child) : inlineText(child)))
