@@ -22,7 +22,8 @@ export const contentSecurityPolicy = [
   "img-src 'self' blob: data:",
   "media-src 'self' blob: data:",
   "font-src 'self' data:",
-  "connect-src 'self'",
+  // The plugin and theme directory reads its index and files from GitHub (ADR 0065).
+  "connect-src 'self' https://raw.githubusercontent.com",
   "frame-src 'self'",
   "frame-ancestors 'none'",
   "object-src 'none'",
