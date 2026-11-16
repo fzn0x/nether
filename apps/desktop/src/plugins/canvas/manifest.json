@@ -1,0 +1,11 @@
+{
+  "id": "canvas",
+  "name": "Canvas",
+  "version": "1.0.0",
+  "api": "^0.1",
+  "description": "Opens .canvas files, the open JSON Canvas format, as an infinite whiteboard of notes, text, images, links and arrows.",
+  "author": "Nether contributors",
+  "contributes": {
+    "views": [{ "id": "canvas", "name": "Canvas", "extensions": ["canvas"] }]
+  }
+}

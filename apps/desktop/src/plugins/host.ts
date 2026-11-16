@@ -11,6 +11,7 @@ import {
   type JsonObject,
   type Localized,
   type Manifest,
+  type PaneViewProps,
   type PanelProps,
   type Plugin,
   type PluginContext,
@@ -33,6 +34,7 @@ import type {
   SlashOffer,
 } from "./codeBlocks.ts";
 import type { PanelDrawing, PanelHostView, PanelRegistry } from "./panels.ts";
+import type { PaneViewDrawing, PaneViewHost, ViewRegistry } from "./views.ts";
 import type { CommandRegistry } from "./registry.ts";
 
 /**
@@ -48,6 +50,10 @@ export interface AppHost {
   readonly panels: {
     /** Fills a panel the manifest declares with `view`. */
     view(id: string, view: PanelHostView): void;
+  };
+  readonly views: {
+    /** Fills a pane with `view`, for a view the manifest declares. */
+    view(id: string, view: PaneViewHost): void;
   };
 }
 
@@ -74,6 +80,7 @@ export interface Registries {
   readonly codeBlocks: CodeBlockRegistry;
   readonly blocks: BlockRegistry;
   readonly panels: PanelRegistry;
+  readonly views: ViewRegistry;
 }
 
 export interface HostOptions {
@@ -84,6 +91,8 @@ export interface HostOptions {
   readonly connect?: () => readonly [Transport, Transport];
   /** Told when a plugin cannot start, or one of its commands fails. */
   readonly onError?: (plugin: string, message: string) => void;
+  /** Asked to open a plugin's view of its own, `plugin-id:view`, in the pane. */
+  readonly onOpenView?: (id: string) => void;
 }
 
 interface Added {
@@ -101,6 +110,8 @@ interface Added {
   readonly blockViews: Map<string, number>;
   /** The panels its code attached views to, by ID: a callback, or a live view through the host. */
   readonly panelViews: Map<string, number | PanelHostView>;
+  /** The views of panes its code attached, by ID: a callback, or a live view through the host. */
+  readonly paneViews: Map<string, number | PaneViewHost>;
   /** Its connection, once its code has been asked for. */
   running?: Promise<readonly [Endpoint, Endpoint]> | undefined;
 }
@@ -129,6 +140,12 @@ function panelProps(props: PanelProps): Json {
     theme: props.theme,
     ...(note === undefined ? {} : { note: { id: note.id, title: note.title, path: note.path } }),
   };
+}
+
+/** A pane's view's props as they cross to a plugin. */
+function paneProps(props: PaneViewProps): Json {
+  const { file } = props;
+  return { theme: props.theme, ...(file === undefined ? {} : { file: { path: file.path } }) };
 }
 
 /** What a plugin drew, as the SDK says it may be. */
@@ -173,12 +190,22 @@ export class PluginHost {
       name: () => localize(name, language),
       keywords: () => (keywords === undefined ? "" : localize(keywords, language)),
     });
-    const taken = manifest.contributes.codeBlocks.flatMap((block) => {
-      const other = this.#registries.codeBlocks.get(block.language);
-      return other === undefined
-        ? []
-        : [`The plugin ${other.plugin} draws ${block.language} code blocks already.`];
-    });
+    const taken = [
+      ...manifest.contributes.codeBlocks.flatMap((block) => {
+        const other = this.#registries.codeBlocks.get(block.language);
+        return other === undefined
+          ? []
+          : [`The plugin ${other.plugin} draws ${block.language} code blocks already.`];
+      }),
+      ...manifest.contributes.views.flatMap((view) =>
+        view.extensions.flatMap((extension) => {
+          const other = this.#registries.views.forFile(`a.${extension}`);
+          return other === undefined
+            ? []
+            : [`The plugin ${other.plugin} opens .${extension} files already.`];
+        }),
+      ),
+    ];
     if (taken.length > 0) return taken;
     const plugin: Added = {
       manifest,
@@ -189,6 +216,7 @@ export class PluginHost {
       views: new Map(),
       blockViews: new Map(),
       panelViews: new Map(),
+      paneViews: new Map(),
     };
     this.#plugins.set(manifest.id, plugin);
     for (const block of manifest.contributes.codeBlocks) {
@@ -224,6 +252,17 @@ export class PluginHost {
           folded: panel.folded,
           name: () => localize(panel.name, language),
           load: () => this.#panelDrawing(plugin, panel.id),
+        }),
+      );
+    }
+    for (const view of manifest.contributes.views) {
+      plugin.removers.push(
+        this.#registries.views.add({
+          id: `${manifest.id}:${view.id}`,
+          plugin: manifest.id,
+          extensions: view.extensions,
+          name: () => localize(view.name, language),
+          load: () => this.#paneDrawing(plugin, view.id),
         }),
       );
     }
@@ -349,6 +388,22 @@ export class PluginHost {
     };
   }
 
+  /** Starts a plugin for a view of a pane, and gives what fills it. */
+  async #paneDrawing(plugin: Added, id: string): Promise<PaneViewDrawing> {
+    const [app] = await this.#start(plugin);
+    const missing = () => new Error(`Its code did not attach the ${id} view.`);
+    const view = plugin.paneViews.get(id);
+    if (view === undefined) throw missing();
+    if (typeof view !== "number") return { view };
+    return {
+      mount: (element, props) => {
+        const callback = plugin.paneViews.get(id);
+        if (typeof callback !== "number") return Promise.reject(missing());
+        return this.#mount(app, plugin, callback, element, paneProps, props);
+      },
+    };
+  }
+
   /**
    * Mounts a plugin's view in `element`, through a slot named for it, and
    * gives what updates and unmounts it.
@@ -408,6 +463,11 @@ export class PluginHost {
     const languages = new Set(contributes.codeBlocks.map((block) => block.language));
     const types = new Set(contributes.blocks.map((block) => block.type));
     const panels = new Set(contributes.panels.map((panel) => panel.id));
+    const views = new Set(contributes.views.map((view) => view.id));
+    // Those of their own, with no extensions, which a plugin may open.
+    const ownViews = new Set(
+      contributes.views.filter((view) => view.extensions.length === 0).map((view) => view.id),
+    );
     let ready: () => void = () => undefined;
     const isReady = new Promise<void>((resolve) => {
       ready = resolve;
@@ -417,7 +477,7 @@ export class PluginHost {
       kind: string,
       ids: ReadonlySet<string>,
       what: string,
-      attached: Map<string, number | PanelHostView>,
+      attached: Map<string, number | PanelHostView | PaneViewHost>,
     ) => {
       app.handle(`${kind}.register`, (value, callback) => {
         const at = declared(ids, what, value);
@@ -441,6 +501,12 @@ export class PluginHost {
     attachable("codeBlocks", languages, "code block", plugin.drawers);
     attachable("blocks", types, "block", plugin.blockViews);
     attachable("panels", panels, "panel", plugin.panelViews);
+    attachable("views", views, "view", plugin.paneViews);
+    app.handle("views.open", (view) => {
+      const at = declared(ownViews, "view of its own", view);
+      this.#options.onOpenView?.(`${id}:${at}`);
+      return null;
+    });
     app.handle("blocks.change", (slot, attrs) => {
       const at = typeof slot === "string" ? this.#slots.get(slot) : undefined;
       // A plugin changes only the blocks its own views show.
@@ -464,6 +530,11 @@ export class PluginHost {
       panels: {
         view: (panel, view) => {
           plugin.panelViews.set(declared(panels, "panel", panel), view);
+        },
+      },
+      views: {
+        view: (pane, view) => {
+          plugin.paneViews.set(declared(views, "view", pane), view);
         },
       },
     };

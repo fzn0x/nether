@@ -86,7 +86,7 @@ flowchart TB
 | [`packages/search`](../packages/search/) | Indexing and queries |
 | [`packages/graph`](../packages/graph/) | The link index, backlinks and the graph view |
 | [`packages/canvas`](../packages/canvas/) | The whiteboard, in the JSON Canvas format |
-| [`packages/plugin-api`](../packages/plugin-api/) | The public, versioned plugin SDK, under MIT: manifests, `definePlugin` and the messages to the app; the host that runs plugins, and the built-in plugins such as Mermaid diagrams, query blocks, tags and backlinks, are in `apps/desktop/src/plugins` |
+| [`packages/plugin-api`](../packages/plugin-api/) | The public, versioned plugin SDK, under MIT: manifests, `definePlugin` and the messages to the app; the host that runs plugins, and the built-in plugins such as Mermaid diagrams, query blocks, tags, backlinks, the canvas and the graph, are in `apps/desktop/src/plugins` |
 | [`packages/ai`](../packages/ai/) | The provider-agnostic AI adapter |
 | [`packages/ui`](../packages/ui/) | Shared components, themes and design tokens |
 | [`tools/vault-generator`](../tools/vault-generator/) | The generator of the 50,000-note reference vault for performance tests |

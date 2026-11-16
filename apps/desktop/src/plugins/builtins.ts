@@ -6,6 +6,8 @@
 // Their order is the order of their panels and slash menu entries.
 import assigned from "./assigned/manifest.json";
 import backlinks from "./backlinks/manifest.json";
+import canvas from "./canvas/manifest.json";
+import graph from "./graph/manifest.json";
 import type { BuiltinPlugin } from "./host.ts";
 import mermaid from "./mermaid/manifest.json";
 import outline from "./outline/manifest.json";
@@ -19,4 +21,6 @@ export const builtinPlugins: readonly BuiltinPlugin[] = [
   { manifest: assigned, load: () => import("./assigned/plugin.tsx") },
   { manifest: outline, load: () => import("./outline/plugin.tsx") },
   { manifest: backlinks, load: () => import("./backlinks/plugin.tsx") },
+  { manifest: canvas, load: () => import("./canvas/plugin.tsx") },
+  { manifest: graph, load: () => import("./graph/plugin.tsx") },
 ];

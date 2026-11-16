@@ -58,6 +58,7 @@ describe("readManifest", () => {
       codeBlocks: [],
       blocks: [],
       panels: [],
+      views: [],
       settings: [],
     });
     expect(manifest).not.toHaveProperty("description");
@@ -212,6 +213,43 @@ describe("readManifest", () => {
       "contributes.panels[1].place is not one of sidebar, note.",
       "contributes.panels[1].folded is not true or false.",
       'contributes.panels[2].id "a" is there twice.',
+    ]);
+  });
+
+  it("reads views, of files by their extensions or of their own", () => {
+    const { manifest } = readManifest({
+      ...good,
+      contributes: {
+        views: [
+          { id: "sheet", name: "Sheet", extensions: ["csv", "tsv"] },
+          { id: "stats", name: { en: "Statistics" } },
+        ],
+      },
+    });
+    expect(manifest?.contributes.views).toEqual([
+      { id: "sheet", name: "Sheet", extensions: ["csv", "tsv"] },
+      { id: "stats", name: { en: "Statistics" }, extensions: [] },
+    ]);
+  });
+
+  it("says what is wrong with its views", () => {
+    const { problems } = readManifest({
+      ...good,
+      contributes: {
+        views: [
+          { id: "a b", name: "A" },
+          { id: "a", name: "A", extensions: [".csv"] },
+          { id: "b", extensions: ["md"] },
+          { id: "b", name: "B" },
+        ],
+      },
+    });
+    expect(problems).toEqual([
+      "contributes.views[0].id is not letters, digits, hyphens and underscores.",
+      "contributes.views[1].extensions is not a list of extensions, as canvas.",
+      "contributes.views[2].name is not a name.",
+      "contributes.views[2].extensions has md, which notes are.",
+      'contributes.views[3].id "b" is there twice.',
     ]);
   });
 

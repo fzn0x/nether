@@ -71,6 +71,19 @@ export interface PanelContribution {
   readonly folded: boolean;
 }
 
+/**
+ * A view a plugin adds, which fills a pane: of the files with one of its
+ * extensions, opened in a tab as a note is, or of its own, opened by a
+ * command.
+ */
+export interface ViewContribution {
+  /** Unique in the plugin; the app knows it as `plugin-id:id`. */
+  readonly id: string;
+  readonly name: Localized;
+  /** The extensions of the files it opens, lowercase and without the dot, as `canvas`; none for a view of its own. */
+  readonly extensions: readonly string[];
+}
+
 /** The kinds of settings field the app draws for a plugin. */
 export const settingTypes = ["text", "number", "toggle", "choice"] as const;
 export type SettingType = (typeof settingTypes)[number];
@@ -103,6 +116,7 @@ export interface Contributions {
   readonly codeBlocks: readonly CodeBlockContribution[];
   readonly blocks: readonly BlockContribution[];
   readonly panels: readonly PanelContribution[];
+  readonly views: readonly ViewContribution[];
   readonly settings: readonly SettingField[];
 }
 
@@ -286,6 +300,34 @@ function readPanels(value: unknown, problems: string[]): PanelContribution[] {
   });
 }
 
+/** A file's extension a view opens: lowercase letters and digits, as `canvas`. */
+const extensionPattern = /^[a-z0-9]+$/;
+
+function readViews(value: unknown, problems: string[]): ViewContribution[] {
+  const seen = new Set<string>();
+  return readList(value, "views", problems, (item, where) => {
+    const { id, name, extensions } = item;
+    if (typeof id !== "string" || !commandIdPattern.test(id)) {
+      problems.push(`${where}.id is not letters, digits, hyphens and underscores.`);
+      return undefined;
+    }
+    if (seen.has(id)) problems.push(`${where}.id "${id}" is there twice.`);
+    seen.add(id);
+    if (!isLocalized(name)) problems.push(`${where}.name is not a name.`);
+    const list: unknown = extensions ?? [];
+    if (
+      !Array.isArray(list) ||
+      !list.every((extension) => typeof extension === "string" && extensionPattern.test(extension))
+    ) {
+      problems.push(`${where}.extensions is not a list of extensions, as canvas.`);
+      return undefined;
+    }
+    // A note is the app's own.
+    if (list.includes("md")) problems.push(`${where}.extensions has md, which notes are.`);
+    return { id, name: isLocalized(name) ? name : id, extensions: list as string[] };
+  });
+}
+
 /** A field's value when it is not set, by its type. */
 function defaultOf(
   type: SettingType,
@@ -421,6 +463,7 @@ export function readManifest(value: unknown): ManifestResult {
   );
   const blocks = readBlocks(isObject(contributes) ? contributes.blocks : undefined, problems);
   const panels = readPanels(isObject(contributes) ? contributes.panels : undefined, problems);
+  const views = readViews(isObject(contributes) ? contributes.views : undefined, problems);
   const settings = readSettings(isObject(contributes) ? contributes.settings : undefined, problems);
   // A plugin block's type starts with its plugin's ID, which must then start with a letter.
   if (blocks.length > 0 && typeof id === "string" && !/^[a-z]/.test(id)) {
@@ -436,7 +479,7 @@ export function readManifest(value: unknown): ManifestResult {
       ...(description === undefined ? {} : { description: description as Localized }),
       ...(author === undefined ? {} : { author: author as string }),
       ...(authorUrl === undefined ? {} : { authorUrl: authorUrl as string }),
-      contributes: { commands, codeBlocks, blocks, panels, settings },
+      contributes: { commands, codeBlocks, blocks, panels, views, settings },
     },
   };
 }

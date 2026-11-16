@@ -33,6 +33,9 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   draws, kept in `.nether/plugins/<id>/data.json`. A Plugins command opens
   its tab.
 - The Backlinks plugin can leave out the text around each link.
+- Plugins can add views that fill a pane: of files by their extension,
+  opened in a tab as notes are, or of their own, opened by a command. A
+  file no plugin opens says so in its tab.
 
 ### Changed
 
@@ -51,6 +54,8 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   are now Notes, Search and Trash, then Tags and Assigned.
 - Templates and periodic notes, Appearance and Keyboard shortcuts are tabs
   of the settings dialog, where they were dialogs of their own.
+- The canvas and the graph are built-in plugins' views. With the canvas
+  plugin off, New canvas waits for it.
 
 - The desktop app keeps one copy of each link target, tag, heading and
   property value its notes' indexes repeat, as the vault's links load: on

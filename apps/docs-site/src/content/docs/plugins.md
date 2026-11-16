@@ -57,13 +57,13 @@ reach your computer.
 | `api` | The versions of the plugin API it works with, as `^0.1` |
 | `description` | What it does, optional, a string or strings by language |
 | `author`, `authorUrl` | Who made it, optional |
-| `contributes` | What it adds: for now, `commands`, `codeBlocks`, `blocks`, `panels` and `settings` |
+| `contributes` | What it adds: for now, `commands`, `codeBlocks`, `blocks`, `panels`, `views` and `settings` |
 
 The app reads the manifest before the plugin's code runs. Its commands
 show in the menus and the palette at once, and its slash menu entries in
 the slash menu, and its panels' tabs and headings. Its code loads only
 when it is first needed: a command chosen, or a code block, a block or a
-panel of its own shown.
+panel or a view of its own shown.
 
 A name by language picks the app's language, then its main language
 (`pt` for `pt-BR`), then English, then the first one there is.
@@ -94,6 +94,7 @@ export default definePlugin({
 | `context.codeBlocks` | `register(language, render)`, which draws code blocks in a language the manifest declares |
 | `context.blocks` | `register(type, view)`, which shows blocks of a type the manifest declares |
 | `context.panels` | `register(id, view)`, which fills a panel the manifest declares |
+| `context.views` | `register(id, view)`, which draws a view the manifest declares, and `open(id)`, which opens a view of its own |
 | `context.settings` | `values()`, the plugin's settings, and `onChange(listener)` |
 
 Every call to the app is async, and takes and returns plain JSON values,
@@ -272,6 +273,50 @@ opens beside the panel.
 
 The sidebar's Tags and Assigned, and the Outline, Linked from and
 Unlinked mentions beside a note, are built-in plugins' panels.
+
+## Views
+
+A plugin can add views that fill a pane: of files with an extension of
+theirs, which open in a tab as notes do, or of their own, which a command
+opens.
+
+```json
+"contributes": {
+  "views": [
+    { "id": "sheet", "name": "Sheet", "extensions": ["csv", "tsv"] },
+    { "id": "stats", "name": "Statistics" }
+  ]
+}
+```
+
+- **`extensions`** are lowercase, without the dot. `md` is the app's own,
+  for notes. Each extension is opened by one plugin: a plugin that
+  declares one another has is not added.
+- A view with no extensions is a view of its own. The plugin opens it
+  with `context.views.open(id)`, from one of its commands.
+
+The plugin's view fills the pane, as a panel's fills a panel:
+
+```js
+await context.views.register("sheet", {
+  mount(element, props) {
+    element.textContent = props.file?.path ?? "";
+    return {
+      update(next) {
+        element.textContent = next.file?.path ?? "";
+      },
+    };
+  },
+});
+```
+
+`props` holds the page's `theme` and, for a view of files, the `file`
+open, by its `path`. A file whose extension no plugin opens says so in
+its tab.
+
+The canvas, the view of `.canvas` files, and the graph, a view of its
+own, are built-in plugins' views. With the canvas plugin off, New canvas
+waits for it.
 
 ## Settings
 
