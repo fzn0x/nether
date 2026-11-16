@@ -319,9 +319,10 @@ await context.views.register("sheet", {
 open, by its `path`. A file whose extension no plugin opens says so in
 its tab.
 
-The canvas, the view of `.canvas` files, and the graph, a view of its
-own, are built-in plugins' views. With the canvas plugin off, New canvas
-waits for it.
+The canvas, the view of `.canvas` files, the PDF view, of `.pdf` files,
+and the graph, a view of its own, are built-in plugins' views. With the
+canvas plugin off, New canvas waits for it; with the PDF plugin off, PDFs
+leave the sidebar.
 
 ## Database layouts
 
