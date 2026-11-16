@@ -53,7 +53,6 @@ export interface EditorWords {
   /** Rendered math, which opens its LaTeX. */
   readonly showMath: string;
   readonly codeLanguage: string;
-  readonly diagramError: string;
   /** A field for the path or URL of an image or file block that has none. */
   readonly fileLink: string;
   readonly chooseFile: string;
@@ -122,7 +121,6 @@ export const englishWords: EditorWords = {
   editMath: "LaTeX",
   showMath: "Math, press Enter to edit",
   codeLanguage: "Language",
-  diagramError: "This diagram cannot be drawn:",
   fileLink: "Path or URL of the file",
   chooseFile: "Choose a file",
   missingFile: "Not in the vault",

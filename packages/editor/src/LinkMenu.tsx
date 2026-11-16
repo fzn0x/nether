@@ -59,10 +59,11 @@ export interface NoteLinks {
   /** Calls `listener` whenever the note an embed comes from changes; returns what stops it. */
   watchEmbed?(target: LinkTarget, listener: () => void): () => void;
   /**
-   * What a `base` code block shows below its code: the notes its query
-   * finds, as Obsidian shows a base embedded in a note.
+   * What a code block shows below its code, as plugins draw its language:
+   * a Mermaid diagram, or the notes a `base` block's query finds. `language`
+   * is the fence's first word, and `info` all of it.
    */
-  renderQuery?(source: string): ReactNode;
+  renderCode?(language: string, info: string, source: string): ReactNode;
 }
 
 export interface LinkMenuOptions {

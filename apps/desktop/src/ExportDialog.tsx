@@ -15,6 +15,7 @@ import {
 import type { Exporter, VaultMedia } from "./backend.ts";
 import type { ExportFormat } from "./exportNotes.ts";
 import { t } from "./messages.ts";
+import type { CodeBlockRegistry } from "./plugins/codeBlocks.ts";
 import { useModal } from "./useModal.ts";
 
 type Scope = "note" | "folder" | "vault";
@@ -38,11 +39,13 @@ export function ExportDialog(props: {
   readonly graph: LinkGraph;
   readonly media: VaultMedia;
   readonly exporter: Exporter;
+  /** What plugins draw code blocks with, such as Mermaid diagrams. */
+  readonly codeBlocks: CodeBlockRegistry;
   readonly note: NoteEntry;
   readonly notes: readonly NoteEntry[];
   readonly onClose: () => void;
 }) {
-  const { vault, vaultName, graph, media, exporter, note, notes, onClose } = props;
+  const { vault, vaultName, graph, media, exporter, codeBlocks, note, notes, onClose } = props;
   const folder = folderOf(note.path);
   const [scope, setScope] = useState<Scope>("note");
   const [format, setFormat] = useState<ExportFormat>("markdown");
@@ -90,6 +93,7 @@ export function ExportDialog(props: {
           graph,
           media,
           exporter,
+          codeBlocks,
           notes: chosen,
           wholeVault: scope === "vault",
           name,

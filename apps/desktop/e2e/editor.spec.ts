@@ -8,8 +8,10 @@ test("math, code and diagrams render in a note", async ({ page }) => {
   await expect(editor.locator(".math-block .katex-display")).toBeVisible();
   await expect(editor.locator(".hljs-keyword").first()).toHaveText("const");
   await expect(editor.getByRole("textbox", { name: "Language" }).first()).toHaveValue("ts");
-  // Mermaid loads with the first diagram.
-  await expect(editor.locator(".diagram svg")).toBeVisible({ timeout: 15_000 });
+  // Mermaid's plugin, and Mermaid, load with the first diagram.
+  await expect(editor.locator('.code-output[data-language="mermaid"] svg')).toBeVisible({
+    timeout: 15_000,
+  });
   expect(errors).toEqual([]);
 });
 
@@ -60,7 +62,7 @@ test("a diagram that asks for the ELK layout says it is not included", async ({ 
     await page.keyboard.type(line);
     await page.keyboard.press("Enter");
   }
-  await expect(editor.locator(".diagram-error")).toContainText(
+  await expect(editor.locator(".code-error")).toContainText(
     "Nether does not include the ELK layout",
     { timeout: 15_000 },
   );

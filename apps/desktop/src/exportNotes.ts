@@ -6,7 +6,7 @@
 // a new page. The user chooses where first, and a ZIP goes to the app in
 // batches as it is made. This loads when an export starts.
 import type { LinkTarget } from "@nether/core";
-import { diagramToSvg, highlightCode, mathToMathml, readThreads } from "@nether/editor";
+import { highlightCode, mathToMathml, readThreads } from "@nether/editor";
 import { type LinkGraph, noteSection } from "@nether/graph";
 import {
   type HtmlHooks,
@@ -23,6 +23,7 @@ import * as Y from "yjs";
 import type { Exporter, VaultMedia } from "./backend.ts";
 import { pageStyle, printStyle } from "./exportStyle.ts";
 import type { ExportEntry, PDFPage } from "./mygo.ts";
+import type { CodeBlockRegistry } from "./plugins/codeBlocks.ts";
 
 export type ExportFormat = "markdown" | "html" | "pdf";
 
@@ -38,6 +39,8 @@ export interface ExportJob {
   /** The name the save dialog suggests, and an HTML export's index shows. */
   readonly name: string;
   readonly format: ExportFormat;
+  /** What plugins draw code blocks with, such as Mermaid diagrams; without it, blocks show their code. */
+  readonly codeBlocks?: CodeBlockRegistry;
   /** The paper a PDF is laid out on. */
   readonly page?: PDFPage;
   /** Called as notes are done. */
@@ -105,7 +108,8 @@ function joinPath(folder: string, relative: string): string | undefined {
 class Export {
   readonly #job: ExportJob;
   readonly #parsed = new Map<string, Promise<ParsedMarkdown | undefined>>();
-  readonly #diagrams = new Map<string, Promise<string | undefined>>();
+  /** What plugins drew for code blocks, by language, info string and text. */
+  readonly #drawn = new Map<string, Promise<string | undefined>>();
   readonly #exported: ReadonlyMap<string, number>;
   /** The vault's files the export takes with its notes. */
   readonly files = new Set<string>();
@@ -212,13 +216,17 @@ class Export {
       ...links,
       math: mathToMathml,
       code: highlightCode,
-      diagram: (block) => {
-        let svg = this.#diagrams.get(block.text);
-        if (svg === undefined) {
-          svg = diagramToSvg(block.text);
-          this.#diagrams.set(block.text, svg);
+      codeBlock: (block, language) => {
+        const codeBlocks = this.#job.codeBlocks;
+        if (codeBlocks?.get(language) === undefined) return undefined;
+        const info = block.attrs.language;
+        const key = JSON.stringify([language.toLowerCase(), info, block.text]);
+        let html = this.#drawn.get(key);
+        if (html === undefined) {
+          html = codeBlocks.html(language, info, block.text);
+          this.#drawn.set(key, html);
         }
-        return svg;
+        return html;
       },
       embed: async (target) => {
         if (depth >= embedDepth) return undefined;

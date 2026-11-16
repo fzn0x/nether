@@ -1,7 +1,7 @@
 // How rich blocks look and edit in a page: math rendered with KaTeX and
-// edited as LaTeX, code with its language, and Mermaid diagrams drawn below
-// their code. Each view changes only the attributes the schema has. KaTeX
-// and Mermaid load with the first note that needs them.
+// edited as LaTeX, and code with its language, with what the app draws
+// for that language below it. Each view changes only the attributes the
+// schema has. KaTeX loads with the first note that needs it.
 import {
   type NodeViewProps,
   NodeViewContent,
@@ -14,7 +14,6 @@ import {
   type ComponentType,
   type KeyboardEvent,
   useEffect,
-  useId,
   useState,
 } from "react";
 import { EmbedView, FileView, ImageView, backToNote } from "./embeds.tsx";
@@ -175,80 +174,10 @@ function MathInlineView(props: ViewProps) {
   return <MathView {...props} display={false} />;
 }
 
-/**
- * Whether the page shows dark: as its root's `data-mode` says, which an
- * app sets apart from the system, or else as the system prefers.
- */
-function shownDark(): boolean {
-  const mode = document.documentElement.dataset.mode;
-  return mode === undefined ? matchMedia("(prefers-color-scheme: dark)").matches : mode === "dark";
-}
-
-/** A Mermaid diagram drawn from a code block's text. Mermaid loads with the first diagram. */
-function MermaidPreview(props: { readonly source: string; readonly errorLabel: string }) {
-  const { source, errorLabel } = props;
-  const id = `mermaid-${useId().replace(/[^a-zA-Z0-9]/g, "")}`;
-  const [svg, setSvg] = useState<string | undefined>();
-  const [error, setError] = useState<string | undefined>();
-
-  useEffect(() => {
-    let current = true;
-    // Draw once typing pauses, not on every key.
-    const timer = setTimeout(() => {
-      void import("mermaid")
-        .then(async ({ default: mermaid }) => {
-          mermaid.initialize({
-            startOnLoad: false,
-            // Diagrams cannot run scripts, follow clicks or load content.
-            securityLevel: "strict",
-            suppressErrorRendering: true,
-            // Mermaid's default is the ELK layout, which Nether does not
-            // include (ADR 0009); dagre lays out the same diagrams.
-            layout: "dagre",
-            // Dark as the page shows it, which the app may set apart from the system.
-            theme: shownDark() ? "dark" : "default",
-          });
-          await mermaid.parse(source);
-          const result = await mermaid.render(id, source);
-          if (!current) return;
-          setSvg(result.svg);
-          setError(undefined);
-        })
-        .catch((reason: unknown) => {
-          document.getElementById(`d${id}`)?.remove();
-          if (current) setError(reason instanceof Error ? reason.message : String(reason));
-        });
-    }, 300);
-    return () => {
-      current = false;
-      clearTimeout(timer);
-    };
-  }, [source, id]);
-
-  if (error !== undefined) {
-    return (
-      <div className="diagram-error" contentEditable={false} role="status">
-        <p>{errorLabel}</p>
-        <pre>{error}</pre>
-      </div>
-    );
-  }
-  return svg === undefined ? null : (
-    <div
-      className="diagram"
-      contentEditable={false}
-      // Mermaid's SVG, drawn with securityLevel "strict", which sanitizes it.
-      dangerouslySetInnerHTML={{ __html: svg }}
-    />
-  );
-}
-
 function CodeBlockView(props: ViewProps & { readonly links: NoteLinks | undefined }) {
   const { node, words, editor, links } = props;
   const language = typeof node.attrs.language === "string" ? node.attrs.language : "";
   const name = codeLanguage(language);
-  const isDiagram = name.toLowerCase() === "mermaid";
-  const isQuery = name.toLowerCase() === "base";
   return (
     <NodeViewWrapper className="code-block">
       <div className="code-tools" contentEditable={false}>
@@ -272,15 +201,8 @@ function CodeBlockView(props: ViewProps & { readonly links: NoteLinks | undefine
           className={name === "" ? undefined : `language-${name}`}
         />
       </pre>
-      {isDiagram ? (
-        <MermaidPreview source={node.textContent} errorLabel={words.diagramError} />
-      ) : null}
-      {isQuery && links?.renderQuery !== undefined ? (
-        // The notes a query finds are the app's to show; the editor gives it the code.
-        <div className="code-query" contentEditable={false}>
-          {links.renderQuery(node.textContent)}
-        </div>
-      ) : null}
+      {/* What a language draws is the app's to show; the editor gives it the code. */}
+      {name === "" ? null : links?.renderCode?.(name, language, node.textContent)}
     </NodeViewWrapper>
   );
 }

@@ -353,6 +353,7 @@ export const messages = {
   menuSettings: "Settings",
   menuPlugins: "Plugins",
   pluginFailed: "The plugin {plugin} failed: {message}",
+  codeBlockFailed: "This block cannot be drawn:",
   templateSettings: "Templates and periodic notes",
   templates: "Templates",
   templatesFolder: "Templates folder",
