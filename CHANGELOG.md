@@ -17,11 +17,18 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   built-in plugins run until the sandbox does
   ([ADR 0055](docs/adr/0055-plugins-declare-what-they-add-and-reach-the-app-only-by-messages.md)).
 - A guide to writing plugins.
+- Plugins can draw the code blocks of a language their manifest declares,
+  as HTML: below the code in a note, and in its place in an exported
+  page. A plugin's code loads with the first block it draws.
 
 ### Changed
 
 - The app's commands are in one registry with its plugins', from which
   the menus, the palette and the shortcuts are made.
+- Mermaid diagrams and query blocks are built-in plugins, drawn through
+  the plugin API. An exported diagram is now a
+  `<figure class="code-output" data-language="mermaid">`, and a diagram
+  that cannot be drawn says "This block cannot be drawn".
 
 - The desktop app keeps one copy of each link target, tag, heading and
   property value its notes' indexes repeat, as the vault's links load: on
