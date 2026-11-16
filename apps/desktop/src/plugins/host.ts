@@ -16,6 +16,7 @@ import {
   type Manifest,
   type PaneViewProps,
   type PanelProps,
+  type Permission,
   type Plugin,
   type PropertyViewProps,
   type PluginContext,
@@ -45,6 +46,7 @@ import type { LayoutActions, LayoutDrawing, LayoutHost, LayoutRegistry } from ".
 import type { PropertyTypeDrawing, PropertyTypeRegistry } from "./propertyTypes.ts";
 import type { CommandRegistry } from "./registry.ts";
 import type { ViewRenderer } from "./render.ts";
+import { type VaultAccess, pluginPath, toBase64 } from "./vault.ts";
 
 /**
  * What only built-in plugins get, as `context.host`: what cannot cross to a
@@ -128,6 +130,8 @@ export interface HostOptions {
   readonly openFrame?: FrameOpener;
   /** How long a plugin from a folder may take to start, in milliseconds. */
   readonly startTime?: number;
+  /** The vault open, as plugins that ask for it reach it (ADR 0064). */
+  readonly vault?: () => VaultAccess | undefined;
 }
 
 /** Where a plugin's code comes from: the app, or a folder of the vault, run in a frame. */
@@ -641,7 +645,7 @@ export class PluginHost {
     source: Extract<Source, { kind: "builtin" }>,
   ): Promise<Running> {
     const [appSide, pluginSide] = (this.#options.connect ?? pagePair)();
-    const { app, isReady, host } = this.#answer(plugin, appSide);
+    const { app, isReady, host, release } = this.#answer(plugin, appSide);
     const { id } = plugin.manifest;
     try {
       const { default: builtin } = await source.load();
@@ -659,11 +663,13 @@ export class PluginHost {
       return {
         app,
         stop() {
+          release();
           app.close();
           end.close();
         },
       };
     } catch (error) {
+      release();
       app.close();
       throw error;
     }
@@ -691,13 +697,14 @@ export class PluginHost {
         else fail(new Error(message));
       },
     });
-    const { app, isReady } = this.#answer(plugin, portTransport(frame.port));
+    const { app, isReady, release } = this.#answer(plugin, portTransport(frame.port));
     const timer = setTimeout(() => {
       fail(new Error("It did not start in time."));
     }, this.#options.startTime ?? 10_000);
     try {
       await Promise.race([isReady, failed]);
     } catch (error) {
+      release();
       app.close();
       frame.close();
       throw error;
@@ -708,6 +715,7 @@ export class PluginHost {
     return {
       app,
       stop() {
+        release();
         app.close();
         frame.close();
       },
@@ -716,13 +724,19 @@ export class PluginHost {
 
   /**
    * Answers a plugin's calls at the app's end of its connection: what it
-   * attaches, and what its views change. Gives that end, what settles once
-   * the plugin says it is ready, and the host a built-in plugin gets.
+   * attaches, what its views change, and what it reads and writes of the
+   * vault. Gives that end, what settles once the plugin says it is ready,
+   * the host a built-in plugin gets, and what lets go of what it watches.
    */
   #answer(
     plugin: Added,
     transport: Transport,
-  ): { readonly app: Endpoint; readonly isReady: Promise<void>; readonly host: AppHost } {
+  ): {
+    readonly app: Endpoint;
+    readonly isReady: Promise<void>;
+    readonly host: AppHost;
+    readonly release: () => void;
+  } {
     const app = new Endpoint(transport);
     const { id, contributes } = plugin.manifest;
     /** Checks that the manifest declares `value` among `ids`, to attach to it. */
@@ -837,6 +851,48 @@ export class PluginHost {
       at.onChange(attrs);
       return null;
     });
+    /** The vault, for a plugin whose manifest asks for `permission` (ADR 0064). */
+    const reach = (permission: Permission): VaultAccess => {
+      if (!plugin.manifest.permissions.includes(permission)) {
+        throw new Error(`The plugin did not ask for ${permission}.`);
+      }
+      const vault = this.#options.vault?.();
+      if (vault === undefined) throw new Error("No vault is open for the plugin.");
+      return vault;
+    };
+    app.handle("vault.notes", () =>
+      reach("vault:read")
+        .notes()
+        .map((note) => ({ id: note.id, path: note.path, title: note.title })),
+    );
+    app.handle("vault.read", (path) => reach("vault:read").read(pluginPath(path, true)));
+    app.handle("vault.files", () => [...reach("vault:read").files()]);
+    app.handle("vault.readFile", async (path) =>
+      toBase64(await reach("vault:read").readFile(pluginPath(path, false))),
+    );
+    app.handle("vault.write", async (path, text) => {
+      const vault = reach("vault:write");
+      if (typeof text !== "string") throw new Error("A note's text is text.");
+      await vault.write(pluginPath(path, true), text);
+      return null;
+    });
+    app.handle("vault.remove", async (path) => {
+      await reach("vault:write").remove(pluginPath(path, true), id);
+      return null;
+    });
+    let unwatch: (() => void) | undefined;
+    app.handle("vault.watch", () => {
+      const vault = reach("vault:read");
+      unwatch ??= vault.subscribe((paths) => {
+        app.call("vault.changed", [...paths]).catch(() => undefined);
+      });
+      return null;
+    });
+    app.handle("vault.unwatch", () => {
+      unwatch?.();
+      unwatch = undefined;
+      return null;
+    });
     app.handle("ready", () => {
       ready();
       return null;
@@ -863,6 +919,10 @@ export class PluginHost {
         },
       },
     };
-    return { app, isReady, host };
+    const release = () => {
+      unwatch?.();
+      unwatch = undefined;
+    };
+    return { app, isReady, host, release };
   }
 }
