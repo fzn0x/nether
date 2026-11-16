@@ -72,6 +72,7 @@ export async function startServer(
     env?: Record<string, string>;
     blobs?: BlobStore;
     redis?: Redis;
+    webhookWorker?: boolean;
   } = {},
 ): Promise<TestServer> {
   const db = await testDatabase();
@@ -85,6 +86,7 @@ export async function startServer(
     ...(options.mailer === undefined ? {} : { mailer: options.mailer }),
     ...(options.blobs === undefined ? {} : { blobs: options.blobs }),
     ...(redis === undefined ? {} : { redis }),
+    ...(options.webhookWorker === undefined ? {} : { webhookWorker: options.webhookWorker }),
   });
   return {
     server,

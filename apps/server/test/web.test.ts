@@ -77,6 +77,10 @@ describe("the web app", () => {
     expect(frame.body).toBe(framePage);
     // The app's page may frame only its own pages.
     expect(contentSecurityPolicy).toContain("frame-src 'self'");
+    // It reaches its own server, and the directory's host (ADR 0065), and nothing else.
+    expect(contentSecurityPolicy).toContain(
+      "connect-src 'self' https://raw.githubusercontent.com;",
+    );
     expect(pluginFramePolicy("<html></html>")).toBe("default-src 'none'; frame-ancestors 'self'");
   });
 

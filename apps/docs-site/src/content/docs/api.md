@@ -1,12 +1,13 @@
 ---
 title: REST API
-description: Read and write a workspace's notes as Markdown, its databases and their rows, and search it, from scripts and other services, with a personal access token.
+description: Read and write a workspace's notes as Markdown, its databases and their rows, and search it, from scripts and other services, with a personal access token; and hear of its notes' changes by webhooks.
 ---
 
 A Nether server has a REST API for scripts and other services. With a
 personal access token, it reads and writes the notes of the workspaces you
 belong to as Markdown, reads their databases and adds rows to them, and
-searches them. Webhooks, and making tokens in the app, come next.
+searches them. Webhooks tell other services when notes are made, changed
+or deleted. Making tokens and webhooks in the app comes next.
 
 ## Tokens
 
@@ -332,3 +333,134 @@ under the same rules as a path's, and one the database has already
 answers 409.
 
 Moving and renaming notes through the API comes later.
+
+## Webhooks
+
+A webhook tells another service when a note is made, changed or deleted,
+so it need not ask the API every minute. A workspace's owners and admins
+manage its webhooks; an end-to-end encrypted workspace has none, since
+the server cannot tell its notes apart.
+
+### Making one
+
+```sh
+curl https://nether.example.org/api/v1/workspaces/$WORKSPACE/webhooks \
+  -H "authorization: Bearer $NETHER_TOKEN" -H 'content-type: application/json' \
+  -d '{"url":"https://hooks.example.org/nether","events":["note.created","note.deleted"]}'
+```
+
+`events` are any of `note.created`, `note.updated` and `note.deleted`; all
+three without it. The answer, 201, has the webhook's `secret`, which
+starts with `whsec_`. It is shown this once: keep it with the service
+that receives the events, which checks each one with it. A workspace has
+at most 20 webhooks.
+
+| Route | Does |
+| --- | --- |
+| `GET .../webhooks` | Lists the workspace's webhooks, without their secrets |
+| `POST .../webhooks` | Makes one, from `url` and `events` |
+| `GET .../webhooks/{webhook}` | Gives one |
+| `PATCH .../webhooks/{webhook}` | Changes its `url`, `events`, or `enabled` |
+| `DELETE .../webhooks/{webhook}` | Removes it |
+| `POST .../webhooks/{webhook}/secret` | Gives it a new secret, which replaces the old one at once |
+| `POST .../webhooks/{webhook}/test` | Sends it a `webhook.test` event |
+| `GET .../webhooks/{webhook}/deliveries` | Its last 50 events: each one's type, whether it was sent, how many tries, and the last answer or error |
+
+Each route is under `/api/v1/workspaces/{workspace}`. A read token lists
+webhooks and their deliveries; changing them takes a write token.
+
+### Events
+
+Each event is a `POST` of JSON to the webhook's address:
+
+```json
+{
+  "type": "note.updated",
+  "timestamp": "2026-11-17T10:00:00.000Z",
+  "data": {
+    "workspace": "8d0f5c3e-…",
+    "note": "3b9a7e21-…",
+    "path": "Projects/Launch.md",
+    "title": "Launch"
+  }
+}
+```
+
+- **`note.created`** when a note is made, or restored from the trash.
+- **`note.updated`** when its text or properties change, or it is moved
+  or renamed.
+- **`note.deleted`** when it is deleted; its `path` is where it was.
+
+An event says which note and where, never what it says: read the note
+through the API, with your own token, for that. Rows of a database are
+notes, and their events are a note's. Comments send none.
+
+**A burst of changes is one event.** An event waits until 30 seconds
+after a note's last change, and at most five minutes after its first:
+someone typing for an hour sends one every five minutes. A note made and
+deleted within that time sends nothing.
+
+**Each webhook acts as the one who made it.** It tells only of notes they
+can open when the event is sent: a page restricted from them, or a
+teamspace they are not in, sends nothing. When they leave the workspace,
+their webhooks go too.
+
+### Checking an event
+
+Events follow the [Standard Webhooks](https://www.standardwebhooks.com/)
+spec, whose libraries check them in many languages. Each comes with three
+headers:
+
+- `webhook-id`, the event's ID, the same each time it is tried, to drop
+  one already seen;
+- `webhook-timestamp`, when it was sent, in seconds, to refuse an old one
+  sent again;
+- `webhook-signature`, `v1,` and the base64 HMAC-SHA256 of
+  `{webhook-id}.{webhook-timestamp}.{body}`, keyed by the bytes the
+  base64 after `whsec_` in the secret gives.
+
+In Node.js, without a library:
+
+```js
+import { createHmac, timingSafeEqual } from "node:crypto";
+
+function isFromNether(secret, headers, body) {
+  const id = headers["webhook-id"];
+  const timestamp = headers["webhook-timestamp"];
+  if (Math.abs(Date.now() / 1000 - Number(timestamp)) > 300) return false;
+  const key = Buffer.from(secret.slice("whsec_".length), "base64");
+  const expected = createHmac("sha256", key).update(`${id}.${timestamp}.${body}`).digest();
+  return headers["webhook-signature"]
+    .split(" ")
+    .some((signature) => {
+      const given = Buffer.from(signature.replace(/^v1,/, ""), "base64");
+      return given.length === expected.length && timingSafeEqual(given, expected);
+    });
+}
+```
+
+Check the body exactly as it arrived, before parsing it.
+
+### Delivery
+
+- **Answer with a 2xx status within 10 seconds.** Anything else, a
+  redirect too, is a failure.
+- **Failures are tried again** after a minute, 5 minutes, 30 minutes, 2
+  hours, 6 hours, 12 hours and a day, a little early or late, then
+  dropped.
+- **One event at a time** goes to a webhook, the oldest due first, so
+  events mostly arrive in order. Do not rely on it: read `timestamp`.
+- **A webhook failing for three days**, with no success between, is
+  turned off, and the one who made it is emailed if the server sends
+  email. `PATCH` it with `"enabled": true` once its address answers; it
+  starts afresh.
+
+### Addresses
+
+A webhook's address is `https://`, on the internet. The server refuses
+addresses that are not public, such as `localhost`, `10.0.0.5` or a
+cloud's `169.254.169.254`, when the webhook is saved and again each time
+it sends, so a name cannot be pointed somewhere private later. To reach a
+service on your own network, as a home server's n8n, the server's admin
+allows its addresses with `NETHER_WEBHOOK_PRIVATE`; those may then use
+`http://`.

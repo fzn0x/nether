@@ -449,6 +449,58 @@ describe("writing through the public API", () => {
     });
     expect(bad.statusCode).toBe(400);
   });
+
+  it("leaves nothing of a note whose path an app listed first", async () => {
+    const test = await start();
+    const board = (
+      await test.server.inject({
+        method: "POST",
+        url: `/api/workspaces/${test.workspaceId}/teamspaces`,
+        headers: bearer(test.token),
+        payload: { name: "Board" },
+      })
+    ).json<{ id: string }>().id;
+    const count = async () =>
+      (
+        await test.db.query(
+          "SELECT name FROM documents WHERE workspace_id = $1 AND name NOT LIKE 'vault%'",
+          [test.workspaceId],
+        )
+      ).rows.length;
+    const before = await count();
+    // An app lists the path; the server holds it, and has not stored it yet.
+    const vault = await open(test, `vault.${board}`);
+    const theirs = randomUUID();
+    vault.document.getMap<string>("notes").set(theirs, "Board/Race.md");
+    await new Promise<void>((resolve) => {
+      const check = () => {
+        if (!vault.hasUnsyncedChanges) {
+          vault.off("unsyncedChanges", check);
+          resolve();
+        }
+      };
+      vault.on("unsyncedChanges", check);
+      check();
+    });
+    const secret = await token(test);
+
+    const lost = await call(test, "POST", "notes", secret, {
+      payload: { path: "Board/Race.md", markdown: "Mine\n" },
+    });
+    expect(lost.statusCode).toBe(409);
+    expect(await count()).toBe(before);
+    const { rows: placed } = await test.db.query(
+      "SELECT note FROM note_units WHERE workspace_id = $1",
+      [test.workspaceId],
+    );
+    expect(placed).toHaveLength(0);
+    // The app's note is indexed at its path, as the list was stored; no other is.
+    const { rows: indexed } = await test.db.query(
+      "SELECT note FROM note_search WHERE workspace_id = $1",
+      [test.workspaceId],
+    );
+    expect(indexed.map((row) => row.note)).toEqual([theirs]);
+  });
 });
 
 describe("isNotePath", () => {

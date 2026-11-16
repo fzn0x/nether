@@ -158,6 +158,34 @@ no webhook pays one indexed query per store.
   them. An allowed private address may use `http://`, as services inside
   a network often have no certificate. `off` is the default.
 
+### What building it decided
+
+- **The routes**, under `/api/v1/workspaces/:workspace/webhooks`: list
+  and make; get, change (`url`, `events`, `enabled`) and remove one; a new
+  `secret`; a `test` event; and its last 50 `deliveries`. A read token of
+  an owner or admin lists them and their deliveries; changing anything
+  takes a write token or a session.
+- **A note's text stored as it was is no change.** A store whose state is
+  the one stored tells nothing, and a note not listed yet tells nothing
+  until it is, as made.
+- **Due events go one at a time, the oldest due first.** An event waiting
+  to be tried again later does not hold back newer ones: order holds only
+  among those due. A node takes a webhook for a minute, renewed before
+  each try, so one node sends to it at a time.
+- **An address is checked when saved and when sent.** Saved, it is
+  `https://`, or `http://` when the admin allows any private address, with
+  no user or password; a host that is an address must be one the server
+  may reach. Sent, every address its name resolves to must be one the
+  server may reach, not only the first, and `http://` must lead to a
+  private one the admin allows. NAT64, 6to4 and Teredo addresses, which
+  reach IPv4 addresses, are refused as not public.
+- **A webhook's secret** is the HMAC key as Standard Webhooks has it: the
+  bytes the base64 after `whsec_` gives. A new one replaces the old one at
+  once.
+- **The worker** runs every five seconds on every node: due changes
+  become events, then due events are sent. Deliveries finished more than
+  seven days ago go with the hourly purge.
+
 ## Alternatives
 
 - **An event for each store.** Dozens a minute while someone types.

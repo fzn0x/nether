@@ -3,9 +3,13 @@
 // vault's .nether/plugins folder (ADR 0058), each with what it asks for.
 // One turned off takes away what it adds, in this vault, until it is
 // turned on again. Turning on a plugin from a folder approves its code, as
-// it is now, on this device.
+// it is now, on this device. Below them, the directory installs plugins
+// into that folder (ADR 0065).
 import { type Manifest, type Permission, localize } from "@nether/plugin-api";
-import { type SyntheticEvent, useState } from "react";
+import type { Vault } from "@nether/storage";
+import { type SyntheticEvent, useCallback, useState } from "react";
+import { DirectoryList } from "./DirectoryList.tsx";
+import { type DirectoryEntry, installPlugin } from "./directory.ts";
 import { type MessageKey, language, t } from "./messages.ts";
 import { type Approval, type FolderEntry, approvalOf } from "./plugins/folders.ts";
 import { type PluginState, isFolderOn, isOn } from "./plugins/state.ts";
@@ -38,8 +42,12 @@ export function PluginsSettings(props: {
     approvals: Readonly<Record<string, Approval>>,
   ) => Promise<void>;
   readonly onClose: () => void;
+  /** The vault the directory installs into. */
+  readonly vault: Vault;
+  /** Told once a plugin is installed from the directory, to read the vault's plugins again. */
+  readonly onInstalled: () => void;
 }) {
-  const { plugins, state, onSave, onClose } = props;
+  const { plugins, state, onSave, onClose, vault, onInstalled } = props;
   const { folders } = state;
   const [draft, setDraft] = useState<Readonly<Record<string, boolean>>>(() => ({
     ...Object.fromEntries(plugins.map((plugin) => [plugin.id, isOn(state, plugin.id)])),
@@ -65,6 +73,18 @@ export function PluginsSettings(props: {
       setError(reason instanceof Error ? reason.message : String(reason));
     });
   };
+
+  /** Whether a plugin of the directory is in the vault's folders, and at which version. */
+  const installedOf = useCallback(
+    (entry: DirectoryEntry) => {
+      const found = folders.find((each) => each.folder === entry.id);
+      if (found === undefined) return Promise.resolve("none" as const);
+      return Promise.resolve(
+        found.manifest?.version === entry.version ? ("same" as const) : ("other" as const),
+      );
+    },
+    [folders],
+  );
 
   const toggle = (id: string, checked: boolean) => {
     setDraft((current) => ({ ...current, [id]: checked }));
@@ -121,6 +141,12 @@ export function PluginsSettings(props: {
             ))}
           </ul>
         )}
+        <DirectoryList
+          kind="plugins"
+          installedOf={installedOf}
+          install={(entry) => installPlugin(vault, entry)}
+          onInstalled={onInstalled}
+        />
       </div>
       {error === undefined ? null : <p role="alert">{error}</p>}
       <div className="dialog-actions">
