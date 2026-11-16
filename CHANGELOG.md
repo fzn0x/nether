@@ -68,6 +68,14 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   from elsewhere or leave the box, and the events they listen for go back
   to them
   ([ADR 0063](docs/adr/0063-a-vault-plugins-views-draw-in-its-worker-and-the-page-shows-them-cleaned.md)).
+- Plugins reach the vault through `context.vault`, as far as their
+  manifest asks: with `vault:read`, its notes, their Markdown as it is
+  now, its other files and the notes that change; with `vault:write`,
+  notes written through their documents, as source mode's text is, and
+  moved to the trash as the app moves them, with a notice to put them
+  back. No plugin reaches a hidden folder, as `.nether` or `.obsidian`.
+  The plugin sandbox, Phase 4's third item, is done
+  ([ADR 0064](docs/adr/0064-a-plugin-reads-and-writes-notes-through-the-app-as-far-as-it-asked.md)).
 - The server's REST API, first part: personal access tokens, read or
   write, for one workspace or all, with an expiry, made with the
   account's password, shown once, kept as hashes and revoked with a
@@ -78,6 +86,14 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   Encrypted workspaces' notes are not served. The guide has an API
   reference. Server search now also finds the tags typed in a note's
   text in the app.
+- The REST API writes: it makes notes at a path, in the space or page the
+  path falls in, replaces a note's Markdown, sent as JSON or as the file,
+  deletes notes to every device's trash, and adds rows to databases. Each
+  write goes through the note's document, so someone with it open sees
+  it change and every device syncs it; blocks that stay keep their IDs.
+  Reading a note gives an `ETag`, and `If-Match` keeps a change from
+  overwriting what others typed since. A write takes a write token and
+  edit access where the note is.
 - PDFs open in a tab, drawn by pdf.js in a built-in plugin's view, and
   show in the sidebar beside notes
   ([ADR 0061](docs/adr/0061-pdfs-show-through-pdf-js-and-a-highlight-is-a-callout-that-links-to-its-passage.md)).

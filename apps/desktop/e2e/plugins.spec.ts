@@ -255,6 +255,87 @@ const echoCode = `export default {
 };
 `;
 
+const countsManifest = JSON.stringify({
+  id: "counts",
+  name: "Counts",
+  version: "1.0.0",
+  api: "^0.1",
+  permissions: ["vault:read", "vault:write"],
+  contributes: {
+    commands: [
+      { id: "count", name: "Count the notes" },
+      { id: "tidy", name: "Tidy the count away" },
+      { id: "peek", name: "Peek at the plugins" },
+    ],
+  },
+});
+
+// A plugin that reads the vault and writes a note of its own.
+const countsCode = `export default {
+  async activate(context) {
+    await context.commands.register("count", async () => {
+      const notes = await context.vault.notes();
+      const first = await context.vault.read(notes[0].path);
+      await context.vault.write(
+        "Counted.md",
+        "There are " + notes.length + " notes. The first starts " + JSON.stringify(first.slice(0, 5)) + ".\\n",
+      );
+    });
+    await context.commands.register("tidy", async () => {
+      await context.vault.remove("Counted.md");
+    });
+    await context.commands.register("peek", async () => {
+      await context.vault.read(".nether/plugins.json");
+    });
+  },
+};
+`;
+
+/** Runs a command from the palette. */
+async function runCommand(page: Page, name: string) {
+  await page.keyboard.press("Control+p");
+  await page.keyboard.type(name);
+  await page.keyboard.press("Enter");
+}
+
+test("a plugin from the vault reads and writes notes through the app, and no hidden folder", async ({
+  page,
+}) => {
+  const errors = errorsOf(page);
+  const notes = await openSample(page);
+  await editFiles(page, {
+    ".nether/plugins/counts/manifest.json": countsManifest,
+    ".nether/plugins/counts/main.js": countsCode,
+  });
+  const settings = await openSettings(page, /^Plugins/);
+  const plugins = settings.getByRole("tabpanel", { name: "Plugins" });
+  await expect(
+    plugins.getByText("It asks for reading the vault's notes and files and changing them."),
+  ).toBeVisible();
+  await plugins.getByRole("checkbox", { name: "Counts" }).check();
+  await plugins.getByRole("button", { name: "Save" }).click();
+  await expect(settings).toBeHidden();
+
+  await runCommand(page, "Count the notes");
+  await expect(notes.getByRole("button", { name: /^Counted/ })).toBeVisible();
+  expect(await fileText(page, "Counted.md")).toMatch(
+    /^There are \d+ notes\. The first starts ".+"\.\n$/,
+  );
+
+  // Moved to the trash as the app moves a note there, with the way back.
+  await runCommand(page, "Tidy the count away");
+  await expect(page.getByText("The plugin counts moved Counted to the trash.")).toBeVisible();
+  await expect(notes.getByRole("button", { name: /^Counted/ })).toHaveCount(0);
+  await page.getByRole("button", { name: "Restore" }).click();
+  await expect(notes.getByRole("button", { name: /^Counted/ })).toBeVisible();
+
+  // A hidden folder is not the vault's notes.
+  await runCommand(page, "Peek at the plugins");
+  await expect(page.getByText(/^The plugin counts failed: .*A plugin reaches no/)).toBeVisible();
+  expect(await violations(page)).toEqual([]);
+  expect(errors).toEqual([]);
+});
+
 const tallyManifest = JSON.stringify({
   id: "tally",
   name: "Tally",

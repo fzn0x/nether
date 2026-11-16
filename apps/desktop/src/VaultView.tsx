@@ -50,6 +50,7 @@ import { PropertyTypeRegistry } from "./plugins/propertyTypes.ts";
 import { PaneViewOutput } from "./PaneViewOutput.tsx";
 import { SidebarPanel } from "./PanelOutput.tsx";
 import { PluginHost } from "./plugins/host.ts";
+import { type VaultAccess, vaultAccess } from "./plugins/vault.ts";
 import { isFolderOn, isOn, readBuiltins, usePluginState } from "./plugins/state.ts";
 import { type Command, CommandRegistry } from "./plugins/registry.ts";
 import { ExportDialog } from "./ExportDialog.tsx";
@@ -475,6 +476,8 @@ export function VaultView(props: {
   // The built-in plugins, those the vault has on, whose contributions show
   // at once and whose code loads when one is first used; what goes wrong
   // with one shows as a notice.
+  // What plugins that ask for it reach of the vault open (ADR 0064).
+  const reachVault = useRef<VaultAccess | undefined>(undefined);
   const [host] = useState(
     () =>
       new PluginHost(plugins, {
@@ -484,8 +487,19 @@ export function VaultView(props: {
           setNotice({ text: t("pluginFailed", { plugin, message }) });
         },
         onOpenView: setPaneView,
+        vault: () => reachVault.current,
       }),
   );
+  useEffect(() => {
+    reachVault.current =
+      vault === undefined
+        ? undefined
+        : vaultAccess(vault, ({ id, title, where, plugin }) => {
+            // As the app moves a note to the trash: its tabs close, and the notice puts it back.
+            changeLayout((current) => closeNote(current, id));
+            setNotice({ text: t("pluginMovedToTrash", { plugin, name: title }), restore: where });
+          });
+  }, [vault]);
   const pluginState = usePluginState(vault, info.id, builtins);
   // The code each plugin from a folder runs, by its hash, to start it again when that changes.
   const folderCode = useRef(new Map<string, string>());
