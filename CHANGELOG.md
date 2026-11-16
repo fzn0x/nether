@@ -20,6 +20,9 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Plugins can draw the code blocks of a language their manifest declares,
   as HTML: below the code in a note, and in its place in an exported
   page. A plugin's code loads with the first block it draws.
+- Plugins can add blocks of their own, `plugin-id/type`, which their view
+  shows in a note and changes as an edit of it, and entries in the slash
+  menu, for their blocks and for code blocks in their languages.
 
 ### Changed
 
@@ -29,6 +32,10 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   the plugin API. An exported diagram is now a
   `<figure class="code-output" data-language="mermaid">`, and a diagram
   that cannot be drawn says "This block cannot be drawn".
+- The slash menu's Diagram and Query come from the Mermaid and query
+  plugins, after the built-in blocks.
+- A block from a plugin Nether does not have says "No plugin here shows
+  this block", with its type, where its card said only `pluginBlock`.
 
 - The desktop app keeps one copy of each link target, tag, heading and
   property value its notes' indexes repeat, as the vault's links load: on

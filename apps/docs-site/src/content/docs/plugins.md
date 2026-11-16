@@ -1,6 +1,6 @@
 ---
 title: Writing plugins
-description: How a Nether plugin is made, a preview of the plugin API at version 0.1. A plugin's folder, its manifest, its code, and the commands and code blocks it adds.
+description: How a Nether plugin is made, a preview of the plugin API at version 0.1. A plugin's folder, its manifest, its code, and the commands, code blocks and blocks it adds.
 ---
 
 :::caution[A preview]
@@ -57,12 +57,12 @@ reach your computer.
 | `api` | The versions of the plugin API it works with, as `^0.1` |
 | `description` | What it does, optional, a string or strings by language |
 | `author`, `authorUrl` | Who made it, optional |
-| `contributes` | What it adds: for now, `commands` and `codeBlocks` |
+| `contributes` | What it adds: for now, `commands`, `codeBlocks` and `blocks` |
 
 The app reads the manifest before the plugin's code runs. Its commands
-show in the menus and the palette at once, and its code loads only when
-one of them is first chosen, or a code block in one of its languages
-first shows.
+show in the menus and the palette at once, and its slash menu entries in
+the slash menu. Its code loads only when it is first needed: a command
+chosen, or a code block or block of its own shown.
 
 A name by language picks the app's language, then its main language
 (`pt` for `pt-BR`), then English, then the first one there is.
@@ -91,6 +91,7 @@ export default definePlugin({
 | `context.direction` | `ltr` or `rtl`, the way the app's text runs |
 | `context.commands` | `register(id, run)`, which attaches a command the manifest declares |
 | `context.codeBlocks` | `register(language, render)`, which draws code blocks in a language the manifest declares |
+| `context.blocks` | `register(type, view)`, which shows blocks of a type the manifest declares |
 
 Every call to the app is async, and takes and returns plain JSON values,
 since a plugin will run apart from the app and reach it only by messages.
@@ -149,9 +150,81 @@ plugin: a plugin that declares a language another has is not added.
 Draw with plain HTML and SVG: the app may take scripts and event handlers
 out of what a plugin draws.
 
-Mermaid diagrams and query blocks are built-in plugins. Mermaid's uses
-only this API. A query block's notes are a live view, which only
-built-in plugins can show; an exported page shows a query block's code.
+A language can have an entry in the slash menu too, which inserts a block
+in it, holding `text`:
+
+```json
+{ "language": "abc", "name": "Tune", "keywords": "music notation", "text": "X:1" }
+```
+
+`name` and `keywords` are strings, or strings by language. Without a
+`name`, the language has no entry.
+
+Mermaid diagrams and query blocks are built-in plugins, and the slash
+menu's Diagram and Query are their entries. Mermaid's uses only this API.
+A query block's notes are a live view, which only built-in plugins can
+show; an exported page shows a query block's code.
+
+## Blocks
+
+A plugin can add blocks of its own. A note's file writes one as a code
+block named `plugin-id/type`, holding what the block holds as JSON, so
+the file stays readable without the plugin:
+
+```json
+"contributes": {
+  "blocks": [
+    { "type": "tally", "name": "Tally", "keywords": "count", "attrs": { "count": 0 } }
+  ]
+}
+```
+
+- **`type`** is a lowercase letter, then letters, digits and hyphens. In
+  a note, the block is `word-count/tally`. A plugin that adds blocks needs
+  an ID that starts with a letter.
+- **`name`** and **`keywords`** are its entry in the slash menu.
+- **`attrs`** is what a new block holds, a JSON object.
+
+The plugin's code shows the block with a view:
+
+```js
+await context.blocks.register("tally", {
+  mount(element, props, block) {
+    let current = props;
+    const button = document.createElement("button");
+    const show = () => {
+      button.textContent = String(current.attrs.count ?? 0);
+      button.disabled = !current.editable;
+    };
+    button.onclick = () => block.setAttrs({ count: (current.attrs.count ?? 0) + 1 });
+    element.append(button);
+    show();
+    return {
+      update(next) {
+        current = next;
+        show();
+      },
+      unmount() {
+        button.remove();
+      },
+    };
+  },
+});
+```
+
+- **`element`** is the view's own. Draw into it with any framework, or
+  none.
+- **`props`** holds `attrs`, what the block holds; `editable`, false in a
+  note that cannot be changed here; and the page's `theme`.
+- **`block.setAttrs(attrs)`** changes what the block holds, as an edit of
+  the note that can be undone. The app then calls `update` with the new
+  props.
+- **`unmount`** is called when the block leaves the page.
+
+A view mounts when its block shows. A view shows and changes only
+`attrs`; a block's text and the blocks inside it, if it has any, stay as
+they are. A block from a plugin the app does not have shows its type,
+and its note keeps it as it was.
 
 ## Versions
 

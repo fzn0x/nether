@@ -33,11 +33,11 @@ language's words as `words`, and English is the default.
 | `src/schema.ts` | The TipTap extensions of Nether's schema: StarterKit's blocks and marks, task lists, tables, toggles, and Nether's callouts, columns, math, images, files, bookmarks, embeds, wiki links, tags and raw Markdown |
 | `src/ids.ts` | Block IDs: every block gets one, and no two blocks in a note share one, a pasted copy included |
 | `src/convert.ts` | A note's blocks to the editor's document and back |
-| `src/commands.ts` | The blocks the slash menu inserts and the block menu turns blocks into, and how the menu finds them by what is typed |
+| `src/commands.ts` | The blocks the slash menu inserts and the block menu turns blocks into, the entries plugins add after them, and how the menu finds them by what is typed |
 | `src/actions.ts` | Moving, duplicating, deleting and turning a whole block, and the shortcuts for the block that holds the caret |
 | `src/SlashMenu.tsx` | The slash menu |
 | `src/BlockHandle.tsx` | The handle beside each block, to drag it or open its menu |
-| `src/views.tsx` | Math rendered with KaTeX and edited as LaTeX, and code with its language, with what the app draws for that language, such as a Mermaid diagram, below it |
+| `src/views.tsx` | Math rendered with KaTeX and edited as LaTeX, code with its language, with what the app draws for that language, such as a Mermaid diagram, below it, and a plugin's block as the app has its plugin show it |
 | `src/files.ts` | What kind of file a link names and the URL it loads from, and files pasted or dropped into a note |
 | `src/embeds.tsx` | Images, PDFs, audio and video in a note, and a field or file picker for blocks without one |
 | `src/words.ts` | Every word the editor shows, in English |

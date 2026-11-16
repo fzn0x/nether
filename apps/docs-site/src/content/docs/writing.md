@@ -32,9 +32,13 @@ moves it back out.
 
 Type `/` at the start of a line, or after a space, to open the list of
 blocks: text, headings, lists, tasks, quotes, callouts, toggles, code, math,
-diagrams, [queries](../queries/), dividers, tables and columns. Keep typing to narrow it, as in
-`/head` or `/todo`, then press Enter, or click a block. Escape closes the
-menu and keeps the slash as text.
+dividers, tables and columns, then what plugins add, such as diagrams and
+[queries](../queries/). Keep typing to narrow it, as in `/head` or
+`/todo`, then press Enter, or click a block. Escape closes the menu and
+keeps the slash as text.
+
+A block a plugin adds shows as its plugin shows it. A note keeps a block
+from a plugin Nether does not have as it is written, and shows its type.
 
 ## Moving and changing blocks
 
