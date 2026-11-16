@@ -293,7 +293,31 @@ export function registerWrites(
           return true;
         },
       );
-      return listed ? id : ([409, pathTaken] as const);
+      if (listed) return id;
+      await discard(reached.workspace, id);
+      return [409, pathTaken] as const;
+    });
+  }
+
+  /**
+   * Takes back a note made for a path an app listed first: its document, as
+   * stored once, its row in the index and its unit's record, so nothing of
+   * it stays where no list names it.
+   */
+  async function discard(workspace: string, id: string): Promise<void> {
+    await db.transaction(async (tx) => {
+      for (const table of ["documents", "document_versions"]) {
+        await tx.query(`DELETE FROM ${table} WHERE workspace_id = $1 AND name = $2`, [
+          workspace,
+          id,
+        ]);
+      }
+      for (const table of ["note_search", "note_units"]) {
+        await tx.query(`DELETE FROM ${table} WHERE workspace_id = $1 AND note = $2`, [
+          workspace,
+          id,
+        ]);
+      }
     });
   }
 
