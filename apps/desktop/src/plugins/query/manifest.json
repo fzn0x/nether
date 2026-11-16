@@ -1,11 +1,18 @@
 {
   "id": "query",
   "name": "Query blocks",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "api": "^0.1",
   "description": "Shows the notes a base code block's query finds, below its code in a note.",
   "author": "Nether contributors",
   "contributes": {
-    "codeBlocks": [{ "language": "base" }]
+    "codeBlocks": [
+      {
+        "language": "base",
+        "name": "Query",
+        "keywords": "base dataview filter search find",
+        "text": "views:\n  - type: table\n    order: [file.name, file.folder, file.mtime]\n    sort:\n      - property: file.mtime\n        direction: DESC\n    limit: 10"
+      }
+    ]
   }
 }

@@ -14,7 +14,14 @@ const good = {
       { id: "count", name: "Count words", menu: "note", keys: ["Mod+Shift+K"] },
       { id: "reset_all", name: { en: "Reset" } },
     ],
-    codeBlocks: [{ language: "abc" }, { language: "c++" }],
+    codeBlocks: [
+      { language: "abc", name: { en: "Tune" }, keywords: "music notation", text: "X:1" },
+      { language: "c++" },
+    ],
+    blocks: [
+      { type: "board", name: "Board", keywords: { en: "kanban" }, attrs: { columns: [] } },
+      { type: "tallyCount", name: "Tally" },
+    ],
   },
 };
 
@@ -26,13 +33,27 @@ describe("readManifest", () => {
       { id: "count", name: "Count words", menu: "note", keys: ["Mod+Shift+K"] },
       { id: "reset_all", name: { en: "Reset" }, menu: "plugins", keys: [] },
     ]);
-    expect(manifest?.contributes.codeBlocks).toEqual([{ language: "abc" }, { language: "c++" }]);
+    expect(manifest?.contributes.codeBlocks).toEqual([
+      {
+        language: "abc",
+        slash: { name: { en: "Tune" }, keywords: "music notation", text: "X:1" },
+      },
+      { language: "c++" },
+    ]);
+    expect(manifest?.contributes.blocks).toEqual([
+      {
+        type: "board",
+        slash: { name: "Board", keywords: { en: "kanban" } },
+        attrs: { columns: [] },
+      },
+      { type: "tallyCount", slash: { name: "Tally" }, attrs: {} },
+    ]);
     expect(manifest?.author).toBe("Ada");
   });
 
   it("reads one that adds nothing", () => {
     const { manifest } = readManifest({ id: "a", name: "A", version: "0.0.1", api: "0.1.0" });
-    expect(manifest?.contributes).toEqual({ commands: [], codeBlocks: [] });
+    expect(manifest?.contributes).toEqual({ commands: [], codeBlocks: [], blocks: [] });
     expect(manifest).not.toHaveProperty("description");
   });
 
@@ -107,6 +128,49 @@ describe("readManifest", () => {
     expect(readManifest({ ...good, contributes: { codeBlocks: "abc" } }).problems).toEqual([
       "contributes.codeBlocks is not a list.",
     ]);
+  });
+
+  it("gives a code block's slash entry empty text unless it says some", () => {
+    const { manifest } = readManifest({
+      ...good,
+      contributes: { codeBlocks: [{ language: "abc", name: "Tune" }] },
+    });
+    expect(manifest?.contributes.codeBlocks).toEqual([
+      { language: "abc", slash: { name: "Tune", text: "" } },
+    ]);
+  });
+
+  it("says what is wrong with its blocks and their slash entries", () => {
+    const { problems } = readManifest({
+      ...good,
+      contributes: {
+        codeBlocks: [{ language: "abc", name: "", keywords: 3, text: 4 }],
+        blocks: [
+          { type: "Board", name: "A" },
+          { type: "board" },
+          { type: "board", name: "B", attrs: [] },
+          { type: "list", name: "L", attrs: { at: Number.NaN } },
+        ],
+      },
+    });
+    expect(problems).toEqual([
+      "contributes.codeBlocks[0].text is not text.",
+      "contributes.codeBlocks[0].keywords is not text.",
+      "contributes.codeBlocks[0].name is not a name.",
+      "contributes.blocks[0].type is not a lowercase letter, then letters, digits and hyphens.",
+      "contributes.blocks[1].name is not a name.",
+      'contributes.blocks[2].type "board" is there twice.',
+      "contributes.blocks[2].attrs is not a JSON object.",
+      "contributes.blocks[3].attrs is not a JSON object.",
+    ]);
+  });
+
+  it("keeps blocks from a plugin whose ID starts with a digit, as a block's type cannot", () => {
+    expect(
+      readManifest({ ...good, id: "3d", contributes: { blocks: [{ type: "scene", name: "S" }] } })
+        .problems,
+    ).toEqual(["id starts with a digit, which a plugin that adds blocks cannot."]);
+    expect(readManifest({ ...good, id: "3d", contributes: {} }).problems).toBeUndefined();
   });
 
   it("refuses what is not an object", () => {

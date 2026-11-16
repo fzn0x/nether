@@ -2,7 +2,7 @@
 // their headings after `#`, that the app finds for what is typed; a link
 // opens its note, and a tag the notes with it, on a click, or on Enter
 // when it is selected.
-import type { ContentBlock, LinkTarget } from "@nether/core";
+import type { ContentBlock, JsonObject, LinkTarget } from "@nether/core";
 import { type Editor, Extension, type Range } from "@tiptap/core";
 import type { Node as ProseMirrorNode } from "@tiptap/pm/model";
 import { NodeSelection, Plugin, PluginKey } from "@tiptap/pm/state";
@@ -64,6 +64,16 @@ export interface NoteLinks {
    * is the fence's first word, and `info` all of it.
    */
   renderCode?(language: string, info: string, source: string): ReactNode;
+  /**
+   * A plugin's block, of type `plugin-id/type`, as its plugin shows it:
+   * what it holds, and whether it can change it here with `setAttrs`.
+   */
+  renderBlock?(
+    type: string,
+    attrs: JsonObject,
+    editable: boolean,
+    setAttrs: (attrs: JsonObject) => void,
+  ): ReactNode;
 }
 
 export interface LinkMenuOptions {

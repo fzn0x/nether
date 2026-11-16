@@ -37,6 +37,15 @@ function fakeApp(
     told.push(`unregister block ${language as string}`);
     return null;
   });
+  app.handle("blocks.register", (type, callback) => {
+    registered.set(`view ${type as string}`, callback as number);
+    told.push(`register view ${type as string}`);
+    return null;
+  });
+  app.handle("blocks.change", (slot, attrs) => {
+    told.push(`change ${slot as string} ${JSON.stringify(attrs)}`);
+    return null;
+  });
   app.handle("ready", () => {
     told.push("ready");
     return null;
@@ -122,6 +131,85 @@ describe("startPlugin", () => {
     expect(await app.call("callback", callback, 3, block)).toBeNull();
     await disposable?.dispose();
     expect(told).toContain("unregister block abc");
+    endpoint.close();
+    app.close();
+  });
+
+  it("mounts a block's view in the element its slot names, updates it and unmounts it", async () => {
+    const { app, pluginSide, registered, told } = fakeApp();
+    const element = { textContent: "" } as HTMLElement;
+    const seen: string[] = [];
+    let change: ((attrs: { readonly count: number }) => Promise<void>) | undefined;
+    const endpoint = await startPlugin(
+      definePlugin({
+        async activate(context) {
+          await context.blocks.register("tally", {
+            mount(into, props, block) {
+              into.textContent = `${JSON.stringify(props.attrs)} ${String(props.editable)}`;
+              change = (attrs) => block.setAttrs(attrs);
+              return {
+                update(next) {
+                  seen.push(`update ${JSON.stringify(next.attrs)}`);
+                },
+                unmount() {
+                  seen.push("unmount");
+                },
+              };
+            },
+          });
+          await context.blocks.register("plain", {
+            mount(into) {
+              into.textContent = "plain";
+            },
+          });
+        },
+      }),
+      pluginSide,
+      { element: (slot) => (slot === "s1" || slot === "s2" ? element : undefined) },
+    );
+    const tally = registered.get("view tally") ?? 0;
+    const props = { attrs: { count: 1 }, editable: true, theme: "light" };
+    await app.call("callback", tally, "mount", "s1", props);
+    expect(element.textContent).toBe('{"count":1} true');
+    await change?.({ count: 2 });
+    expect(told).toContain('change s1 {"count":2}');
+    await app.call("callback", tally, "update", "s1", { ...props, attrs: { count: 2 } });
+    await app.call("callback", tally, "unmount", "s1");
+    // Once unmounted, the view hears nothing more.
+    await app.call("callback", tally, "update", "s1", props);
+    expect(seen).toEqual(['update {"count":2}', "unmount"]);
+    // A view that returns nothing mounts, updates and unmounts all the same.
+    const plain = registered.get("view plain") ?? 0;
+    await app.call("callback", plain, "mount", "s2", props);
+    expect(element.textContent).toBe("plain");
+    await app.call("callback", plain, "update", "s2", props);
+    await app.call("callback", plain, "unmount", "s2");
+    await expect(app.call("callback", tally, "mount", "elsewhere", props)).rejects.toThrow(
+      "The app gave the view no element.",
+    );
+    await expect(app.call("callback", tally, "mount", 3, props)).rejects.toThrow(
+      "The app named no view.",
+    );
+    await expect(app.call("callback", tally, "dance", "s1", props)).rejects.toThrow(
+      'A view cannot "dance".',
+    );
+    endpoint.close();
+    app.close();
+  });
+
+  it("has no element for a view when the app gives it no surface", async () => {
+    const { app, pluginSide, registered } = fakeApp();
+    const endpoint = await startPlugin(
+      definePlugin({
+        async activate(context) {
+          await context.blocks.register("tally", { mount: () => undefined });
+        },
+      }),
+      pluginSide,
+    );
+    await expect(
+      app.call("callback", registered.get("view tally") ?? 0, "mount", "s1", {}),
+    ).rejects.toThrow("The app gave the view no element.");
     endpoint.close();
     app.close();
   });

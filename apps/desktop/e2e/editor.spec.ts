@@ -53,6 +53,22 @@ test("the slash menu inserts blocks, and math opens for its LaTeX", async ({ pag
   expect(errors).toEqual([]);
 });
 
+test("the slash menu inserts a diagram from Mermaid's plugin, which draws it", async ({ page }) => {
+  const errors = errorsOf(page);
+  const editor = await openNote(page, "Welcome");
+  await endOfFirstParagraph(page, editor);
+  await page.keyboard.press("Enter");
+  await page.keyboard.type("/diag");
+  const menu = page.getByRole("listbox", { name: "Blocks" });
+  await expect(menu.getByRole("option")).toHaveText(["Diagram"]);
+  await page.keyboard.press("Enter");
+  await expect(editor.locator("code.language-mermaid")).toContainText("flowchart LR");
+  await expect(editor.locator('.code-output[data-language="mermaid"] svg')).toBeVisible({
+    timeout: 15_000,
+  });
+  expect(errors).toEqual([]);
+});
+
 test("a diagram that asks for the ELK layout says it is not included", async ({ page }) => {
   const editor = await openNote(page, "Welcome");
   await endOfFirstParagraph(page, editor);

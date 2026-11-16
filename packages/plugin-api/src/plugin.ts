@@ -2,7 +2,7 @@
 // (ADR 0055). Every call crosses to the app as a message, so each is
 // async, each value is JSON, and a function the app will call is sent as
 // a number.
-import type { Json } from "./json.ts";
+import type { Json, JsonObject } from "./json.ts";
 import { Endpoint, type Transport } from "./protocol.ts";
 import { apiVersion, satisfies } from "./version.ts";
 
@@ -50,6 +50,52 @@ export interface CodeBlocks {
   register(language: string, render: CodeBlockRenderer): Promise<Disposable>;
 }
 
+/** What a block's view is given when it mounts, and again as it changes. */
+export interface BlockViewProps {
+  /** What the block holds, as its note's file writes it. */
+  readonly attrs: JsonObject;
+  /** Whether the note can be changed here; in a note that cannot, the view only shows. */
+  readonly editable: boolean;
+  /** Whether the page it shows on is light or dark. */
+  readonly theme: "light" | "dark";
+}
+
+/** The block a view shows. */
+export interface ViewedBlock {
+  /** Changes what the block holds, as an edit in its note that can be undone. */
+  setAttrs(attrs: JsonObject): Promise<void>;
+}
+
+/** A mounted view, which the app updates and unmounts. */
+export interface MountedView {
+  update?(props: BlockViewProps): void;
+  unmount?(): void;
+}
+
+/**
+ * Shows blocks of a type the manifest declares. `mount` draws into the
+ * element it is given, with any framework or none: an element of its own,
+ * never one of the app's.
+ */
+export interface BlockView {
+  mount(element: HTMLElement, props: BlockViewProps, block: ViewedBlock): MountedView | undefined;
+}
+
+/** The block types a plugin's manifest declares, attached to their views. */
+export interface Blocks {
+  /** Shows blocks of the type the manifest declares as `type` with `view`. */
+  register(type: string, view: BlockView): Promise<Disposable>;
+}
+
+/**
+ * Where a plugin's views mount: the element made for each, by the slot
+ * the app names for it. A built-in plugin is given the page's, and a
+ * plugin running apart will make its own.
+ */
+export interface PluginSurface {
+  element(slot: string): HTMLElement | undefined;
+}
+
 /** What a plugin is given when it starts. */
 export interface PluginContext {
   /** The plugin's ID, from its manifest. */
@@ -62,6 +108,7 @@ export interface PluginContext {
   readonly direction: "ltr" | "rtl";
   readonly commands: Commands;
   readonly codeBlocks: CodeBlocks;
+  readonly blocks: Blocks;
 }
 
 /** A plugin, as its module's default export is. */
@@ -75,7 +122,7 @@ export function definePlugin(plugin: Plugin): Plugin {
   return plugin;
 }
 
-/** What the app calls back: a command to run, a block to draw. */
+/** What the app calls back: a command to run, a block to draw, a view to mount. */
 type Callback = (...args: Json[]) => Promise<Json>;
 
 /** What the app answers a plugin's `hello` with. */
@@ -103,10 +150,17 @@ function readHello(value: Json): Hello {
  * Starts a plugin at its end of a connection: tells the app the API it
  * was built with, activates it with what the app answers, and tells the
  * app it is ready. Returns its end, which the app closes to stop it.
+ * `surface` gives the elements its views mount in.
  */
-export async function startPlugin(plugin: Plugin, transport: Transport): Promise<Endpoint> {
+export async function startPlugin(
+  plugin: Plugin,
+  transport: Transport,
+  surface?: PluginSurface,
+): Promise<Endpoint> {
   const endpoint = new Endpoint(transport);
   const callbacks = new Map<number, Callback>();
+  /** The views mounted, by the slot the app named for each. */
+  const views = new Map<string, MountedView>();
   let next = 0;
   endpoint.handle("callback", async (id, ...args) => {
     const run = typeof id === "number" ? callbacks.get(id) : undefined;
@@ -153,6 +207,38 @@ export async function startPlugin(plugin: Plugin, transport: Transport): Promise
           );
           return output ?? null;
         }),
+    },
+    blocks: {
+      register: (type, view) =>
+        attach("blocks", type, (action, slot, props) =>
+          // What a view throws, the app is told of.
+          Promise.resolve().then(() => {
+            if (typeof slot !== "string") throw new Error("The app named no view.");
+            const viewProps = props as unknown as BlockViewProps;
+            switch (action) {
+              case "mount": {
+                const element = surface?.element(slot);
+                if (element === undefined) throw new Error("The app gave the view no element.");
+                const block: ViewedBlock = {
+                  async setAttrs(attrs) {
+                    await endpoint.call("blocks.change", slot, attrs);
+                  },
+                };
+                views.set(slot, view.mount(element, viewProps, block) ?? {});
+                return null;
+              }
+              case "update":
+                views.get(slot)?.update?.(viewProps);
+                return null;
+              case "unmount":
+                views.get(slot)?.unmount?.();
+                views.delete(slot);
+                return null;
+              default:
+                throw new Error(`A view cannot ${JSON.stringify(action)}.`);
+            }
+          }),
+        ),
     },
   };
   await plugin.activate(context);

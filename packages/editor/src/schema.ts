@@ -466,7 +466,7 @@ export function netherExtensions(options: SchemaOptions = {}): AnyExtension[] {
     withView(Embed),
     Database,
     RawBlock,
-    PluginBlock,
+    withView(PluginBlock),
     WikiLink,
     Tag,
     withView(MathInline),

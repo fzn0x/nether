@@ -42,6 +42,7 @@ import {
   menuOfCommand,
 } from "./commands.ts";
 import { builtinPlugins } from "./plugins/builtins.ts";
+import { BlockRegistry } from "./plugins/blocks.ts";
 import { CodeBlockRegistry } from "./plugins/codeBlocks.ts";
 import { PluginHost } from "./plugins/host.ts";
 import { type Command, CommandRegistry } from "./plugins/registry.ts";
@@ -406,6 +407,12 @@ export function VaultView(props: {
   const [registry] = useState(() => coreRegistry(commandState));
   // The code block languages plugins draw, such as Mermaid's.
   const [codeBlocks] = useState(() => new CodeBlockRegistry());
+  // And the blocks they add, of types named `plugin-id/type`.
+  const [blocks] = useState(() => new BlockRegistry());
+  const plugins = useMemo(
+    () => ({ commands: registry, codeBlocks, blocks }),
+    [registry, codeBlocks, blocks],
+  );
   const commands = useSyncExternalStore(
     useCallback((listener: () => void) => registry.subscribe(listener), [registry]),
     () => registry.all(),
@@ -453,16 +460,13 @@ export function VaultView(props: {
   // The built-in plugins, whose commands show at once and whose code loads
   // when one is first chosen; what goes wrong with one shows as a notice.
   useEffect(() => {
-    const host = new PluginHost(
-      { commands: registry, codeBlocks },
-      {
-        language,
-        direction: directionOf(language),
-        onError: (plugin, message) => {
-          setNotice({ text: t("pluginFailed", { plugin, message }) });
-        },
+    const host = new PluginHost(plugins, {
+      language,
+      direction: directionOf(language),
+      onError: (plugin, message) => {
+        setNotice({ text: t("pluginFailed", { plugin, message }) });
       },
-    );
+    });
     for (const builtin of builtinPlugins) {
       const problems = host.add(builtin);
       if (problems.length > 0) setNotice({ text: problems.join(" ") });
@@ -470,7 +474,7 @@ export function VaultView(props: {
     return () => {
       host.close();
     };
-  }, [registry, codeBlocks]);
+  }, [plugins]);
   const { settings, save } = useTemplateSettings(vault);
   const version = useGraph(graph);
 
@@ -2177,7 +2181,7 @@ export function VaultView(props: {
                           media={state.media}
                           exporter={state.exporter}
                           graph={state.indexer.graph}
-                          codeBlocks={codeBlocks}
+                          plugins={plugins}
                           id={id}
                           titleId={index === 0 ? "note-title" : "note-title-right"}
                           focus={paneAsks.focus}

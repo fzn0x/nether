@@ -8,7 +8,13 @@ export {
   moveBlock,
   turnBlockInto,
 } from "./actions.ts";
-export { type BlockCommand, blockCommands, findCommands } from "./commands.ts";
+export {
+  type BlockCommand,
+  type BlockEntry,
+  blockCommands,
+  entryCommand,
+  findCommands,
+} from "./commands.ts";
 export {
   type CommentAnchor,
   type CommentAuthor,

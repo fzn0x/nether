@@ -8,6 +8,7 @@ import type { CodeBlockContext, CodeBlockOutput } from "@nether/plugin-api";
 import type { Vault } from "@nether/storage";
 import type { ReactNode } from "react";
 import type { VaultMedia } from "../backend.ts";
+import { KeyedRegistry } from "./keyed.ts";
 
 /** What a built-in plugin's live view of a code block is given, below its code in a note. */
 export interface CodeBlockViewProps {
@@ -29,39 +30,36 @@ export interface CodeBlockDrawing {
   readonly view?: CodeBlockView;
 }
 
+/** How the slash menu offers something a plugin adds, in the app's language. */
+export interface SlashOffer {
+  readonly name: () => string;
+  readonly keywords: () => string;
+}
+
 export interface CodeBlockProcessor {
   /** Lowercase, as the manifest declares it. */
   readonly language: string;
   /** The ID of the plugin that draws it. */
   readonly plugin: string;
+  /** Its slash menu entry, inserting a block in the language with `text`, if it has one. */
+  readonly slash?: SlashOffer & { readonly text: string };
   /** Starts the plugin, if it has not started, and gives what draws the language. */
   readonly load: () => Promise<CodeBlockDrawing>;
 }
 
-export class CodeBlockRegistry {
-  readonly #processors = new Map<string, CodeBlockProcessor>();
-  readonly #listeners = new Set<() => void>();
-
+export class CodeBlockRegistry extends KeyedRegistry<CodeBlockProcessor> {
   /** Adds what draws a language; returns what takes it away again. */
   add(processor: CodeBlockProcessor): () => void {
-    const taken = this.#processors.get(processor.language);
-    if (taken !== undefined) {
-      throw new Error(
-        `The plugin ${taken.plugin} draws ${processor.language} code blocks already.`,
-      );
-    }
-    this.#processors.set(processor.language, processor);
-    this.#changed();
-    return () => {
-      if (this.#processors.get(processor.language) !== processor) return;
-      this.#processors.delete(processor.language);
-      this.#changed();
-    };
+    return this.addAt(
+      processor.language,
+      processor,
+      (taken) => `The plugin ${taken.plugin} draws ${processor.language} code blocks already.`,
+    );
   }
 
   /** What draws a fence's language, whatever its case. */
   get(language: string): CodeBlockProcessor | undefined {
-    return this.#processors.get(language.toLowerCase());
+    return this.at(language.toLowerCase());
   }
 
   /**
@@ -84,17 +82,5 @@ export class CodeBlockRegistry {
     } catch {
       return undefined;
     }
-  }
-
-  /** Calls `listener` when a language is added or taken away; returns what stops it. */
-  subscribe(listener: () => void): () => void {
-    this.#listeners.add(listener);
-    return () => {
-      this.#listeners.delete(listener);
-    };
-  }
-
-  #changed(): void {
-    for (const listener of this.#listeners) listener();
   }
 }

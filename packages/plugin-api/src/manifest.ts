@@ -1,6 +1,7 @@
 // A plugin's manifest.json: who it is, the API versions it works with, and
 // what it adds, which the app shows before the plugin's code runs
 // (ADR 0055). Fields mean what Obsidian's do where they share a name.
+import { type JsonObject, isJsonObject } from "./json.ts";
 import { isRange, isVersion } from "./version.ts";
 
 /** A name or text, alone or by language tag, as `{ "en": "Copy", "fr": "Copier" }`. */
@@ -21,6 +22,13 @@ export interface CommandContribution {
   readonly keys: readonly string[];
 }
 
+/** How the slash menu offers something a plugin adds, to insert a new one. */
+export interface SlashEntry {
+  readonly name: Localized;
+  /** More words the slash menu finds it by, separated by spaces. */
+  readonly keywords?: Localized;
+}
+
 /**
  * A code block's language a plugin draws, as `mermaid` for a block fenced
  * with ` ```mermaid `. The code stays as it is written; what the plugin
@@ -29,12 +37,28 @@ export interface CommandContribution {
 export interface CodeBlockContribution {
   /** Lowercase here; the app matches a fence's language whatever its case. */
   readonly language: string;
+  /** With a name, the slash menu inserts a block in the language, holding `text`. */
+  readonly slash?: SlashEntry & { readonly text: string };
+}
+
+/**
+ * A type of block a plugin adds, which a note's file writes as a code
+ * block named `plugin-id/type` holding its attributes as JSON. The
+ * slash menu inserts one; the plugin's view shows it.
+ */
+export interface BlockContribution {
+  /** A lowercase letter, then letters, digits and hyphens. */
+  readonly type: string;
+  readonly slash: SlashEntry;
+  /** What a new block holds. */
+  readonly attrs: JsonObject;
 }
 
 /** What a plugin adds. */
 export interface Contributions {
   readonly commands: readonly CommandContribution[];
   readonly codeBlocks: readonly CodeBlockContribution[];
+  readonly blocks: readonly BlockContribution[];
 }
 
 export interface Manifest {
@@ -61,6 +85,8 @@ const commandIdPattern = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;
 const languagePattern = /^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$/;
 /** A fence's language, as `mermaid`, `c++` or `objective-c`. */
 const codeLanguagePattern = /^[a-z0-9][a-z0-9_+#.-]*$/;
+/** The second half of a plugin block's type, as `@nether/core` reads it. */
+const blockTypePattern = /^[a-z][a-zA-Z0-9-]*$/;
 
 function isObject(value: unknown): value is Readonly<Record<string, unknown>> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -131,17 +157,61 @@ function readCommands(value: unknown, problems: string[]): CommandContribution[]
   });
 }
 
+/** A slash entry's name and keywords, when it has a name. */
+function readSlash(
+  item: Readonly<Record<string, unknown>>,
+  where: string,
+  problems: string[],
+): SlashEntry | undefined {
+  const { name, keywords } = item;
+  if (keywords !== undefined && !isLocalized(keywords)) {
+    problems.push(`${where}.keywords is not text.`);
+  }
+  if (name === undefined) return undefined;
+  if (!isLocalized(name)) {
+    problems.push(`${where}.name is not a name.`);
+    return undefined;
+  }
+  return isLocalized(keywords) ? { name, keywords } : { name };
+}
+
 function readCodeBlocks(value: unknown, problems: string[]): CodeBlockContribution[] {
   const seen = new Set<string>();
   return readList(value, "codeBlocks", problems, (item, where) => {
-    const { language } = item;
+    const { language, text } = item;
     if (typeof language !== "string" || !codeLanguagePattern.test(language)) {
       problems.push(`${where}.language is not a code block's language in lowercase, as mermaid.`);
       return undefined;
     }
     if (seen.has(language)) problems.push(`${where}.language "${language}" is there twice.`);
     seen.add(language);
-    return { language };
+    if (text !== undefined && typeof text !== "string") problems.push(`${where}.text is not text.`);
+    const slash = readSlash(item, where, problems);
+    return slash === undefined
+      ? { language }
+      : { language, slash: { ...slash, text: typeof text === "string" ? text : "" } };
+  });
+}
+
+function readBlocks(value: unknown, problems: string[]): BlockContribution[] {
+  const seen = new Set<string>();
+  return readList(value, "blocks", problems, (item, where) => {
+    const { type, attrs } = item;
+    if (typeof type !== "string" || !blockTypePattern.test(type)) {
+      problems.push(`${where}.type is not a lowercase letter, then letters, digits and hyphens.`);
+      return undefined;
+    }
+    if (seen.has(type)) problems.push(`${where}.type "${type}" is there twice.`);
+    seen.add(type);
+    if (attrs !== undefined && !isJsonObject(attrs)) {
+      problems.push(`${where}.attrs is not a JSON object.`);
+    }
+    const slash = readSlash(item, where, problems);
+    if (slash === undefined) {
+      if (item.name === undefined) problems.push(`${where}.name is not a name.`);
+      return undefined;
+    }
+    return { type, slash, attrs: isJsonObject(attrs) ? attrs : {} };
   });
 }
 
@@ -175,6 +245,11 @@ export function readManifest(value: unknown): ManifestResult {
     isObject(contributes) ? contributes.codeBlocks : undefined,
     problems,
   );
+  const blocks = readBlocks(isObject(contributes) ? contributes.blocks : undefined, problems);
+  // A plugin block's type starts with its plugin's ID, which must then start with a letter.
+  if (blocks.length > 0 && typeof id === "string" && !/^[a-z]/.test(id)) {
+    problems.push("id starts with a digit, which a plugin that adds blocks cannot.");
+  }
   if (problems.length > 0) return { problems };
   return {
     manifest: {
@@ -185,7 +260,7 @@ export function readManifest(value: unknown): ManifestResult {
       ...(description === undefined ? {} : { description: description as Localized }),
       ...(author === undefined ? {} : { author: author as string }),
       ...(authorUrl === undefined ? {} : { authorUrl: authorUrl as string }),
-      contributes: { commands, codeBlocks },
+      contributes: { commands, codeBlocks, blocks },
     },
   };
 }

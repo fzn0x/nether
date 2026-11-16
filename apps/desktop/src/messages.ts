@@ -354,6 +354,7 @@ export const messages = {
   menuPlugins: "Plugins",
   pluginFailed: "The plugin {plugin} failed: {message}",
   codeBlockFailed: "This block cannot be drawn:",
+  pluginBlockMissing: "No plugin here shows this block:",
   templateSettings: "Templates and periodic notes",
   templates: "Templates",
   templatesFolder: "Templates folder",

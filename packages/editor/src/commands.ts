@@ -1,6 +1,8 @@
 // The blocks people can insert, or turn a block into: the slash menu lists
-// them, and the block menu offers the ones a block can become. Plugins will
-// add theirs to the same list.
+// them, and the block menu offers the ones a block can become. Plugins add
+// theirs after them: code blocks in a language they draw, and their own
+// blocks.
+import type { JsonObject } from "@nether/core";
 import type { Editor, JSONContent } from "@tiptap/core";
 import { type BuiltInBlock, type EditorWords, englishWords } from "./words.ts";
 
@@ -64,34 +66,6 @@ const runs: Readonly<Record<BuiltInBlock, Omit<BlockCommand, "id" | "title" | "k
   },
   code: { turns: "block", run: (editor) => editor.chain().focus().setCodeBlock().run() },
   math: { run: insert({ type: "mathBlock", attrs: { latex: "" } }) },
-  diagram: {
-    run: insert({
-      type: "codeBlock",
-      attrs: { language: "mermaid" },
-      content: [{ type: "text", text: "flowchart LR\n  A --> B" }],
-    }),
-  },
-  // A base that shows something at once: the notes changed last, to filter from there.
-  query: {
-    run: insert({
-      type: "codeBlock",
-      attrs: { language: "base" },
-      content: [
-        {
-          type: "text",
-          text: [
-            "views:",
-            "  - type: table",
-            "    order: [file.name, file.folder, file.mtime]",
-            "    sort:",
-            "      - property: file.mtime",
-            "        direction: DESC",
-            "    limit: 10",
-          ].join("\n"),
-        },
-      ],
-    }),
-  },
   divider: { run: (editor) => editor.chain().focus().setHorizontalRule().run() },
   table: {
     run: (editor) =>
@@ -117,6 +91,38 @@ export function blockCommands(words: EditorWords = englishWords): BlockCommand[]
     ...words.blocks[id as BuiltInBlock],
     ...command,
   }));
+}
+
+/** A block a plugin adds to the slash menu: a code block in a language it draws, or its own block. */
+export interface BlockEntry {
+  /** Unique among the slash menu's entries. */
+  readonly id: string;
+  readonly title: string;
+  readonly keywords: string;
+  readonly insert:
+    | { readonly codeBlock: string; readonly text: string }
+    | { readonly pluginBlock: string; readonly attrs: JsonObject };
+}
+
+/** The command that inserts what an entry says. */
+export function entryCommand(entry: BlockEntry): BlockCommand {
+  const { insert: what } = entry;
+  return {
+    id: entry.id,
+    title: entry.title,
+    keywords: entry.keywords,
+    run:
+      "codeBlock" in what
+        ? insert({
+            type: "codeBlock",
+            attrs: { language: what.codeBlock },
+            ...(what.text === "" ? {} : { content: [{ type: "text", text: what.text }] }),
+          })
+        : insert({
+            type: "pluginBlock",
+            attrs: { pluginType: what.pluginBlock, data: { attrs: what.attrs } },
+          }),
+  };
 }
 
 /**

@@ -2,6 +2,7 @@
 // edited as LaTeX, and code with its language, with what the app draws
 // for that language below it. Each view changes only the attributes the
 // schema has. KaTeX loads with the first note that needs it.
+import type { JsonObject } from "@nether/core";
 import {
   type NodeViewProps,
   NodeViewContent,
@@ -207,6 +208,26 @@ function CodeBlockView(props: ViewProps & { readonly links: NoteLinks | undefine
   );
 }
 
+/** A plugin's block, as the app has its plugin show it; its type, when nothing here does. */
+function PluginBlockView(props: ViewProps & { readonly links: NoteLinks | undefined }) {
+  const { node, words, editor, links } = props;
+  const type = typeof node.attrs.pluginType === "string" ? node.attrs.pluginType : "";
+  const data = (node.attrs.data ?? {}) as { readonly attrs?: JsonObject };
+  const shown = links?.renderBlock?.(type, data.attrs ?? {}, editor.isEditable, (attrs) => {
+    // The block's text and blocks inside it, if any, stay as they are.
+    props.updateAttributes({ data: { ...data, attrs } });
+  });
+  return (
+    <NodeViewWrapper className="plugin-block" data-plugin-type={type}>
+      {shown ?? (
+        <p className="plugin-missing" contentEditable={false}>
+          {words.missingPlugin} <code>{type}</code>
+        </p>
+      )}
+    </NodeViewWrapper>
+  );
+}
+
 /**
  * The node views of rich blocks, for an editor in a page, in the app's
  * words; `files` finds the files a note links to, and `links` the notes it
@@ -235,6 +256,7 @@ export function netherNodeViews(
     mathBlock: view(MathBlockView),
     mathInline: view(MathInlineView),
     codeBlock: view(CodeBlockView),
+    pluginBlock: view(PluginBlockView),
     image: view(ImageView),
     file: view(FileView),
     embed: view(EmbedView),

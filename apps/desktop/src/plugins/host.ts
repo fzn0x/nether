@@ -1,17 +1,21 @@
 // Runs plugins and answers their calls (ADR 0055). Until the sandbox, only
 // built-in plugins run: each is a manifest and a module, the module loaded
-// when one of the commands its manifest declares is first chosen, or a code
-// block in one of its languages is first drawn, and connected through the
-// page by the same messages a sandboxed plugin will send through a port.
+// when what its manifest declares is first used, a command chosen, a code
+// block drawn or a block shown, and connected through the page by the same
+// messages a sandboxed plugin will send through a port.
 import {
+  type BlockViewProps,
   type CodeBlockOutput,
   Endpoint,
   type Json,
+  type JsonObject,
+  type Localized,
   type Manifest,
   type Plugin,
   type PluginContext,
   type Transport,
   apiVersion,
+  isJsonObject,
   localize,
   pagePair,
   readManifest,
@@ -19,7 +23,13 @@ import {
   startPlugin,
 } from "@nether/plugin-api";
 import { canBeShortcut } from "../shortcuts.ts";
-import type { CodeBlockDrawing, CodeBlockRegistry, CodeBlockView } from "./codeBlocks.ts";
+import type { BlockDrawing, BlockRegistry } from "./blocks.ts";
+import type {
+  CodeBlockDrawing,
+  CodeBlockRegistry,
+  CodeBlockView,
+  SlashOffer,
+} from "./codeBlocks.ts";
 import type { CommandRegistry } from "./registry.ts";
 
 /**
@@ -55,6 +65,7 @@ export interface BuiltinPlugin {
 export interface Registries {
   readonly commands: CommandRegistry;
   readonly codeBlocks: CodeBlockRegistry;
+  readonly blocks: BlockRegistry;
 }
 
 export interface HostOptions {
@@ -78,12 +89,26 @@ interface Added {
   readonly drawers: Map<string, number>;
   /** The live views its code attached through the host, by language. */
   readonly views: Map<string, CodeBlockView>;
+  /** The block types its code attached views to, each to the callback that runs the view. */
+  readonly blockViews: Map<string, number>;
   /** Its connection, once its code has been asked for. */
   running?: Promise<readonly [Endpoint, Endpoint]> | undefined;
 }
 
 function errorText(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+/** Where a plugin's view of a block mounts, by the slot named for it. */
+interface Slot {
+  readonly plugin: string;
+  readonly element: HTMLElement;
+  readonly onChange: (attrs: JsonObject) => void;
+}
+
+/** A view's props as they cross to a plugin. */
+function propsJson(props: BlockViewProps): Json {
+  return { attrs: props.attrs, editable: props.editable, theme: props.theme };
 }
 
 /** What a plugin drew, as the SDK says it may be. */
@@ -101,6 +126,8 @@ export class PluginHost {
   readonly #registries: Registries;
   readonly #options: HostOptions;
   readonly #plugins = new Map<string, Added>();
+  readonly #slots = new Map<string, Slot>();
+  #nextSlot = 0;
 
   constructor(registries: Registries, options: HostOptions) {
     this.#registries = registries;
@@ -119,6 +146,10 @@ export class PluginHost {
     if (!satisfies(apiVersion, manifest.api)) {
       return [`It works with API ${manifest.api}, and the app speaks ${apiVersion}.`];
     }
+    const offer = (name: Localized, keywords: Localized | undefined): SlashOffer => ({
+      name: () => localize(name, this.#options.language),
+      keywords: () => (keywords === undefined ? "" : localize(keywords, this.#options.language)),
+    });
     const taken = manifest.contributes.codeBlocks.flatMap(({ language }) => {
       const other = this.#registries.codeBlocks.get(language);
       return other === undefined
@@ -133,14 +164,29 @@ export class PluginHost {
       attached: new Map(),
       drawers: new Map(),
       views: new Map(),
+      blockViews: new Map(),
     };
     this.#plugins.set(manifest.id, plugin);
-    for (const { language } of manifest.contributes.codeBlocks) {
+    for (const { language, slash } of manifest.contributes.codeBlocks) {
       plugin.removers.push(
         this.#registries.codeBlocks.add({
           language,
           plugin: manifest.id,
+          ...(slash === undefined
+            ? {}
+            : { slash: { ...offer(slash.name, slash.keywords), text: slash.text } }),
           load: () => this.#drawing(plugin, language),
+        }),
+      );
+    }
+    for (const { type, slash, attrs } of manifest.contributes.blocks) {
+      plugin.removers.push(
+        this.#registries.blocks.add({
+          type: `${manifest.id}/${type}`,
+          plugin: manifest.id,
+          slash: offer(slash.name, slash.keywords),
+          attrs,
+          load: () => this.#blockDrawing(plugin, type),
         }),
       );
     }
@@ -219,6 +265,39 @@ export class PluginHost {
     };
   }
 
+  /** Starts a plugin for a block, and gives what mounts its view of the block's type. */
+  async #blockDrawing(plugin: Added, type: string): Promise<BlockDrawing> {
+    const [app] = await this.#start(plugin);
+    const missing = () => new Error(`Its code did not attach a view of ${type} blocks.`);
+    if (!plugin.blockViews.has(type)) throw missing();
+    const id = plugin.manifest.id;
+    return {
+      mount: async (element, props, onChange) => {
+        const callback = plugin.blockViews.get(type);
+        if (callback === undefined) throw missing();
+        const slot = `${id}:${String(++this.#nextSlot)}`;
+        this.#slots.set(slot, { plugin: id, element, onChange });
+        try {
+          await app.call("callback", callback, "mount", slot, propsJson(props));
+        } catch (error) {
+          this.#slots.delete(slot);
+          throw error;
+        }
+        return {
+          update: async (next) => {
+            if (!this.#slots.has(slot)) return;
+            await app.call("callback", callback, "update", slot, propsJson(next));
+          },
+          unmount: () => {
+            if (!this.#slots.delete(slot)) return;
+            // A plugin already stopped has nothing to unmount.
+            app.call("callback", callback, "unmount", slot).catch(() => undefined);
+          },
+        };
+      },
+    };
+  }
+
   #start(plugin: Added): Promise<readonly [Endpoint, Endpoint]> {
     plugin.running ??= this.#connect(plugin).catch((error: unknown) => {
       // The next command chosen, or block drawn, tries again.
@@ -240,6 +319,7 @@ export class PluginHost {
       }
       return language;
     };
+    const types = new Set(contributes.blocks.map((block) => block.type));
     let ready: () => void = () => undefined;
     const isReady = new Promise<void>((resolve) => {
       ready = resolve;
@@ -272,6 +352,26 @@ export class PluginHost {
       if (typeof language === "string") plugin.drawers.delete(language);
       return null;
     });
+    app.handle("blocks.register", (type, callback) => {
+      if (typeof type !== "string" || !types.has(type)) {
+        throw new Error(`The manifest declares no block ${JSON.stringify(type)}.`);
+      }
+      if (typeof callback !== "number") throw new Error("A block's view needs a callback.");
+      plugin.blockViews.set(type, callback);
+      return null;
+    });
+    app.handle("blocks.unregister", (type) => {
+      if (typeof type === "string") plugin.blockViews.delete(type);
+      return null;
+    });
+    app.handle("blocks.change", (slot, attrs) => {
+      const at = typeof slot === "string" ? this.#slots.get(slot) : undefined;
+      // A plugin changes only the blocks its own views show.
+      if (at?.plugin !== id) throw new Error("The plugin shows no such block.");
+      if (!isJsonObject(attrs)) throw new Error("A block holds a JSON object.");
+      at.onChange(attrs);
+      return null;
+    });
     app.handle("ready", () => {
       ready();
       return null;
@@ -288,7 +388,14 @@ export class PluginHost {
       // Besides what crosses as messages, a built-in plugin gets the host.
       const withHost: Plugin = { activate: (context) => builtin.activate({ ...context, host }) };
       // A built-in plugin's end runs here, in the page.
-      const [end] = await Promise.all([startPlugin(withHost, pluginSide), isReady]);
+      // Its views mount in the elements the app makes for them.
+      const surface = {
+        element: (slot: string) => {
+          const at = this.#slots.get(slot);
+          return at?.plugin === id ? at.element : undefined;
+        },
+      };
+      const [end] = await Promise.all([startPlugin(withHost, pluginSide, surface), isReady]);
       return [app, end];
     } catch (error) {
       app.close();

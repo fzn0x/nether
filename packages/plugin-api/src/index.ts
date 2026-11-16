@@ -1,5 +1,6 @@
-export type { Json } from "./json.ts";
+export { type Json, type JsonObject, isJson, isJsonObject } from "./json.ts";
 export {
+  type BlockContribution,
   type CodeBlockContribution,
   type CommandContribution,
   type Contributions,
@@ -7,11 +8,15 @@ export {
   type Manifest,
   type ManifestResult,
   type MenuName,
+  type SlashEntry,
   localize,
   menuNames,
   readManifest,
 } from "./manifest.ts";
 export {
+  type BlockView,
+  type BlockViewProps,
+  type Blocks,
   type CodeBlockContext,
   type CodeBlockOutput,
   type CodeBlockRenderer,
@@ -20,8 +25,11 @@ export {
   type Commands,
   type Disposable,
   type Hello,
+  type MountedView,
   type Plugin,
   type PluginContext,
+  type PluginSurface,
+  type ViewedBlock,
   definePlugin,
   startPlugin,
 } from "./plugin.ts";

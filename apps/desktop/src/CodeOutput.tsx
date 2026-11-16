@@ -32,7 +32,7 @@ interface Props {
   readonly onOpen: (id: NoteId) => void;
 }
 
-function errorText(error: unknown): string {
+export function errorText(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
@@ -40,12 +40,12 @@ function errorText(error: unknown): string {
  * Whether the page shows dark: as its root's `data-mode` says, which the
  * app sets apart from the system, or else as the system prefers.
  */
-function shownDark(): boolean {
+export function shownDark(): boolean {
   const mode = document.documentElement.dataset.mode;
   return mode === undefined ? matchMedia("(prefers-color-scheme: dark)").matches : mode === "dark";
 }
 
-function Failed(props: { readonly message: string }) {
+export function Failed(props: { readonly message: string }) {
   return (
     <div className="code-error" contentEditable={false} role="status">
       <p>{t("codeBlockFailed")}</p>
