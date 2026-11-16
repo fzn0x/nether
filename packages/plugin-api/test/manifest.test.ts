@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { localize, readManifest } from "../src/manifest.ts";
+import { localize, readManifest, settingValues } from "../src/manifest.ts";
 
 const good = {
   id: "word-count",
@@ -58,6 +58,7 @@ describe("readManifest", () => {
       codeBlocks: [],
       blocks: [],
       panels: [],
+      settings: [],
     });
     expect(manifest).not.toHaveProperty("description");
   });
@@ -214,9 +215,109 @@ describe("readManifest", () => {
     ]);
   });
 
+  it("reads settings fields, each with a default of its type", () => {
+    const { manifest } = readManifest({
+      ...good,
+      contributes: {
+        settings: [
+          { id: "label", name: "Label", type: "text", default: "Words" },
+          { id: "goal", name: "Goal", description: "A day's", type: "number" },
+          { id: "live", name: "Live", type: "toggle", default: true },
+          {
+            id: "unit",
+            name: "Unit",
+            type: "choice",
+            choices: [
+              { value: "words", name: "Words" },
+              { value: "chars", name: { en: "Characters" } },
+            ],
+          },
+        ],
+      },
+    });
+    expect(manifest?.contributes.settings).toEqual([
+      { id: "label", name: "Label", type: "text", default: "Words" },
+      { id: "goal", name: "Goal", description: "A day's", type: "number", default: 0 },
+      { id: "live", name: "Live", type: "toggle", default: true },
+      {
+        id: "unit",
+        name: "Unit",
+        type: "choice",
+        default: "words",
+        choices: [
+          { value: "words", name: "Words" },
+          { value: "chars", name: { en: "Characters" } },
+        ],
+      },
+    ]);
+  });
+
+  it("says what is wrong with its settings", () => {
+    const { problems } = readManifest({
+      ...good,
+      contributes: {
+        settings: [
+          { id: "a b", name: "A", type: "text" },
+          { id: "a", name: "", description: 1, type: "slider" },
+          { id: "b", name: "B", type: "number", default: "5" },
+          { id: "c", name: "C", type: "choice", choices: [] },
+          { id: "d", name: "D", type: "choice", choices: [{ value: 1 }], default: "x" },
+          { id: "d", name: "D", type: "toggle" },
+        ],
+      },
+    });
+    expect(problems).toEqual([
+      "contributes.settings[0].id is not letters, digits, hyphens and underscores.",
+      "contributes.settings[1].name is not a name.",
+      "contributes.settings[1].description is not text.",
+      "contributes.settings[1].type is not one of text, number, toggle, choice.",
+      "contributes.settings[2].default does not suit a number field.",
+      "contributes.settings[3].choices is not a list of choices.",
+      "contributes.settings[4].choices[0] is not a value with a name.",
+      "contributes.settings[4].default does not suit a choice field.",
+      'contributes.settings[5].id "d" is there twice.',
+    ]);
+  });
+
   it("refuses what is not an object", () => {
     expect(readManifest([]).problems).toEqual(["The manifest is not an object."]);
     expect(readManifest(null).problems).toEqual(["The manifest is not an object."]);
+  });
+});
+
+describe("settingValues", () => {
+  const { manifest } = readManifest({
+    ...good,
+    contributes: {
+      settings: [
+        { id: "goal", name: "Goal", type: "number", default: 500 },
+        { id: "live", name: "Live", type: "toggle", default: true },
+        {
+          id: "unit",
+          name: "Unit",
+          type: "choice",
+          choices: [
+            { value: "words", name: "Words" },
+            { value: "chars", name: "Characters" },
+          ],
+        },
+      ],
+    },
+  });
+  const fields = manifest?.contributes.settings ?? [];
+
+  it("takes each stored value that suits its field, and the default for the rest", () => {
+    expect(settingValues(fields, { goal: 750, live: "yes", unit: "chars", gone: 1 })).toEqual({
+      goal: 750,
+      live: true,
+      unit: "chars",
+    });
+    expect(settingValues(fields, { unit: "lines" })).toEqual({
+      goal: 500,
+      live: true,
+      unit: "words",
+    });
+    expect(settingValues(fields, undefined)).toEqual({ goal: 500, live: true, unit: "words" });
   });
 });
 
