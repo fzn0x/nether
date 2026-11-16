@@ -31,6 +31,23 @@ export const propertyTypes = [
 export type PropertyType = (typeof propertyTypes)[number];
 
 /**
+ * The types a plugin's property type may store as (ADR 0057): what YAML
+ * holds as Obsidian and other tools read it, which shows without the plugin.
+ */
+export const storedTypes = ["text", "number", "checkbox", "date", "url", "multiSelect"] as const;
+export type StoredType = (typeof storedTypes)[number];
+
+/** A property type a plugin adds, named as its blocks are: `plugin-id/type`. */
+export type PluginPropertyType = `${string}/${string}`;
+
+const pluginTypePattern = /^[a-z][a-z0-9-]*\/[a-z][a-zA-Z0-9-]*$/;
+
+/** Whether a type is a plugin's, `plugin-id/type`, rather than one of the app's. */
+export function isPluginPropertyType(type: string): type is PluginPropertyType {
+  return pluginTypePattern.test(type);
+}
+
+/**
  * What a rollup works out from its related rows' values (ADR 0019): how
  * many rows, how many have a value, a sum, an average, the least or most,
  * and the earliest or latest date.
@@ -79,7 +96,10 @@ export interface SelectOption {
 export interface PropertyDefinition {
   /** The frontmatter key the value is stored under. */
   readonly key: string;
+  /** Its type; for a plugin's type, the app's type it stores as. */
   readonly type: PropertyType;
+  /** The plugin's type it is, stored as `type`, which shows without the plugin (ADR 0057). */
+  readonly plugin?: PluginPropertyType;
   /** The options of a select or multi-select property, in order. */
   readonly options?: readonly SelectOption[];
   /** For a relation: the database its values point to, and, when the relation is two-way, the key of the matching property there. */
@@ -136,9 +156,19 @@ export function readPropertyDefinition(value: unknown, path: string): PropertyDe
     value,
     path,
     ["key", "type"],
-    ["options", "relation", "rollup", "formula"],
+    ["options", "relation", "rollup", "formula", "stores"],
   );
   const key = readPropertyKey(fields.key, `${path}.key`);
+  // A plugin's type is written with the app's type it stores as.
+  if (typeof fields.type === "string" && isPluginPropertyType(fields.type)) {
+    if (fields.stores === undefined) fail(`${path}.stores`, "is needed by a plugin's type");
+    const stores = readOneOf(fields.stores, `${path}.stores`, storedTypes);
+    for (const field of ["options", "relation", "rollup", "formula"] as const) {
+      if (fields[field] !== undefined) fail(`${path}.${field}`, "is not for a plugin's type");
+    }
+    return { key, type: stores, plugin: fields.type };
+  }
+  if (fields.stores !== undefined) fail(`${path}.stores`, "is only for a plugin's type");
   const type = readOneOf(fields.type, `${path}.type`, propertyTypes);
   const definition: PropertyDefinition = { key, type };
 

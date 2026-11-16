@@ -84,17 +84,21 @@ export {
 export {
   type OptionColor,
   type PropertyDefinition,
+  type PluginPropertyType,
   type PropertyEntry,
   type PropertyType,
   type Rollup,
   type RollupFunction,
   type SelectOption,
+  type StoredType,
   checkPropertyValue,
   formulaLength,
+  isPluginPropertyType,
   isPropertyKey,
   optionColors,
   propertyTypes,
   rollupFunctions,
+  storedTypes,
 } from "./properties.ts";
 export { type TemplateValues, fillTemplate } from "./templates.ts";
 export {
