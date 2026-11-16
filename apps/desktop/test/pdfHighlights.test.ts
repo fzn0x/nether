@@ -13,8 +13,9 @@ import {
   highlightsHome,
   highlightsNotePath,
   notesWithPassages,
-  readPdfHighlights,
+  readPdfMarks,
   removePdfHighlight,
+  setHighlightColor,
   setHighlightComment,
 } from "../src/pdfHighlights.ts";
 
@@ -77,23 +78,31 @@ describe("a PDF's highlights", () => {
     const { vault, graph, id } = await setUp();
     const notes = notesWithPassages(vault, graph, "Papers/paper.pdf");
     expect(notes.sort()).toEqual([id("Essay.md"), id("Papers/paper highlights.md")].sort());
-    const found = await readPdfHighlights(vault, notes, "Papers/paper.pdf");
+    const { highlights: found, links } = await readPdfMarks(vault, notes, "Papers/paper.pdf");
     expect(found.map(({ highlight }) => [highlight.id, highlight.words])).toEqual([
       ["ccc333", "Here"],
       ["aaa111", "Four"],
       ["bbb222", "Once"],
     ]);
+    // Its other links to a passage: the prose of a note, not the highlights' titles.
+    expect(links.map(({ link, written }) => [link.passage.page, link.words, written])).toEqual([
+      [3, "As read in .", false],
+    ]);
     // The other PDF of the same name has its own.
-    const other = await readPdfHighlights(
+    const other = await readPdfMarks(
       vault,
       notesWithPassages(vault, graph, "Other/paper.pdf"),
       "Other/paper.pdf",
     );
-    expect(other.map(({ highlight }) => highlight.id)).toEqual(["ddd444"]);
+    expect(other.highlights.map(({ highlight }) => highlight.id)).toEqual(["ddd444"]);
+    expect(other.links).toEqual([]);
     expect(highlightsHome(found)).toBe(id("Papers/paper highlights.md"));
     expect(highlightsHome([])).toBeUndefined();
     // A note gone since is left out.
-    expect(await readPdfHighlights(vault, ["nope" as NoteId], "Papers/paper.pdf")).toEqual([]);
+    expect(await readPdfMarks(vault, ["nope" as NoteId], "Papers/paper.pdf")).toEqual({
+      highlights: [],
+      links: [],
+    });
   });
 
   it("go at the end of the note that holds most, linked as from it", async () => {
@@ -139,6 +148,11 @@ describe("a PDF's highlights", () => {
     expect(await text("Papers/paper highlights.md")).toContain("> Four\n>\n> Why **this**.\n");
     expect(await setHighlightComment(vault, note, "aaa111" as BlockId, "")).toBe(true);
     expect(await text("Papers/paper highlights.md")).toContain("> Four\n\n^aaa111");
+    expect(await setHighlightColor(vault, note, "aaa111" as BlockId, "red")).toBe(true);
+    expect(await text("Papers/paper highlights.md")).toContain(
+      "[[paper.pdf#page=2&selection=1,0,1,4&color=red|paper, page 2]]",
+    );
+    expect(await setHighlightColor(vault, note, "zzz" as BlockId, "red")).toBe(false);
     expect(await removePdfHighlight(vault, note, "aaa111" as BlockId)).toBe(true);
     expect(await text("Papers/paper highlights.md")).not.toContain("aaa111");
     expect(await removePdfHighlight(vault, note, "aaa111" as BlockId)).toBe(false);

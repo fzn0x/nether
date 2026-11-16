@@ -4217,12 +4217,13 @@ kbd {
   mix-blend-mode: multiply;
 }
 
+/* A highlight's color, PDF++'s (ADR 0062), yellow by default. */
 .pdf-mark-highlight {
-  background: rgb(250 214 60 / 55%);
+  background: color-mix(in srgb, var(--mark-color, #fad63c) 55%, transparent);
 }
 
 .pdf-mark-chosen {
-  background: rgb(250 190 30 / 70%);
+  background: color-mix(in srgb, var(--mark-color, #fabe1e) 70%, transparent);
   outline: 2px solid var(--accent);
 }
 
@@ -4236,7 +4237,8 @@ kbd {
   outline: 2px dashed var(--accent);
 }
 
-.pdf-highlights {
+.pdf-highlights,
+.pdf-panel {
   flex: 0 0 18rem;
   padding: 0.75rem 1rem;
   overflow: auto;
@@ -4244,7 +4246,9 @@ kbd {
   font-size: 0.875rem;
 }
 
-.pdf-highlights h2 {
+.pdf-highlights h2,
+.pdf-highlights h3,
+.pdf-panel h2 {
   margin: 0 0 0.5rem;
   color: var(--muted);
   font-size: 0.75rem;
@@ -4287,9 +4291,78 @@ kbd {
   font-size: 0.75rem;
 }
 
+.pdf-highlights h3 {
+  margin-block-start: 1rem;
+}
+
 .pdf-highlight-words {
-  border-inline-start: 3px solid #e3b800;
+  border-inline-start: 3px solid var(--mark-color, #e3b800);
   padding-inline-start: 0.4rem;
+}
+
+/* The color new highlights take, beside Highlight. */
+.pdf-color {
+  display: flex;
+  gap: 0.25rem;
+  align-items: center;
+}
+
+.pdf-color-swatch {
+  width: 0.75rem;
+  height: 0.75rem;
+  border: 1px solid var(--rule);
+  border-radius: 50%;
+  background: #ffd000;
+}
+
+/* The PDF's outline: its entries nested as the PDF nests them. */
+.pdf-outline ul {
+  margin: 0;
+  padding-inline-start: 0.75rem;
+  list-style: none;
+}
+
+.pdf-outline > ul {
+  padding-inline-start: 0;
+}
+
+.pdf-outline-entry {
+  width: 100%;
+  padding: 0.2rem 0.25rem;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+}
+
+.pdf-outline-entry:hover {
+  background: var(--hover);
+}
+
+/* The PDF's own links, over their words. */
+.pdf-links {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+}
+
+.pdf-link {
+  position: absolute;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+.pdf-link:hover {
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+.pdf-link:focus-visible {
+  outline: 2px solid var(--accent);
 }
 
 .pdf-highlight-comment {
@@ -4322,7 +4395,8 @@ kbd {
     flex-direction: column;
   }
 
-  .pdf-highlights {
+  .pdf-highlights,
+  .pdf-panel {
     flex-basis: auto;
     max-height: 40%;
     border-block-start: 1px solid var(--rule);

@@ -30,6 +30,15 @@ export {
   readHighlight,
   readHighlights,
   rewrite,
+  withColor,
   withComment,
   withoutHighlight,
 } from "./highlights.ts";
+export { type PassageLink, readPassageLinks } from "./passages.ts";
+export {
+  type HighlightColor,
+  colorValue,
+  defaultColor,
+  highlightColors,
+  offeredColor,
+} from "./colors.ts";
