@@ -350,6 +350,20 @@ export const messages = {
   pluginsTab: "Plugins",
   pluginsIntro:
     "The plugins that come with Nether. Turn one off, and what it adds goes from this vault until it is turned on again.",
+  pluginsBuiltIn: "Built in",
+  pluginsFromVault: "From this vault",
+  pluginsFromVaultIntro:
+    "Plugins in the vault's .nether/plugins folder. Each runs apart from the app, with only what it asks for. Turning one on approves its code on this device; if its code changes, it stays off until you approve it again.",
+  pluginsNoneFromVault:
+    "None. A plugin is a folder in .nether/plugins, with its manifest.json and main.js.",
+  pluginAsks: "It asks for {permissions}.",
+  pluginAsksNothing: "It asks for nothing more.",
+  pluginAsksNetwork: "the network",
+  pluginAsksVaultRead: "reading the vault's notes and files",
+  pluginAsksVaultWrite: "changing them",
+  pluginNotApproved:
+    "The vault has it on, but this device has not approved it as it is now. Turn it on to approve it.",
+  pluginCannotRun: "It cannot run: {problems}",
   pluginVersion: "Version {version}.",
   notANumber: "{name} needs a number.",
   pluginBlockMissing: "No plugin here shows this block:",

@@ -50,7 +50,7 @@ import { PropertyTypeRegistry } from "./plugins/propertyTypes.ts";
 import { PaneViewOutput } from "./PaneViewOutput.tsx";
 import { SidebarPanel } from "./PanelOutput.tsx";
 import { PluginHost } from "./plugins/host.ts";
-import { isOn, readBuiltins, usePluginState } from "./plugins/state.ts";
+import { isFolderOn, isOn, readBuiltins, usePluginState } from "./plugins/state.ts";
 import { type Command, CommandRegistry } from "./plugins/registry.ts";
 import { ExportDialog } from "./ExportDialog.tsx";
 import { MergeNoteDialog } from "./MergeNoteDialog.tsx";
@@ -267,6 +267,7 @@ function IndexStatus(props: { readonly indexer: Indexer }) {
 
 /** The built-in plugins, their manifests read once. */
 const builtins = readBuiltins(builtinPlugins);
+const builtinIds: ReadonlySet<string> = new Set(builtins.map((each) => each.manifest.id));
 
 /** The built-in graph plugin's view, which the app's Graph command opens. */
 const graphView = "graph:graph";
@@ -472,7 +473,9 @@ export function VaultView(props: {
         onOpenView: setPaneView,
       }),
   );
-  const pluginState = usePluginState(vault, builtins);
+  const pluginState = usePluginState(vault, info.id, builtins);
+  // The code each plugin from a folder runs, by its hash, to start it again when that changes.
+  const folderCode = useRef(new Map<string, string>());
   useEffect(
     () => () => {
       host.close();
@@ -491,6 +494,25 @@ export function VaultView(props: {
         const problems = host.add(plugin);
         if (problems.length > 0) setNotice({ text: problems.join(" ") });
       }
+    }
+    // Those from folders that are on, and approved as they are now (ADR 0058).
+    const running = new Map<string, string>();
+    for (const entry of loaded.folders) {
+      const { manifest, raw, code } = entry;
+      if (manifest === undefined || code === undefined || !isFolderOn(loaded, entry)) continue;
+      running.set(manifest.id, code.hash);
+      host.setSettings(manifest.id, loaded.settings[manifest.id]);
+      const before = folderCode.current.get(manifest.id);
+      if (before === code.hash && added.has(manifest.id)) continue;
+      host.remove(manifest.id);
+      const problems = host.addFolder({ manifest: raw, code: code.text });
+      if (problems.length > 0) setNotice({ text: problems.join(" ") });
+      else folderCode.current.set(manifest.id, code.hash);
+    }
+    for (const id of added) {
+      if (builtinIds.has(id) || running.has(id)) continue;
+      host.remove(id);
+      folderCode.current.delete(id);
     }
   }, [host, pluginState]);
   const { settings, save } = useTemplateSettings(vault);
@@ -1091,6 +1113,8 @@ export function VaultView(props: {
     const openSettings = (tab: string) => () => {
       setSettingsTab(tab);
       setDialog("settings");
+      // A plugin put in the vault's folder since shows in the Plugins tab.
+      pluginState.reload();
     };
     /** Shows a plugin's panel, when the plugin is there. */
     const showPanel = (id: string) =>
@@ -1383,19 +1407,24 @@ export function VaultView(props: {
               name: t("pluginsTab"),
               render: () => (
                 <PluginsSettings
+                  key={loaded.folders
+                    .map((each) => `${each.folder}:${each.code?.hash ?? ""}`)
+                    .join()}
                   plugins={builtins.map((each) => each.manifest)}
-                  on={(id) => isOn(loaded, id)}
+                  state={loaded}
                   onSave={pluginState.saveOn}
                   onClose={closeDialog}
                 />
               ),
             },
-            ...builtins
-              .filter(
-                ({ manifest }) =>
-                  manifest.contributes.settings.length > 0 && isOn(loaded, manifest.id),
-              )
-              .map(({ manifest }) => ({
+            ...[
+              ...builtins.flatMap(({ manifest }) => (isOn(loaded, manifest.id) ? [manifest] : [])),
+              ...loaded.folders.flatMap((entry) =>
+                entry.manifest !== undefined && isFolderOn(loaded, entry) ? [entry.manifest] : [],
+              ),
+            ]
+              .filter((manifest) => manifest.contributes.settings.length > 0)
+              .map((manifest) => ({
                 id: `plugin:${manifest.id}`,
                 name: localize(manifest.name, language),
                 render: () => (
