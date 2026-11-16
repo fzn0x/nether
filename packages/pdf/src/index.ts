@@ -18,3 +18,18 @@ export {
   pagesOutwards,
   passageWords,
 } from "./text.ts";
+export {
+  type Highlight,
+  type NewHighlight,
+  addHighlight,
+  commentBlocks,
+  commentMarkdown,
+  highlightCallout,
+  highlightKind,
+  highlightsNote,
+  readHighlight,
+  readHighlights,
+  rewrite,
+  withComment,
+  withoutHighlight,
+} from "./highlights.ts";
