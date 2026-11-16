@@ -39,6 +39,7 @@ describe("readConfig", () => {
       databaseUrl: database.NETHER_DATABASE_URL,
       redisUrl: null,
       trustProxy: false,
+      webhookPrivate: false,
       mail: null,
       publicUrl: null,
       oidc: null,
@@ -79,6 +80,16 @@ describe("readConfig", () => {
     [" uniquelocal, 172.16.0.0/12 ,::1 ", ["uniquelocal", "172.16.0.0/12", "::1"]],
   ])("reads NETHER_TRUST_PROXY=%j", (value, trustProxy) => {
     expect(readConfig({ ...database, NETHER_TRUST_PROXY: value }).trustProxy).toEqual(trustProxy);
+  });
+
+  it.each([
+    ["", false],
+    ["on", true],
+    [" 192.168.1.20, fd00::/8, loopback ", ["192.168.1.20", "fd00::/8", "loopback"]],
+  ])("reads NETHER_WEBHOOK_PRIVATE=%j", (value, allowed) => {
+    expect(readConfig({ ...database, NETHER_WEBHOOK_PRIVATE: value }).webhookPrivate).toEqual(
+      allowed,
+    );
   });
 
   it("reads the Redis or Valkey server the limits count in", () => {
@@ -186,6 +197,7 @@ describe("readConfig", () => {
     [{ NETHER_TRUST_PROXY: "proxy.example.org" }, "NETHER_TRUST_PROXY must be on, off"],
     [{ NETHER_TRUST_PROXY: "10.0.0.0/33" }, "NETHER_TRUST_PROXY must be on, off"],
     [{ NETHER_TRUST_PROXY: "10.0.0.1," }, "NETHER_TRUST_PROXY must be on, off"],
+    [{ NETHER_WEBHOOK_PRIVATE: "hooks.internal" }, "NETHER_WEBHOOK_PRIVATE must be on, off"],
     [
       { NETHER_REDIS_URL: "valkey:6379" },
       "NETHER_REDIS_URL must be a redis:// or rediss:// address, as redis://valkey:6379",

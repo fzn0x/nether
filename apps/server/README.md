@@ -419,6 +419,7 @@ machine.
 | `NETHER_BACKUP_KEEP` | `7` | How many backups are kept, the newest |
 | `NETHER_WEB_APP` | `apps/web/dist`, when built | The web app's build to serve at `/`, or `off` |
 | `NETHER_TRUST_PROXY` | `off` | Behind a reverse proxy, whose `X-Forwarded-For` to believe: `on` for any, or addresses and ranges such as `10.0.0.2, 172.16.0.0/12` or `uniquelocal` |
+| `NETHER_WEBHOOK_PRIVATE` | `off` | Addresses that are not public which webhooks may reach, for services on your own network: `on` for any, or addresses and ranges such as `192.168.1.20, 10.0.0.0/8`; those may use `http://` |
 | `NETHER_ENTERPRISE_SSO` | `off` | Single sign-on |
 | `NETHER_ENTERPRISE_SCIM` | `off` | Provisioning through SCIM and LDAP |
 | `NETHER_ENTERPRISE_AUDIT` | `off` | Audit logs |
