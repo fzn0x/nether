@@ -103,6 +103,14 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   The list beside the pages shows, comments on, links to and removes
   them. A link to a page, a passage or a highlight opens the PDF there,
   and a link to a file a view opens no longer makes a note of its name.
+- A PDF shows every other note's link to one of its passages, as
+  Obsidian's Copy as quote and PDF++ write them, marked on its page and
+  listed under Linked from notes
+  ([ADR 0062](docs/adr/0062-every-link-to-a-passage-shows-on-the-pdf-in-pdf-plus-plus-colors.md)).
+  Highlights and links take PDF++'s colors, `&color=` in the link: new
+  highlights in yellow, red, blue or purple, and each recolored from the
+  list. The PDF's own outline shows beside its pages, its links to its
+  pages and to the web work, and Back returns from where one was followed.
 
 ### Changed
 
