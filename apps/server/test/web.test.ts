@@ -5,7 +5,7 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { contentSecurityPolicy } from "../src/web.ts";
+import { contentSecurityPolicy, pluginFramePolicy } from "../src/web.ts";
 import { type TestServer, startServer } from "./app.ts";
 
 let running: TestServer | undefined;
@@ -18,6 +18,11 @@ afterEach(async () => {
   build = undefined;
 });
 
+/** A plugin frame's page, as the build writes it. */
+const framePage = `<!doctype html><html><head>
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' blob:" />
+<script src="/plugin-frame.js"></script></head><body></body></html>`;
+
 /** A web app's build, as apps/web makes one, and a file beside it no one should get. */
 async function webBuild(): Promise<string> {
   const root = await mkdtemp(join(tmpdir(), "nether-web-"));
@@ -29,6 +34,7 @@ async function webBuild(): Promise<string> {
   await writeFile(join(dir, "assets", "sqlite3-def456.wasm"), new Uint8Array([0, 97, 115, 109]));
   await writeFile(join(dir, "sw.js"), "// the service worker");
   await writeFile(join(dir, "manifest.webmanifest"), "{}");
+  await writeFile(join(dir, "plugin-frame.html"), framePage);
   await writeFile(join(root, "secret.txt"), "not served");
   return dir;
 }
@@ -58,6 +64,20 @@ describe("the web app", () => {
     expect((await get("/manifest.webmanifest"))?.headers["content-type"]).toBe(
       "application/manifest+json; charset=utf-8",
     );
+  });
+
+  it("serves a plugin frame's page with its own policy, framed by the app's page alone", async () => {
+    running = await startServer({ env: { NETHER_WEB_APP: await webBuild() } });
+    const frame = await running.server.inject({ method: "GET", url: "/plugin-frame.html" });
+    expect(frame.statusCode).toBe(200);
+    expect(frame.headers["content-security-policy"]).toBe(
+      "default-src 'none'; script-src 'self' blob:; frame-ancestors 'self'",
+    );
+    expect(frame.headers["x-frame-options"]).toBeUndefined();
+    expect(frame.body).toBe(framePage);
+    // The app's page may frame only its own pages.
+    expect(contentSecurityPolicy).toContain("frame-src 'self'");
+    expect(pluginFramePolicy("<html></html>")).toBe("default-src 'none'; frame-ancestors 'self'");
   });
 
   it("answers the app's own paths with its page, and a missing file with 404", async () => {
