@@ -115,11 +115,12 @@ export function applyAssist(
     tr.setSelection(TextSelection.near(tr.doc.resolve(after + 1)));
   } else if (
     blocks.length === 1 &&
-    only?.type === "paragraph" &&
+    (only?.type === "paragraph" || only?.type === "heading") &&
     $from.sameParent($to) &&
     $from.parent.isTextblock
   ) {
-    // A paragraph for text inside one block is that text's new words.
+    // One paragraph or heading for text inside one block is that text's new
+    // words: the block stays what it was, as a heading worked on stays one.
     const inline = inlinesToEditor(only.content).map((json) => editor.schema.nodeFromJSON(json));
     tr.replaceWith(range.from, range.to, inline);
     tr.setSelection(TextSelection.near(tr.doc.resolve(tr.mapping.map(range.to))));

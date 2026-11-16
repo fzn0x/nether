@@ -168,6 +168,40 @@ describe("writing assist in the editor", () => {
     expect(editor().state.doc.textContent).not.toContain("the");
   });
 
+  it("keeps a heading a heading, whether the reply is one or not", () => {
+    const document = new Y.Doc();
+    setDocumentBlocks(document, [
+      {
+        id: "h" as BlockId,
+        type: "heading",
+        attrs: { level: 1 },
+        content: [{ type: "text", text: "Welcome home" }],
+      },
+      paragraph("p", "Body"),
+    ]);
+    const { editor, ask } = mount(document);
+    select(editor(), "Welcome home");
+    const selection = must(ask());
+    expect(selection.blocks).toMatchObject([{ type: "heading", attrs: { level: 1 } }]);
+    act(() => {
+      selection.apply(
+        [
+          {
+            id: "x" as BlockId,
+            type: "heading",
+            attrs: { level: 2 },
+            content: [{ type: "text", text: "Hello" }],
+          },
+        ],
+        "replace",
+      );
+    });
+    expect(documentBlocks(document, newBlockId)).toMatchObject([
+      { id: "h", type: "heading", attrs: { level: 1 }, content: [{ type: "text", text: "Hello" }] },
+      { type: "paragraph" },
+    ]);
+  });
+
   it("keeps typing before it apart in the undo history", () => {
     const document = noteDocument();
     const { editor, ask } = mount(document);
