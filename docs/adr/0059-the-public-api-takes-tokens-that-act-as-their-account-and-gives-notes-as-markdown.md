@@ -162,6 +162,43 @@ it does already.
 - Moving and renaming notes, which on the desktop rewrites the links to
   them, comes later.
 
+What the second part decided, building it:
+
+- **A path is one every device can make.** Folders and a name ending in
+  `.md`, each without `/ \ : * ? " < > |`, not hidden by a starting dot,
+  not ending with a dot or a space, and not a name Windows keeps for
+  devices, as the sync engine takes paths from the server. A path the
+  workspace lists already, in any unit and in any case, answers 409.
+- **A new note's unit is found among every unit of the workspace**, not
+  only those the account opens. A path in a teamspace's folder the account
+  cannot edit is refused with 403, never put in General, where the
+  teamspace's members' apps would move it into the teamspace.
+  `Private/` is the account's own private space; without one, the path
+  answers 409, until the app makes it.
+- **One make at a time per workspace on a node.** The check that a path is
+  free and the listing follow each other in turn, and the vault document
+  has the last word: if an app listed the path in between, the make
+  answers 409.
+- **Markdown comes as JSON or as itself.** `PUT` takes `{ "markdown": … }`
+  or a `text/markdown` body, as a file is sent; a note is at most 5 MB of
+  it. Frontmatter that does not read as YAML answers 400, where the
+  desktop app would keep the properties it has: a script should hear it.
+- **Changes can wait on what was read.** Reading a note gives an `ETag`,
+  part of the SHA-256 of its Markdown. `PUT` and `DELETE` with `If-Match`
+  answer 412 when the note changed since; for `PUT`, the check and the
+  change are one transaction of the document. Without it, the text sent
+  wins over what others typed since it was read.
+- **A row's title is its file's name**, under the same rules, and its
+  properties are set over those of the Markdown sent with it. The
+  database's schema does not refuse values, as a file's frontmatter would
+  not.
+- **Answers.** Making answers 201, with the note as reading gives it, its
+  `Location` and its `ETag`; replacing answers 200 with the note; deleting
+  answers 204. A deleted note's document stays on the server, for a
+  device's trash to restore.
+- **Limits.** 120 writes a minute for each account, beside the 300
+  requests.
+
 ### In the app
 
 - **API tokens** are in the Servers and signing in dialog, under each
