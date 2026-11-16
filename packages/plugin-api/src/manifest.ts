@@ -162,7 +162,21 @@ export interface Manifest {
   readonly description?: Localized;
   readonly author?: string;
   readonly authorUrl?: string;
+  /** What it may reach beyond what the app shows it, which the user approves (ADR 0058). */
+  readonly permissions: readonly Permission[];
   readonly contributes: Contributions;
+}
+
+/**
+ * What a plugin from a vault may reach, as its manifest asks: the network,
+ * and the vault's notes and files to read and to change (ADR 0058).
+ */
+export const permissions = ["network", "vault:read", "vault:write"] as const;
+
+export type Permission = (typeof permissions)[number];
+
+function isPermission(value: unknown): value is Permission {
+  return (permissions as readonly unknown[]).includes(value);
 }
 
 /** A manifest, or what is wrong with one. */
@@ -501,6 +515,7 @@ export function readManifest(value: unknown): ManifestResult {
   if (!isObject(value)) return { problems: ["The manifest is not an object."] };
   const problems: string[] = [];
   const { id, name, version, api, description, author, authorUrl, contributes } = value;
+  const asked = value.permissions;
   if (typeof id !== "string" || !pluginIdPattern.test(id)) {
     problems.push("id is not lowercase words joined by hyphens.");
   }
@@ -517,6 +532,14 @@ export function readManifest(value: unknown): ManifestResult {
   if (author !== undefined && typeof author !== "string") problems.push("author is not text.");
   if (authorUrl !== undefined && typeof authorUrl !== "string") {
     problems.push("authorUrl is not text.");
+  }
+  if (
+    asked !== undefined &&
+    (!Array.isArray(asked) ||
+      !asked.every(isPermission) ||
+      new Set<unknown>(asked).size !== asked.length)
+  ) {
+    problems.push(`permissions are not some of ${permissions.join(", ")}, each once.`);
   }
   if (contributes !== undefined && !isObject(contributes)) {
     problems.push("contributes is not an object.");
@@ -555,6 +578,8 @@ export function readManifest(value: unknown): ManifestResult {
       ...(description === undefined ? {} : { description: description as Localized }),
       ...(author === undefined ? {} : { author: author as string }),
       ...(authorUrl === undefined ? {} : { authorUrl: authorUrl as string }),
+      // In the order the app names them, whatever order the manifest has.
+      permissions: permissions.filter((each) => (asked as unknown[] | undefined)?.includes(each)),
       contributes: {
         commands,
         codeBlocks,

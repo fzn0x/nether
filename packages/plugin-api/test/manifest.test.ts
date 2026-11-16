@@ -64,6 +64,19 @@ describe("readManifest", () => {
       settings: [],
     });
     expect(manifest).not.toHaveProperty("description");
+    expect(manifest?.permissions).toEqual([]);
+  });
+
+  it("reads the permissions a plugin asks for, in the app's order", () => {
+    const { manifest } = readManifest({ ...good, permissions: ["vault:write", "network"] });
+    expect(manifest?.permissions).toEqual(["network", "vault:write"]);
+  });
+
+  it("says when its permissions are not the app's, or one is there twice", () => {
+    const problem = "permissions are not some of network, vault:read, vault:write, each once.";
+    for (const asked of ["network", ["camera"], ["network", "network"]]) {
+      expect(readManifest({ ...good, permissions: asked }).problems).toEqual([problem]);
+    }
   });
 
   it("lists everything wrong at once", () => {
