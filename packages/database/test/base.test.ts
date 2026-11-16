@@ -201,6 +201,38 @@ describe("readBase", () => {
     expect(read.properties).toBe(schema.properties);
   });
 
+  it("shows a plugin's layout as a table, and keeps it and its options when read back", () => {
+    const withMap = readDatabase(
+      {
+        properties: [{ key: "status", type: "select", options: [{ name: "Doing" }] }],
+        views: [
+          {
+            name: "Map",
+            layout: "maps/pins",
+            visible: ["status"],
+            options: { zoom: 4 },
+          },
+        ],
+      },
+      () => undefined,
+    );
+    const base = writeBase(withMap, "Places.md");
+    expect(base).toContain("  - type: table\n    name: Map\n");
+    expect(base).not.toContain("maps/pins");
+    expect(base).not.toContain("zoom");
+    const read = readBase(base.replace("      - status\n", ""), withMap);
+    expect(read.views[0]).toMatchObject({
+      name: "Map",
+      layout: "maps/pins",
+      visible: [],
+      options: { zoom: 4 },
+    });
+    // Made a list in Obsidian, the view takes Obsidian's layout and leaves the plugin's options.
+    const listed = readBase(base.replace("type: table", "type: list"), withMap);
+    expect(listed.views[0]?.layout).toBe("list");
+    expect(listed.views[0]).not.toHaveProperty("options");
+  });
+
   it("leaves what it cannot read as the schema had it", () => {
     // A filter with a function Nether has not keeps the view's own, and stays in the base.
     const tagged = written.replace('due < date("2026-12-01")', 'file.hasTag("x")');
