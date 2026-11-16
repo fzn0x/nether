@@ -33,3 +33,10 @@ export {
   withComment,
   withoutHighlight,
 } from "./highlights.ts";
+export {
+  type HighlightColor,
+  colorValue,
+  defaultColor,
+  highlightColors,
+  offeredColor,
+} from "./colors.ts";
