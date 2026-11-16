@@ -18,6 +18,7 @@ import { registerSessions } from "./sessions.ts";
 import { registerSetup } from "./setup.ts";
 import { registerRelay } from "./relay.ts";
 import { registerSync } from "./sync.ts";
+import { registerTokens } from "./tokens.ts";
 import { registerUnits } from "./units.ts";
 import { purgeVersions, registerVersions } from "./versions.ts";
 import { backfillSearch, registerSearch } from "./search.ts";
@@ -186,6 +187,8 @@ export async function buildApp(config: Config, services: Services): Promise<Fast
   };
   registerMembers(app, services.db, reconnect);
   registerUnits(app, services.db, reconnect, sync);
+  // Personal access tokens, for the public API (ADR 0059).
+  registerTokens(app, services.db);
   if (services.mailer !== undefined) {
     registerCodes(app, services.db, services.mailer, config.publicUrl);
   }
