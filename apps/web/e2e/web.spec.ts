@@ -290,3 +290,59 @@ test("opens offline once opened, and one tab at a time", async ({ page, context 
   await context.setOffline(false);
   expect(problems).toEqual([]);
 });
+
+/**
+ * Starts a plugin in a sandboxed frame of the app's own, as the app does
+ * (ADR 0058), and gives the first message its worker sends: the plugin
+ * asking the app who it is.
+ */
+function startFrame(page: Page): Promise<string> {
+  return page.evaluate(
+    () =>
+      new Promise<string>((resolve, reject) => {
+        const frame = document.createElement("iframe");
+        frame.setAttribute("sandbox", "allow-scripts");
+        frame.hidden = true;
+        frame.src = "/plugin-frame.html";
+        const { port1, port2 } = new MessageChannel();
+        const done = (settle: () => void) => {
+          clearTimeout(timer);
+          frame.remove();
+          settle();
+        };
+        const timer = setTimeout(() => {
+          done(() => {
+            reject(new Error("The frame did not start."));
+          });
+        }, 10_000);
+        port1.onmessage = (event) => {
+          done(() => {
+            resolve(JSON.stringify(event.data));
+          });
+        };
+        addEventListener("message", (event) => {
+          if (event.source !== frame.contentWindow) return;
+          const data = event.data as { nether?: string; message?: string } | null;
+          if (data?.nether === "ready") {
+            frame.contentWindow?.postMessage({ code: "export default { activate() {} };" }, "*", [
+              port2,
+            ]);
+          } else if (data?.nether === "failed") {
+            done(() => {
+              reject(new Error(data.message));
+            });
+          }
+        });
+        document.body.append(frame);
+      }),
+  );
+}
+
+// Offline, Chromium loads no sandboxed frame from the service worker, so a
+// plugin from a vault starts only while the server answers.
+test("a plugin's frame starts under the server's policies", async ({ page }) => {
+  const problems = problemsOf(page);
+  await page.goto("/");
+  expect(await startFrame(page)).toContain('"hello"');
+  expect(problems).toEqual([]);
+});

@@ -19,7 +19,8 @@ async function fileText(page: Page, path: string): Promise<string | undefined> {
 /** Opens the vault's settings at a tab, from the Settings menu. */
 async function openSettings(page: Page, item: RegExp) {
   await page.getByRole("menuitem", { name: "Settings" }).click();
-  await page.getByRole("menuitem", { name: item }).click();
+  // A plugin's commands make a Plugins menu beside it.
+  await page.getByRole("menu", { name: "Settings" }).getByRole("menuitem", { name: item }).click();
   return page.getByRole("dialog", { name: "Settings" });
 }
 
@@ -214,4 +215,96 @@ test("a property of a type no plugin here has edits as what it stores as, and ke
   });
   expect(await violations(page)).toEqual([]);
   expect(errors).toEqual([]);
+});
+
+/** Edits files of the sample vault, as another app would. */
+async function editFiles(page: Page, files: Readonly<Record<string, string>>) {
+  await page.evaluate((edits) => {
+    const preview = (
+      globalThis as unknown as {
+        netherPreview: { files: { edit(path: string, text: string): void } };
+      }
+    ).netherPreview;
+    for (const [path, text] of Object.entries(edits)) preview.files.edit(path, text);
+  }, files);
+}
+
+const echoManifest = JSON.stringify({
+  id: "echo",
+  name: "Echo",
+  version: "1.0.0",
+  api: "^0.1",
+  contributes: {
+    commands: [{ id: "fetch", name: "Fetch from elsewhere" }],
+    codeBlocks: [{ language: "echo" }],
+  },
+});
+
+// A plugin as its author would bundle it: one module, its plugin as its default.
+const echoCode = `export default {
+  async activate(context) {
+    await context.codeBlocks.register("echo", (source) => ({
+      html: '<b class="echoed">' + source.trim() + '</b>' +
+        '<img src="https://example.com/a.png" onerror="document.title = 42">',
+    }));
+    await context.commands.register("fetch", async () => {
+      await fetch("https://example.com/");
+    });
+  },
+};
+`;
+
+test("a plugin from the vault runs once approved, apart, and is off again when its code changes", async ({
+  page,
+}) => {
+  const errors = errorsOf(page);
+  const notes = await openSample(page);
+  await editFiles(page, {
+    ".nether/plugins/echo/manifest.json": echoManifest,
+    ".nether/plugins/echo/main.js": echoCode,
+    "Echoed.md": "Before.\n\n```echo\nhello\n```\n",
+  });
+
+  const settings = await openSettings(page, /^Plugins/);
+  const plugins = settings.getByRole("tabpanel", { name: "Plugins" });
+  await expect(plugins.getByRole("heading", { name: "From this vault" })).toBeVisible();
+  await expect(plugins.getByText(/Version 1\.0\.0\. It asks for nothing more\./)).toBeVisible();
+  expect(await violations(page)).toEqual([]);
+  const echo = plugins.getByRole("checkbox", { name: "Echo" });
+  await expect(echo).not.toBeChecked();
+  await echo.check();
+  await plugins.getByRole("button", { name: "Save" }).click();
+  await expect(settings).toBeHidden();
+  expect(JSON.parse((await fileText(page, ".nether/plugins.json")) ?? "{}")).toMatchObject({
+    echo: true,
+  });
+
+  // What it draws shows, cleaned: no handler, and no address outside the page.
+  await notes.getByRole("button", { name: /^Echoed/ }).click();
+  const output = page.locator('.code-output[data-language="echo"]');
+  await expect(output.locator("b.echoed")).toHaveText("hello");
+  const image = output.locator("img");
+  await expect(image).toHaveCount(1);
+  expect(await image.evaluate((element) => element.getAttributeNames())).toEqual([]);
+  await expect(page.locator("iframe.plugin-frame")).toHaveCount(1);
+
+  // It reaches nothing outside: its request fails, and says so.
+  await page.keyboard.press("Control+p");
+  await page.keyboard.type("Fetch from elsewhere");
+  await page.keyboard.press("Enter");
+  await expect(page.getByText(/^The plugin echo failed: /)).toBeVisible();
+  expect(await page.title()).not.toBe("42");
+
+  // Its code changed: it stops, and waits for this device to approve it again.
+  await editFiles(page, { ".nether/plugins/echo/main.js": `${echoCode}// changed\n` });
+  await openSettings(page, /^Plugins/);
+  await expect(
+    plugins.getByText(
+      "The vault has it on, but this device has not approved it as it is now. Turn it on to approve it.",
+    ),
+  ).toBeVisible();
+  await expect(plugins.getByRole("checkbox", { name: "Echo" })).not.toBeChecked();
+  await expect(page.locator("iframe.plugin-frame")).toHaveCount(0);
+  // Only its blocked request complains.
+  expect(errors.filter((error) => !/example\.com|Failed to fetch/.test(error))).toEqual([]);
 });
