@@ -41,8 +41,10 @@ import {
   useRef,
   useState,
 } from "react";
+import { backend } from "./backend.ts";
 import { t } from "./messages.ts";
 import type { NotePart } from "./noteLinks.ts";
+import { type PdfDestination, PdfOutline, destinationOf, webAddress } from "./PdfOutline.tsx";
 import {
   type NoteHighlight,
   type NotePassageLink,
@@ -74,6 +76,15 @@ interface Mark {
   readonly selection: PdfSelection;
   /** A highlight's color, as CSS; none for the default. */
   readonly color?: string | undefined;
+}
+
+/** A link of the PDF's own on a page (ADR 0062): its box, and where it goes. */
+interface PageLink {
+  readonly left: number;
+  readonly top: number;
+  readonly width: number;
+  readonly height: number;
+  readonly to: PdfDestination | { readonly url: string };
 }
 
 /** A place to show, and a key new each time it is asked, even for the same place. */
@@ -283,9 +294,12 @@ function PdfPage(props: {
   readonly onSize: (page: number, size: Size) => void;
   readonly onError: (error: unknown) => void;
   readonly register: (page: number, element: HTMLElement | null) => void;
+  /** Follows a link of the PDF's own. */
+  readonly onLink: (to: PageLink["to"]) => void;
 }) {
   const { doc, number, count, size, scale, near, marks, focus, textOf, onText, onSize, onError } =
     props;
+  const [links, setLinks] = useState<readonly PageLink[]>([]);
   const page = useRef<HTMLDivElement | null>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
   const layer = useRef<HTMLDivElement>(null);
@@ -327,6 +341,35 @@ function PdfPage(props: {
       if (cancelled()) return;
       setDivs(text.textDivs);
       onText(number, text.textDivs);
+      // Its links, to its own pages or to the web; others do nothing, so they are left out.
+      const found: PageLink[] = [];
+      for (const annotation of (await proxy.getAnnotations({ intent: "display" })) as unknown[]) {
+        const { subtype, rect, dest, url } = annotation as {
+          subtype?: unknown;
+          rect?: unknown;
+          dest?: unknown;
+          url?: unknown;
+        };
+        if (subtype !== "Link" || !Array.isArray(rect) || rect.length !== 4) continue;
+        const web = webAddress(url);
+        const to = web !== undefined ? { url: web } : await destinationOf(doc, dest);
+        if (to === undefined) continue;
+        const [x1, y1, x2, y2] = rect as number[];
+        const [left = 0, top = 0] = viewport.convertToViewportPoint(x1 ?? 0, y1 ?? 0) as number[];
+        const [right = 0, bottom = 0] = viewport.convertToViewportPoint(
+          x2 ?? 0,
+          y2 ?? 0,
+        ) as number[];
+        found.push({
+          left: Math.min(left, right),
+          top: Math.min(top, bottom),
+          width: Math.abs(right - left),
+          height: Math.abs(bottom - top),
+          to,
+        });
+      }
+      if (cancelled()) return;
+      setLinks(found);
       await render.promise;
     })().catch((error: unknown) => {
       if (cancelled() || (error instanceof Error && error.name === "RenderingCancelledException")) {
@@ -341,6 +384,7 @@ function PdfPage(props: {
       render?.cancel();
       text?.cancel();
       setDivs(undefined);
+      setLinks([]);
       onText(number, undefined);
       container?.replaceChildren();
       if (drawn !== null) {
@@ -430,6 +474,32 @@ function PdfPage(props: {
         ))}
       </div>
       <div ref={layer} className="textLayer" />
+      {links.length === 0 ? null : (
+        <div className="pdf-links">
+          {links.map((link, index) => (
+            <button
+              key={index}
+              type="button"
+              className="pdf-link"
+              aria-label={
+                "url" in link.to
+                  ? t("pdfLinkTo", { address: link.to.url })
+                  : t("pdfGoToPage", { page: link.to.page })
+              }
+              title={"url" in link.to ? link.to.url : t("pdfGoToPage", { page: link.to.page })}
+              style={{
+                left: `${String(link.left)}px`,
+                top: `${String(link.top)}px`,
+                width: `${String(link.width)}px`,
+                height: `${String(link.height)}px`,
+              }}
+              onClick={() => {
+                props.onLink(link.to);
+              }}
+            />
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -570,13 +640,50 @@ export default function PdfView(props: {
     setCurrent(found);
   };
   const [focus, setFocus] = useState<Focus | undefined>();
-  const goTo = useCallback((page: number, mark?: string) => {
+  const scaleNow = useRef(1);
+  scaleNow.current = scale ?? 1;
+  /** Shows a page, at a height on it at 100% when given, and a mark on it once drawn. */
+  const goTo = useCallback((page: number, mark?: string, y?: number) => {
     const element = elements.current.get(page);
     const root = scroller.current;
-    if (element !== undefined && root !== null) root.scrollTop = element.offsetTop - 8;
+    if (element !== undefined && root !== null) {
+      root.scrollTop = element.offsetTop + (y ?? 0) * scaleNow.current - 8;
+    }
     setCurrent(page);
     setFocus({ page, ...(mark === undefined ? {} : { mark }), key: Date.now() });
   }, []);
+
+  // Where the PDF's own links and outline were followed from, for Back.
+  const [back, setBack] = useState<readonly number[]>([]);
+  const follow = useCallback(
+    async (dest: unknown) => {
+      if (doc === undefined) return;
+      const place = await destinationOf(doc, dest);
+      if (place === undefined) return;
+      const from = scroller.current?.scrollTop ?? 0;
+      setBack((current) => [...current.slice(-49), from]);
+      goTo(place.page, undefined, place.y);
+    },
+    [doc, goTo],
+  );
+  const goBack = () => {
+    const to = back.at(-1);
+    if (to === undefined || scroller.current === null) return;
+    scroller.current.scrollTop = to;
+    setBack(back.slice(0, -1));
+  };
+  const onLink = useCallback(
+    (to: PdfDestination | { readonly url: string }) => {
+      if ("url" in to) {
+        void backend.openUrl(to.url);
+        return;
+      }
+      const from = scroller.current?.scrollTop ?? 0;
+      setBack((current) => [...current.slice(-49), from]);
+      goTo(to.page, undefined, to.y);
+    },
+    [goTo],
+  );
 
   // The text layers drawn, by page, to read a selection from.
   const layers = useRef(new Map<number, readonly HTMLElement[]>());
@@ -930,6 +1037,15 @@ export default function PdfView(props: {
           <button
             type="button"
             className="quiet"
+            disabled={back.length === 0}
+            title={t("pdfBackHint")}
+            onClick={goBack}
+          >
+            {t("pdfBack")}
+          </button>
+          <button
+            type="button"
+            className="quiet"
             disabled={current <= 1}
             onClick={() => {
               goTo(current - 1);
@@ -1030,6 +1146,16 @@ export default function PdfView(props: {
           >
             {t("pdfHighlights")}
           </button>
+          <button
+            type="button"
+            className="quiet"
+            aria-pressed={panel === "outline"}
+            onClick={() => {
+              togglePanel("outline");
+            }}
+          >
+            {t("pdfOutline")}
+          </button>
         </div>
       </div>
       {finding ? (
@@ -1124,10 +1250,22 @@ export default function PdfView(props: {
                 onSize={onSize}
                 onError={report}
                 register={register}
+                onLink={onLink}
               />
             ))
           )}
         </div>
+        {panel === "outline" && doc !== undefined ? (
+          <PdfOutline
+            doc={doc}
+            onGo={(dest) => {
+              void follow(dest);
+            }}
+            onOpenUrl={(url) => {
+              void backend.openUrl(url);
+            }}
+          />
+        ) : null}
         {panel === "highlights" ? (
           <aside className="pdf-highlights" aria-labelledby="pdf-highlights-title">
             <h2 id="pdf-highlights-title">{t("pdfHighlights")}</h2>

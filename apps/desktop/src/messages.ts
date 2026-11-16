@@ -848,7 +848,7 @@ export const messages = {
   pdfRemoveHighlight: "Remove",
   pdfHighlightRemoved: "Highlight removed.",
   pdfHighlightGone: "This highlight is no longer in its note.",
-  // Links to passages, and colors (ADR 0062).
+  // Links to passages, colors, the outline and the PDF's links (ADR 0062).
   pdfLinkedFromNotes: "Linked from notes",
   pdfFromNote: "in {note}",
   pdfLinkActions: "Link on page {page} in {note}",
@@ -859,6 +859,13 @@ export const messages = {
   pdfColorRed: "Red",
   pdfColorBlue: "Blue",
   pdfColorPurple: "Purple",
+  pdfOutline: "Outline",
+  pdfNoOutline: "This PDF has no outline.",
+  pdfUntitled: "Untitled",
+  pdfGoToPage: "Go to page {page}",
+  pdfLinkTo: "Open {address}",
+  pdfBack: "Back",
+  pdfBackHint: "Back to where the last link or outline entry was followed from",
 } as const;
 
 export type MessageKey = keyof typeof messages;
