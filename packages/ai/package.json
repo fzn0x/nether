@@ -1,0 +1,20 @@
+{
+  "name": "@nether/ai",
+  "version": "0.0.0",
+  "private": true,
+  "description": "AI from a provider the user chooses: streaming chat and embeddings from any OpenAI-compatible endpoint or Anthropic's Messages API, over fetch, with the user's own key.",
+  "license": "AGPL-3.0-or-later",
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run --coverage"
+  },
+  "devDependencies": {
+    "@vitest/coverage-v8": "^5.0.5",
+    "vitest": "^5.0.5"
+  }
+}
