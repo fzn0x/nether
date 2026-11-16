@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import rateLimit from "@fastify/rate-limit";
 import Fastify, { type FastifyInstance } from "fastify";
 import type { Redis } from "ioredis";
+import { registerApi } from "./api.ts";
 import { registerAttachments } from "./attachments.ts";
 import type { BlobStore } from "./blobs.ts";
 import { registerCodes } from "./codes.ts";
@@ -187,8 +188,9 @@ export async function buildApp(config: Config, services: Services): Promise<Fast
   };
   registerMembers(app, services.db, reconnect);
   registerUnits(app, services.db, reconnect, sync);
-  // Personal access tokens, for the public API (ADR 0059).
+  // The public API, for personal access tokens (ADR 0059).
   registerTokens(app, services.db);
+  registerApi(app, services.db, sync);
   if (services.mailer !== undefined) {
     registerCodes(app, services.db, services.mailer, config.publicUrl);
   }
