@@ -7,7 +7,7 @@
 import { contentSecurityPolicy } from "@nether/server/src/web.ts";
 import { type Page, expect, test } from "@playwright/test";
 import { errorsOf, openSampleTree, violations } from "./helpers.ts";
-import { reading } from "./pdfs.ts";
+import { guide, reading } from "./pdfs.ts";
 
 interface PreviewFiles {
   edit(path: string, text: string | undefined): void;
@@ -184,7 +184,11 @@ test("links to a passage and to a highlight open the PDF there", async ({ page }
   await editor.locator(".chip-wikiLink", { hasText: "Reading, page 2" }).click();
   await expect(page.getByRole("tab", { name: "Reading" })).toHaveAttribute("aria-selected", "true");
   const second = page.getByRole("group", { name: "Page 2 of 2" });
-  await expect(second.locator(".pdf-mark-focus").first()).toBeInViewport();
+  // The link is the essay's own link to the passage (ADR 0062), chosen in the list.
+  await expect(second.locator(".pdf-mark-chosen").first()).toBeInViewport();
+  await expect(
+    page.getByRole("list", { name: "Linked from notes" }).locator("li.chosen"),
+  ).toContainText("in Essay");
   // Not a note made of the PDF's name.
   expect(await read(page, "Papers/Reading.pdf.md")).toBeUndefined();
 
@@ -224,4 +228,119 @@ test("a PDF opens under the web app's content security policy", async ({ page })
     .poll(() => first.locator("canvas").evaluate((canvas) => (canvas as HTMLCanvasElement).width))
     .toBeGreaterThan(0);
   expect(errors.filter((error) => /content security policy|refused/i.test(error))).toEqual([]);
+});
+
+test("links to a passage in other notes show on the PDF, in PDF++'s colors", async ({ page }) => {
+  const errors = errorsOf(page);
+  await openReading(page);
+  // Obsidian's Copy as quote, and PDF++'s Quote in callout, in red.
+  await edit(
+    page,
+    "Quotes.md",
+    [
+      "> Attention is all you need [[Papers/Reading.pdf#page=1&selection=1,13,1,25|Reading, page 1]]",
+      "",
+      "> [!PDF|red] [[Papers/Reading.pdf#page=2&selection=0,4,0,15&color=red|Reading, page 2]]",
+      "> > second page",
+      ">",
+      "> A comment.",
+      "",
+    ].join("\n"),
+  );
+  const linked = page.getByRole("list", { name: "Linked from notes" });
+  const items = linked.getByRole("listitem");
+  await expect(items).toHaveCount(2);
+  await expect(items.nth(0)).toContainText("Page 1, Yellow, in Quotes");
+  await expect(items.nth(0)).toContainText("Attention is all you need");
+  await expect(items.nth(1)).toContainText("Page 2, Red, in Quotes");
+  await expect(items.nth(1)).toContainText("second page");
+  await expect(
+    page.getByRole("group", { name: "Page 1 of 2" }).locator(".pdf-mark-highlight").first(),
+  ).toBeVisible();
+
+  await items
+    .nth(1)
+    .getByRole("button", { name: /second page/ })
+    .click();
+  const mark = page.getByRole("group", { name: "Page 2 of 2" }).locator(".pdf-mark-chosen").first();
+  await expect(mark).toBeInViewport();
+  expect(await mark.evaluate((element) => element.style.getPropertyValue("--mark-color"))).toBe(
+    "#ea5252",
+  );
+  expect(await violations(page)).toEqual([]);
+
+  // The notes' own text: shown in its note, never changed from here.
+  await expect(linked.getByRole("button", { name: "Remove" })).toHaveCount(0);
+  await items.nth(1).getByRole("button", { name: "Show in note" }).click();
+  await expect(page.getByRole("tab", { name: "Quotes" })).toHaveAttribute("aria-selected", "true");
+  expect(errors).toEqual([]);
+});
+
+test("highlights take a color, written as PDF++ writes it, and change it", async ({ page }) => {
+  const errors = errorsOf(page);
+  await openReading(page);
+  await page.getByRole("combobox", { name: "Color of new highlights" }).selectOption("red");
+  await select(page, 1, "all you need");
+  await page.getByRole("button", { name: "Highlight", exact: true }).click();
+  await expect
+    .poll(() => read(page, highlightsNote))
+    .toContain("[[Reading.pdf#page=1&selection=1,13,1,25&color=red|Reading, page 1]]");
+  const item = page
+    .getByRole("complementary", { name: "Highlights" })
+    .getByRole("listitem")
+    .first();
+  await expect(item).toContainText("Page 1, Red");
+
+  const recolor = item.getByRole("combobox", { name: "Color", exact: true });
+  await recolor.selectOption("note");
+  await expect.poll(() => read(page, highlightsNote)).toContain("&color=note|Reading, page 1]]");
+  await expect(item).toContainText("Page 1, Blue");
+  // Yellow, the default, writes no color.
+  await recolor.selectOption("yellow");
+  await expect
+    .poll(() => read(page, highlightsNote))
+    .toContain("[[Reading.pdf#page=1&selection=1,13,1,25|Reading, page 1]]");
+  expect(errors).toEqual([]);
+});
+
+test("the PDF's outline and its links go to their places, and Back returns", async ({
+  page,
+  context,
+}) => {
+  const errors = errorsOf(page);
+  await context.route("https://example.com/**", (route) => route.fulfill({ body: "More" }));
+  const tree = await openSampleTree(page);
+  await edit(page, "Papers/Guide.pdf", guide);
+  await tree.getByRole("treeitem", { name: "Papers" }).click();
+  await tree.getByRole("treeitem", { name: /^Guide\s*pdf$/ }).click();
+  const first = page.getByRole("group", { name: "Page 1 of 2" });
+  await expect(first.locator(".textLayer")).toContainText("Chapter two is on the next page.");
+  const shown = page.getByRole("spinbutton", { name: /^Page/ });
+  const back = page.getByRole("button", { name: "Back", exact: true });
+  await expect(back).toBeDisabled();
+
+  await page.getByRole("button", { name: "Outline", exact: true }).click();
+  const outline = page.getByRole("complementary", { name: "Outline" });
+  await expect(outline.getByRole("button")).toHaveText(["Chapter one", "Chapter two"]);
+  expect(await violations(page)).toEqual([]);
+  await outline.getByRole("button", { name: "Chapter two" }).click();
+  await expect(shown).toHaveValue("2");
+  await back.click();
+  await expect(shown).toHaveValue("1");
+  await expect(back).toBeDisabled();
+
+  // A link to the next page, over its words, from the keyboard too.
+  const next = first.getByRole("button", { name: "Go to page 2" });
+  await next.focus();
+  await page.keyboard.press("Enter");
+  await expect(shown).toHaveValue("2");
+  await back.click();
+  await expect(shown).toHaveValue("1");
+
+  // A link to the web opens in the browser, never in the app's page.
+  const popup = page.waitForEvent("popup");
+  await first.getByRole("button", { name: "Open https://example.com/more" }).click();
+  expect((await popup).url()).toBe("https://example.com/more");
+  expect(page.url()).not.toContain("example.com");
+  expect(errors).toEqual([]);
 });
