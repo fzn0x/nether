@@ -128,7 +128,7 @@ test("a folder exports as a PDF, each note on its page, with math, code and diag
   );
   expect(html).toContain('<math xmlns="http://www.w3.org/1998/Math/MathML"');
   expect(html).toContain('<span class="hljs-keyword">const</span>');
-  expect(html).toContain('<figure class="diagram"><svg');
+  expect(html).toContain('<figure class="code-output" data-language="mermaid"><svg');
   // The print view is gone once printed.
   await expect(page.locator("#print-root")).toHaveCount(0);
   expect(errors).toEqual([]);

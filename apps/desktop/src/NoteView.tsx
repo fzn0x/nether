@@ -15,6 +15,7 @@ import type { Backlink, LinkGraph, NoteIndex } from "@nether/graph";
 import type { Vault } from "@nether/storage";
 import { type ReactNode, Suspense, lazy, useEffect, useMemo, useRef, useState } from "react";
 import { type Exporter, type VaultMedia, backend } from "./backend.ts";
+import { CodeOutput } from "./CodeOutput.tsx";
 import { CommentsPanel } from "./CommentsPanel.tsx";
 import { readIndexRow } from "./indexer.ts";
 import { t } from "./messages.ts";
@@ -29,13 +30,9 @@ import { useGraph } from "./useGraph.ts";
 import { useComments } from "./useComments.ts";
 import { type GoLive, useLive } from "./useLive.ts";
 import { useNote } from "./useNote.ts";
+import type { CodeBlockRegistry } from "./plugins/codeBlocks.ts";
 
 export type NoteMode = "blocks" | "source";
-
-// A query block's view, and the database code it brings, load with the first query block.
-const QueryView = lazy(() =>
-  import("./QueryView.tsx").then(({ QueryView: view }) => ({ default: view })),
-);
 
 // CodeMirror loads the first time a note shows its source.
 const SourceEditor = lazy(() =>
@@ -67,6 +64,8 @@ export default function NoteView(props: {
   /** Where a database's view is exported. */
   readonly exporter: Exporter;
   readonly graph: LinkGraph;
+  /** What plugins draw code blocks with, by language. */
+  readonly codeBlocks: CodeBlockRegistry;
   readonly id: NoteId;
   /** Where a link asked to go in this note. */
   readonly focus: (NotePart & { readonly key: number }) | undefined;
@@ -114,6 +113,7 @@ export default function NoteView(props: {
     media,
     exporter,
     graph,
+    codeBlocks,
     id,
     focus,
     mode,
@@ -193,22 +193,23 @@ export default function NoteView(props: {
         },
         onOpenTag,
       ),
-      // A `base` code block shows the notes its query finds.
-      renderQuery: (source: string) => (
-        <Suspense fallback={null}>
-          <QueryView
-            source={source}
-            vault={vault}
-            media={media}
-            graph={graph}
-            onOpen={(note) => {
-              onOpenNote(note);
-            }}
-          />
-        </Suspense>
+      // What plugins draw below a code block: a diagram, the notes a query finds.
+      renderCode: (language: string, info: string, source: string) => (
+        <CodeOutput
+          codeBlocks={codeBlocks}
+          language={language}
+          info={info}
+          source={source}
+          vault={vault}
+          media={media}
+          graph={graph}
+          onOpen={(note) => {
+            onOpenNote(note);
+          }}
+        />
       ),
     }),
-    [vault, media, graph, id, onOpenNote, onOpenTag],
+    [vault, media, graph, codeBlocks, id, onOpenNote, onOpenTag],
   );
 
   const toggle = async () => {

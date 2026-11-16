@@ -5,7 +5,7 @@ and ProseMirror, as [ADR 0002](../../docs/adr/0002-editor-tiptap.md)
 decided. Every block of the core model has a node, so a note opens without
 losing anything, and every block node holds the block's stable ID. A slash
 menu inserts blocks, a handle beside each block moves it or opens its menu,
-and math, code and Mermaid diagrams render in place
+and math and code render in place, with what the app draws for a code block's language below it
 ([ADR 0009](../../docs/adr/0009-math-code-and-diagrams.md)). Images, PDFs,
 audio and video show from the files the app finds for their links, and
 files pasted or dropped into a note are embedded where they land
@@ -37,7 +37,7 @@ language's words as `words`, and English is the default.
 | `src/actions.ts` | Moving, duplicating, deleting and turning a whole block, and the shortcuts for the block that holds the caret |
 | `src/SlashMenu.tsx` | The slash menu |
 | `src/BlockHandle.tsx` | The handle beside each block, to drag it or open its menu |
-| `src/views.tsx` | Math rendered with KaTeX and edited as LaTeX, code with its language, and Mermaid diagrams below their code |
+| `src/views.tsx` | Math rendered with KaTeX and edited as LaTeX, and code with its language, with what the app draws for that language, such as a Mermaid diagram, below it |
 | `src/files.ts` | What kind of file a link names and the URL it loads from, and files pasted or dropped into a note |
 | `src/embeds.tsx` | Images, PDFs, audio and video in a note, and a field or file picker for blocks without one |
 | `src/words.ts` | Every word the editor shows, in English |

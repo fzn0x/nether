@@ -115,14 +115,32 @@ describe("blocksToHtml", () => {
     );
   });
 
-  it("draws diagrams with the hook, or shows their code", async () => {
-    const markdown = "```mermaid\ngraph LR\n  a --> b\n```\n";
+  it("draws code blocks in their code's place with the hook, or shows their code", async () => {
+    const markdown =
+      "```Mermaid\ngraph LR\n  a --> b\n```\n\n```ts\nlet a;\n```\n\n```\nplain\n```\n";
+    const code = [
+      '<pre><code class="language-ts">let a;</code></pre>',
+      "<pre><code>plain</code></pre>",
+    ];
     expect(await html(markdown)).toBe(
-      '<pre><code class="language-mermaid">graph LR\n  a --&gt; b</code></pre>',
+      ['<pre><code class="language-Mermaid">graph LR\n  a --&gt; b</code></pre>', ...code].join(
+        "\n",
+      ),
     );
-    expect(await html(markdown, { diagram: () => Promise.resolve("<svg></svg>") })).toBe(
-      '<figure class="diagram"><svg></svg></figure>',
+    const asked: string[] = [];
+    const codeBlock = (block: { readonly text: string }, language: string) => {
+      asked.push(language);
+      return language === "Mermaid"
+        ? Promise.resolve(`<svg>${String(block.text.length)}</svg>`)
+        : undefined;
+    };
+    expect(await html(markdown, { codeBlock })).toBe(
+      ['<figure class="code-output" data-language="mermaid"><svg>18</svg></figure>', ...code].join(
+        "\n",
+      ),
     );
+    // A block with no language is never asked about.
+    expect(asked).toEqual(["Mermaid", "ts"]);
   });
 
   it("shows files by their kind where the hook finds them, and their names where it does not", async () => {

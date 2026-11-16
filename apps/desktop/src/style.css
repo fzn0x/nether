@@ -1378,25 +1378,26 @@ button {
   font-weight: 600;
 }
 
-/* A Mermaid diagram below its code. */
-.nether-editor .diagram {
+/* What a plugin draws below a code block, such as a Mermaid diagram. */
+.nether-editor .code-output {
   margin-top: 0.5rem;
   overflow-x: auto;
-  text-align: center;
 }
 
-.nether-editor .diagram svg {
+.nether-editor .code-output > svg {
+  display: block;
+  margin-inline: auto;
   max-width: 100%;
   height: auto;
 }
 
-.nether-editor .diagram-error {
+.nether-editor .code-error {
   margin-top: 0.5rem;
   color: var(--muted);
   font-size: 0.875rem;
 }
 
-.nether-editor .diagram-error pre {
+.nether-editor .code-error pre {
   margin: 0.25rem 0 0;
   white-space: pre-wrap;
 }
@@ -1425,40 +1426,36 @@ button {
 }
 
 /* A query block's notes below its code: a database view's, not the note's tables and headings. */
-.nether-editor .code-query {
-  margin-top: 0.5rem;
-}
-
-.nether-editor .code-query .database {
+.nether-editor .code-output .query {
   margin-block: 0;
 }
 
-.nether-editor .code-query table {
+.nether-editor .code-output .query table {
   table-layout: auto;
 }
 
-.nether-editor .code-query th,
-.nether-editor .code-query td {
+.nether-editor .code-output .query th,
+.nether-editor .code-output .query td {
   padding: 0.15rem 0.35rem;
   border: 0;
   border-block-end: 1px solid var(--rule);
   vertical-align: middle;
 }
 
-.nether-editor .code-query thead th {
+.nether-editor .code-output .query thead th {
   font-weight: 500;
 }
 
-.nether-editor .code-query tbody th {
+.nether-editor .code-output .query tbody th {
   font-weight: inherit;
 }
 
-.nether-editor .code-query h3 {
+.nether-editor .code-output .query h3 {
   margin: 0;
   line-height: inherit;
 }
 
-.nether-editor .code-query ul {
+.nether-editor .code-output .query ul {
   padding-inline-start: 0;
 }
 

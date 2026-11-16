@@ -1,6 +1,6 @@
 ---
 title: Writing plugins
-description: How a Nether plugin is made, a preview of the plugin API at version 0.1. A plugin's folder, its manifest, its code and the commands it adds.
+description: How a Nether plugin is made, a preview of the plugin API at version 0.1. A plugin's folder, its manifest, its code, and the commands and code blocks it adds.
 ---
 
 :::caution[A preview]
@@ -57,11 +57,12 @@ reach your computer.
 | `api` | The versions of the plugin API it works with, as `^0.1` |
 | `description` | What it does, optional, a string or strings by language |
 | `author`, `authorUrl` | Who made it, optional |
-| `contributes` | What it adds: for now, `commands` |
+| `contributes` | What it adds: for now, `commands` and `codeBlocks` |
 
 The app reads the manifest before the plugin's code runs. Its commands
 show in the menus and the palette at once, and its code loads only when
-one of them is first chosen.
+one of them is first chosen, or a code block in one of its languages
+first shows.
 
 A name by language picks the app's language, then its main language
 (`pt` for `pt-BR`), then English, then the first one there is.
@@ -89,11 +90,12 @@ export default definePlugin({
 | `context.language` | The app's language, as `en`, for the plugin's own strings |
 | `context.direction` | `ltr` or `rtl`, the way the app's text runs |
 | `context.commands` | `register(id, run)`, which attaches a command the manifest declares |
+| `context.codeBlocks` | `register(language, render)`, which draws code blocks in a language the manifest declares |
 
 Every call to the app is async, and takes and returns plain JSON values,
 since a plugin will run apart from the app and reach it only by messages.
-Each `register` returns something whose `dispose()` takes the command
-away again. When a plugin is turned off, the app takes away everything it
+Each `register` returns something whose `dispose()` takes what it
+attached away again. When a plugin is turned off, the app takes away everything it
 added.
 
 ## Commands
@@ -108,6 +110,48 @@ The app knows a plugin's command as `plugin-id:command`, as
   Shortcuts**. Keys that another command has already stay that command's,
   so a plugin cannot take the app's own.
 - A command its manifest does not declare cannot be registered.
+
+## Code blocks
+
+A plugin can draw the code blocks of a language, as Nether's Mermaid
+diagrams are drawn. The manifest declares each language, in lowercase:
+
+```json
+"contributes": {
+  "codeBlocks": [{ "language": "abc" }]
+}
+```
+
+and the plugin's code draws it:
+
+```js
+await context.codeBlocks.register("abc", async (source, block) => {
+  if (source.trim() === "") return null;
+  return { html: drawTune(source, block.theme) };
+});
+```
+
+- **`source`** is the block's text, as written.
+- **`block`** says its `language`; its `info`, the whole line after the
+  backticks, as `abc title="Tune"`; the `theme` of the page it shows on,
+  `light` or `dark`; and the `target`: `editor` in a note open in Nether,
+  or `html` in an exported page.
+- It returns `{ html }`, `{ error }` to say what is wrong, or `null` for
+  nothing.
+
+In a note, what a plugin draws shows below the block's code, which stays
+as it is written, and is drawn again once typing pauses. An error shows
+there instead. In an exported page, the drawing takes the code's place,
+and an error or `null` leaves the code. A fence matches whatever its case,
+so a block fenced as `ABC` is drawn too. Each language is drawn by one
+plugin: a plugin that declares a language another has is not added.
+
+Draw with plain HTML and SVG: the app may take scripts and event handlers
+out of what a plugin draws.
+
+Mermaid diagrams and query blocks are built-in plugins. Mermaid's uses
+only this API. A query block's notes are a live view, which only
+built-in plugins can show; an exported page shows a query block's code.
 
 ## Versions
 

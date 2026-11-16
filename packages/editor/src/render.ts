@@ -1,8 +1,7 @@
-// Math, code and diagrams drawn for a page outside the editor, as an
-// exported note shows them: math as MathML, which browsers draw with no
-// fonts or styles of KaTeX's; code highlighted as the editor highlights
-// it, as spans with highlight.js's classes; Mermaid diagrams as SVG, on a
-// light page. KaTeX and Mermaid load on first use.
+// Math and code drawn for a page outside the editor, as an exported note
+// shows them: math as MathML, which browsers draw with no fonts or styles
+// of KaTeX's, and code highlighted as the editor highlights it, as spans
+// with highlight.js's classes. KaTeX loads on first use.
 import { codeLanguage, lowlight } from "./schema.ts";
 
 type Highlighted = ReturnType<typeof lowlight.highlight>;
@@ -57,27 +56,4 @@ export async function mathToMathml(latex: string, display: boolean): Promise<str
         katex.renderToString(source, { output: "mathml", displayMode: block, throwOnError: false }),
   );
   return (await loadingMath)(latex, display);
-}
-
-let diagrams = 0;
-
-/** A Mermaid diagram as SVG, drawn for a light page; nothing when Mermaid cannot read it. */
-export async function diagramToSvg(source: string): Promise<string | undefined> {
-  const { default: mermaid } = await import("mermaid");
-  mermaid.initialize({
-    startOnLoad: false,
-    // As in the editor: no scripts, clicks or loaded content, and no ELK (ADR 0009).
-    securityLevel: "strict",
-    suppressErrorRendering: true,
-    layout: "dagre",
-    theme: "default",
-  });
-  const id = `export-diagram-${String(++diagrams)}`;
-  try {
-    await mermaid.parse(source);
-    return (await mermaid.render(id, source)).svg;
-  } catch {
-    document.getElementById(`d${id}`)?.remove();
-    return undefined;
-  }
 }

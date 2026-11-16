@@ -40,7 +40,8 @@ ${s}article .properties dd { margin: 0; }
 ${s}article .embed { margin: 0 0 1em; padding: 0.2em 1em; border-inline-start: 3px solid var(--rule); }
 ${s}article .columns { display: flex; gap: 1.5em; }
 ${s}article .column { flex: 1; min-width: 0; }
-${s}article .diagram { margin: 0 0 1em; text-align: center; }
+${s}article .code-output { margin: 0 0 1em; }
+${s}article .code-output > svg { display: block; margin-inline: auto; max-width: 100%; height: auto; }
 ${s}article .file.missing, ${s}article .raw { color: var(--muted); }
 ${s}article .hljs-keyword, ${s}article .hljs-selector-tag, ${s}article .hljs-built_in { color: var(--code-keyword); }
 ${s}article .hljs-string, ${s}article .hljs-attr, ${s}article .hljs-regexp { color: var(--code-string); }

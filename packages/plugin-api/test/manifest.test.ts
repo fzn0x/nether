@@ -14,6 +14,7 @@ const good = {
       { id: "count", name: "Count words", menu: "note", keys: ["Mod+Shift+K"] },
       { id: "reset_all", name: { en: "Reset" } },
     ],
+    codeBlocks: [{ language: "abc" }, { language: "c++" }],
   },
 };
 
@@ -25,12 +26,13 @@ describe("readManifest", () => {
       { id: "count", name: "Count words", menu: "note", keys: ["Mod+Shift+K"] },
       { id: "reset_all", name: { en: "Reset" }, menu: "plugins", keys: [] },
     ]);
+    expect(manifest?.contributes.codeBlocks).toEqual([{ language: "abc" }, { language: "c++" }]);
     expect(manifest?.author).toBe("Ada");
   });
 
   it("reads one that adds nothing", () => {
     const { manifest } = readManifest({ id: "a", name: "A", version: "0.0.1", api: "0.1.0" });
-    expect(manifest?.contributes.commands).toEqual([]);
+    expect(manifest?.contributes).toEqual({ commands: [], codeBlocks: [] });
     expect(manifest).not.toHaveProperty("description");
   });
 
@@ -80,6 +82,30 @@ describe("readManifest", () => {
     ]);
     expect(readManifest({ ...good, contributes: { commands: {} } }).problems).toEqual([
       "contributes.commands is not a list.",
+    ]);
+  });
+
+  it("says what is wrong with its code blocks", () => {
+    const { problems } = readManifest({
+      ...good,
+      contributes: {
+        codeBlocks: [
+          { language: "Mermaid" },
+          { language: "" },
+          3,
+          { language: "abc" },
+          { language: "abc" },
+        ],
+      },
+    });
+    expect(problems).toEqual([
+      "contributes.codeBlocks[0].language is not a code block's language in lowercase, as mermaid.",
+      "contributes.codeBlocks[1].language is not a code block's language in lowercase, as mermaid.",
+      "contributes.codeBlocks[2] is not an object.",
+      'contributes.codeBlocks[4].language "abc" is there twice.',
+    ]);
+    expect(readManifest({ ...good, contributes: { codeBlocks: "abc" } }).problems).toEqual([
+      "contributes.codeBlocks is not a list.",
     ]);
   });
 

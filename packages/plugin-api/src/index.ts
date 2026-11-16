@@ -1,5 +1,6 @@
 export type { Json } from "./json.ts";
 export {
+  type CodeBlockContribution,
   type CommandContribution,
   type Contributions,
   type Localized,
@@ -11,6 +12,11 @@ export {
   readManifest,
 } from "./manifest.ts";
 export {
+  type CodeBlockContext,
+  type CodeBlockOutput,
+  type CodeBlockRenderer,
+  type CodeBlockTarget,
+  type CodeBlocks,
   type Commands,
   type Disposable,
   type Hello,

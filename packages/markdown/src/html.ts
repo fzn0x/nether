@@ -34,8 +34,12 @@ export interface HtmlHooks {
   readonly math?: (latex: string, display: boolean) => Maybe<string>;
   /** Code's text as HTML, with its highlighting; the text escaped when not given. */
   readonly code?: (text: string, language: string) => Maybe<string>;
-  /** A code block drawn as a diagram, as SVG; nothing shows its code. */
-  readonly diagram?: (block: CodeBlock) => Maybe<string | undefined>;
+  /**
+   * A code block drawn in its code's place, as HTML, by what draws its
+   * language (the fence's first word), such as a Mermaid diagram as SVG;
+   * nothing shows its code.
+   */
+  readonly codeBlock?: (block: CodeBlock, language: string) => Maybe<string | undefined>;
   /** What an embed of a note, or of a part of one, shows, as HTML; nothing shows a link to it. */
   readonly embed?: (target: LinkTarget) => Maybe<string | undefined>;
 }
@@ -279,10 +283,12 @@ class Renderer {
         return `<details${attributes({ id })}><summary>${await this.inlines(block.content)}</summary>${await this.blocks(block.children ?? [])}</details>`;
       case "code": {
         const language = block.attrs.language.trim().split(/\s/)[0] ?? "";
-        if (language.toLowerCase() === "mermaid") {
-          const svg = await this.#hooks.diagram?.(block);
-          if (svg !== undefined)
-            return `<figure class="diagram"${attributes({ id })}>${svg}</figure>`;
+        if (language !== "") {
+          const drawn = await this.#hooks.codeBlock?.(block, language);
+          if (drawn !== undefined) {
+            const named = language.toLowerCase();
+            return `<figure class="code-output"${attributes({ id, "data-language": named })}>${drawn}</figure>`;
+          }
         }
         const code = this.#hooks.code;
         const html = code === undefined ? escapeHtml(block.text) : await code(block.text, language);

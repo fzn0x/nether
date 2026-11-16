@@ -1,0 +1,11 @@
+{
+  "id": "mermaid",
+  "name": "Mermaid diagrams",
+  "version": "1.0.0",
+  "api": "^0.1",
+  "description": "Draws a mermaid code block as a diagram, below its code in a note and in its place in an exported page.",
+  "author": "Nether contributors",
+  "contributes": {
+    "codeBlocks": [{ "language": "mermaid" }]
+  }
+}

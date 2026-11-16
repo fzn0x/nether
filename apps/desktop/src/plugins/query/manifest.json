@@ -1,0 +1,11 @@
+{
+  "id": "query",
+  "name": "Query blocks",
+  "version": "1.0.0",
+  "api": "^0.1",
+  "description": "Shows the notes a base code block's query finds, below its code in a note.",
+  "author": "Nether contributors",
+  "contributes": {
+    "codeBlocks": [{ "language": "base" }]
+  }
+}

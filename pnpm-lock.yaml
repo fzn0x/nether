@@ -101,6 +101,9 @@ importers:
       lucide-react:
         specifier: 1.55.0
         version: 1.55.0(@types/react@19.3.0)(react@19.3.1)
+      mermaid:
+        specifier: ^12.2.0
+        version: 12.2.0
       mygo-runtime:
         specifier: 0.6.2
         version: 0.6.2
@@ -375,9 +378,6 @@ importers:
       lowlight:
         specifier: ^3.3.0
         version: 3.3.0
-      mermaid:
-        specifier: ^12.2.0
-        version: 12.2.0
       y-protocols:
         specifier: ^1.0.7
         version: 1.0.7(yjs@13.6.33)
