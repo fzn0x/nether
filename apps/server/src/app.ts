@@ -27,6 +27,7 @@ import { setSessionCookies, signInRoutes, wantsCookie } from "./cookies.ts";
 import { backupIfDue, backupTarget, noBlobs } from "./backups.ts";
 import { registerWebApp } from "./web.ts";
 import { registerWorkspaces } from "./workspaces.ts";
+import { registerWrites } from "./writes.ts";
 
 /** The server's version, from its package.json (one folder up from src/ and dist/ alike). */
 export function serverVersion(): string {
@@ -190,7 +191,7 @@ export async function buildApp(config: Config, services: Services): Promise<Fast
   registerUnits(app, services.db, reconnect, sync);
   // The public API, for personal access tokens (ADR 0059).
   registerTokens(app, services.db);
-  registerApi(app, services.db, sync);
+  registerWrites(app, services.db, sync, registerApi(app, services.db, sync));
   if (services.mailer !== undefined) {
     registerCodes(app, services.db, services.mailer, config.publicUrl);
   }
