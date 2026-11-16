@@ -42,6 +42,16 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   ([ADR 0056](docs/adr/0056-a-plugins-database-layout-is-named-for-it-and-a-base-shows-it-as-a-table.md)).
   A view whose layout no plugin here shows keeps it, and shows its rows
   as a table.
+- Plugins can add property types, `plugin-id/type`, each stored as one of
+  the app's types and written with it, in `.nether/properties.json` and in
+  a database's schema; their view shows a value in a note's properties
+  and a database's table
+  ([ADR 0057](docs/adr/0057-a-plugins-property-type-stores-as-one-of-the-apps-which-shows-without-it.md)).
+  Without its plugin, a value shows and edits as what it stores as.
+- The plugin API, Phase 4's second item, is done: commands, code blocks,
+  blocks and slash entries, panels, settings, views, database layouts and
+  property types, with Nether's own Mermaid diagrams, query blocks, tags,
+  assigned tasks, outline, backlinks, canvas, graph and layouts built on it.
 
 ### Changed
 
