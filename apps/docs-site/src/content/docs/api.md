@@ -1,12 +1,12 @@
 ---
 title: REST API
-description: Read a workspace's notes as Markdown, its databases and their rows, and search it, from scripts and other services, with a personal access token.
+description: Read and write a workspace's notes as Markdown, its databases and their rows, and search it, from scripts and other services, with a personal access token.
 ---
 
 A Nether server has a REST API for scripts and other services. With a
-personal access token, it reads the notes of the workspaces you belong to
-as Markdown, their databases and rows, and searches them. Writing notes,
-webhooks, and making tokens in the app come next.
+personal access token, it reads and writes the notes of the workspaces you
+belong to as Markdown, reads their databases and adds rows to them, and
+searches them. Webhooks, and making tokens in the app, come next.
 
 ## Tokens
 
@@ -83,8 +83,8 @@ curl https://nether.example.org/api/v1/workspaces \
   there are more, `next` is set: send it back as `after` for the next
   page. When it is `null`, that was the last.
 - **Limits.** Each account may make 300 requests a minute, its tokens and
-  sessions together, and 120 searches. Past that, the answer is 429, with
-  `Retry-After` in seconds.
+  sessions together, 120 of them searches and 120 writes. Past that, the
+  answer is 429, with `Retry-After` in seconds.
 - **Not there.** A workspace your token does not reach, or a note you
   cannot open, answers 404, as one that does not exist. So does a note in
   the trash.
@@ -178,6 +178,10 @@ Markdown is what Nether writes for the note; a file someone edited by hand
 elsewhere may differ in style, as its list markers, but not in its text,
 links or frontmatter.
 
+The answer's `ETag` header names the note as it was read. Send it back in
+`If-Match` when you change the note, to change it only if no one else has
+since.
+
 ### `GET /api/v1/workspaces/{workspace}/databases`
 
 The [databases](../databases/): notes with a schema, each with the schema
@@ -250,3 +254,81 @@ results.
 
 `matches` are where the words matched in `snippet`, as start and end
 offsets. `encrypted` names the workspaces the server could not search.
+
+## Writing
+
+Writing takes a **write** token, and edit access where the note is: in a
+teamspace you edit, a page shared with you to edit, your private space, or
+the workspace's General space as a member. Each change reaches the app as
+it is made: someone with the note open sees it change, and every device
+syncs it. The note's history keeps what it was, as for any edit.
+
+### `POST /api/v1/workspaces/{workspace}/notes`
+
+Makes a note at a path, from its Markdown:
+
+```sh
+curl https://nether.example.org/api/v1/workspaces/$WORKSPACE/notes \
+  -H "authorization: Bearer $NETHER_TOKEN" -H 'content-type: application/json' \
+  -d '{"path":"Inbox/Call Ada.md","markdown":"---\nstatus: Todo\n---\nAbout the launch.\n"}'
+```
+
+The answer, 201, is the note as reading gives it, with its new ID; its
+`Location` header is its address.
+
+- **Paths** are folders and a name ending in `.md`. A name cannot hold
+  `/ \ : * ? " < > |`, start with a dot, or end with a dot or a space, so
+  every device can make the file.
+- **Where it goes** follows its path, as in the app: a teamspace's folder
+  puts it in that teamspace, `Private/` in your private space, and the
+  folder beside a shared page in that page. A path where you cannot write
+  answers 403. `Private/` answers 409 until the app has made your private
+  space, the first time you open it there.
+- **A path the workspace has already**, in any case, answers 409.
+- **Frontmatter** that does not read as YAML answers 400.
+
+### `PUT /api/v1/workspaces/{workspace}/notes/{note}`
+
+Replaces a note's Markdown, its frontmatter and its text. Send it as
+JSON, `{ "markdown": "…" }`, or as the file itself:
+
+```sh
+curl -X PUT https://nether.example.org/api/v1/workspaces/$WORKSPACE/notes/$NOTE \
+  -H "authorization: Bearer $NETHER_TOKEN" -H 'content-type: text/markdown' \
+  -H "if-match: $ETAG" --data-binary @Launch.md
+```
+
+The note changes only where the Markdown differs: blocks that stay keep
+their place, so links to them and comments on them stay too. The answer
+is the note, with its new `ETag`.
+
+With `If-Match`, a note that changed since you read it answers 412: read
+it again, and make your change on what it is now. Without it, what you
+send wins over what others typed since. A note is at most 5 MB of
+Markdown.
+
+### `DELETE /api/v1/workspaces/{workspace}/notes/{note}`
+
+Deletes a note: every device sends it to its trash, where it can be
+restored, as when it is deleted in the app. The answer is 204. `If-Match`
+works as for `PUT`.
+
+### `POST /api/v1/workspaces/{workspace}/databases/{note}/rows`
+
+Adds a row to a database: a note in the folder beside it, named by its
+title.
+
+```json
+{
+  "title": "Site",
+  "properties": { "status": "Doing", "due": "2026-12-01" },
+  "markdown": "The new website.\n"
+}
+```
+
+`properties` are set over any frontmatter `markdown` has. The answer, 201,
+is the row's note, as for `POST .../notes`. A title is a file's name,
+under the same rules as a path's, and one the database has already
+answers 409.
+
+Moving and renaming notes through the API comes later.

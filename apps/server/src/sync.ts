@@ -145,6 +145,18 @@ export interface SyncControl extends VaultEditor {
    * never stored.
    */
   state(workspaceId: string, document: string): Promise<Uint8Array | undefined>;
+  /**
+   * Changes a document as a member's app would, through Hocuspocus: apps
+   * with it open see the change at once, and it is stored, and so listed
+   * as changed, before this resolves. `change` runs in one transaction,
+   * and what it gives is given back.
+   */
+  edit<T>(
+    workspaceId: string,
+    document: string,
+    userId: string,
+    change: (document: Y.Doc) => T,
+  ): Promise<T>;
 }
 
 /** Whether a path is under a folder, `folder` ending with a slash, in any case. */
@@ -326,22 +338,29 @@ export async function registerSync(app: FastifyInstance, db: Database): Promise<
     }
   });
 
+  /** Changes a document as a member's app would: those syncing it hear at once. */
+  async function edit<T>(name: string, userId: string, change: (document: Y.Doc) => T): Promise<T> {
+    const connection = await hocuspocus.openDirectConnection(name, { userId });
+    try {
+      let result: { readonly value: T } | undefined;
+      await connection.transact((document) => {
+        result = { value: change(document) };
+      });
+      if (result === undefined) throw new Error(`The change to ${name} did not run.`);
+      return result.value;
+    } finally {
+      // Let go, it is stored.
+      await connection.disconnect();
+    }
+  }
+
   /** Changes a vault document as a member's app would: those syncing it hear at once. */
   async function editVault(
     workspaceId: string,
     unit: string,
     change: (document: Y.Doc) => void,
   ): Promise<void> {
-    const connection = await hocuspocus.openDirectConnection(
-      `${workspaceId}/${vaultDocument(unit)}`,
-      { userId: "" },
-    );
-    try {
-      await connection.transact(change);
-    } finally {
-      // Let go, it is stored.
-      await connection.disconnect();
-    }
+    await edit(`${workspaceId}/${vaultDocument(unit)}`, "", change);
   }
 
   return {
@@ -393,6 +412,10 @@ export async function registerSync(app: FastifyInstance, db: Database): Promise<
         [workspaceId, document],
       );
       return rows.length === 0 ? undefined : readBytes(rows[0], "state");
+    },
+
+    edit(workspaceId, document, userId, change) {
+      return edit(`${workspaceId}/${document}`, userId, change);
     },
   };
 }

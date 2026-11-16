@@ -54,8 +54,8 @@ Version 0.1.0, the first public release, with sync and the server, is
 ready to [install](../install/). The fifth phase, the platform,
 is under way: the [plugin API](../plugins/) is done, and Nether's own
 diagrams, panels, canvas, graph and database layouts are built-in plugins
-on it. The server's [REST API](../api/) reads notes, databases and search
-for scripts, with personal access tokens. The [roadmap](../roadmap/) lists
+on it. The server's [REST API](../api/) reads and writes notes, databases
+and search for scripts, with personal access tokens. The [roadmap](../roadmap/) lists
 what each phase delivers.
 
 The full requirements, the architecture and the decision records live in
