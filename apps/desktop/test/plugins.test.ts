@@ -14,6 +14,7 @@ import { describe, expect, it } from "vitest";
 import { coreMenus, commandIds } from "../src/commands.ts";
 import { BlockRegistry, slashEntries } from "../src/plugins/blocks.ts";
 import { PanelRegistry } from "../src/plugins/panels.ts";
+import { isOn, readBuiltins, readOn } from "../src/plugins/state.ts";
 import { builtinPlugins } from "../src/plugins/builtins.ts";
 import { CodeBlockRegistry, type CodeBlockView } from "../src/plugins/codeBlocks.ts";
 import { type BuiltinContext, PluginHost } from "../src/plugins/host.ts";
@@ -614,6 +615,40 @@ for (const [name, connect] of Object.entries(connections)) {
       plugins.close();
     });
 
+    it("starts a plugin with its settings as the vault keeps them, and tells it of changes", async () => {
+      const registry = new CommandRegistry();
+      const plugins = host(registry);
+      const heard: unknown[] = [];
+      let started: unknown;
+      const goals = {
+        ...manifest,
+        contributes: {
+          ...manifest.contributes,
+          settings: [
+            { id: "goal", name: "Goal", type: "number", default: 500 },
+            { id: "live", name: "Live", type: "toggle", default: true },
+          ],
+        },
+      };
+      const { load } = fixture((context) => {
+        started = context.settings.values();
+        context.settings.onChange((values) => heard.push(values));
+        return Promise.resolve();
+      });
+      // A plugin not added yet takes them when it is.
+      plugins.setSettings("word-count", { goal: 750, live: "no" });
+      plugins.add({ manifest: goals, load });
+      // One not started is told nothing until it starts.
+      plugins.setSettings("word-count", { goal: 800 });
+      registry.get("word-count:count")?.run();
+      await settle();
+      expect(started).toEqual({ goal: 800, live: true });
+      plugins.setSettings("word-count", { goal: 900, live: false });
+      await settle();
+      expect(heard).toEqual([{ goal: 900, live: false }]);
+      plugins.close();
+    });
+
     it("refuses a view of a panel its manifest does not declare", async () => {
       const panels = new PanelRegistry();
       const plugins = host(
@@ -661,6 +696,36 @@ for (const [name, connect] of Object.entries(connections)) {
     });
   });
 }
+
+describe("the vault's plugins", () => {
+  it("reads which plugins are on, leaving out what is not true or false", () => {
+    expect(readOn({ tags: false, query: true, odd: "no" })).toEqual({ tags: false, query: true });
+    expect(readOn([true])).toEqual({});
+    expect(readOn(undefined)).toEqual({});
+  });
+
+  it("has a built-in plugin on unless the vault turned it off", () => {
+    const state = { on: { tags: false, query: true }, settings: {} };
+    expect([isOn(state, "tags"), isOn(state, "query"), isOn(state, "outline")]).toEqual([
+      false,
+      true,
+      true,
+    ]);
+  });
+
+  it("reads the built-in plugins' manifests, leaving out one that does not read", () => {
+    const read = readBuiltins([...builtinPlugins, { manifest: { id: "x" }, load: fixture().load }]);
+    expect(read.map((each) => each.manifest.id)).toEqual(
+      builtinPlugins.map((each) => {
+        const id = (each.manifest as { readonly id: string }).id;
+        return id;
+      }),
+    );
+    expect(
+      read.find((each) => each.manifest.id === "backlinks")?.manifest.contributes.settings,
+    ).toHaveLength(1);
+  });
+});
 
 describe("PluginHost, adding", () => {
   const plugins = (

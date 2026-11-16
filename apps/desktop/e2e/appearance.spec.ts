@@ -56,7 +56,7 @@ test("a vault's appearance: dark apart from the system, a theme and snippets, ke
   await page.keyboard.press("Control+p");
   await page.keyboard.type("appearance");
   await page.keyboard.press("Enter");
-  const dialog = page.getByRole("dialog", { name: "Appearance" });
+  const dialog = page.getByRole("tabpanel", { name: "Appearance" });
   await expect(dialog.getByRole("radio", { name: "As the system" })).toBeChecked();
 
   // Dark, whatever the system prefers.
@@ -120,7 +120,7 @@ test("the built-in themes draw behind the app, still when motion is reduced", as
   await openSample(page);
   await page.getByRole("menuitem", { name: "Settings" }).click();
   await page.getByRole("menuitem", { name: /^Appearance/ }).click();
-  const dialog = page.getByRole("dialog", { name: "Appearance" });
+  const dialog = page.getByRole("tabpanel", { name: "Appearance" });
   const theme = dialog.getByRole("combobox", { name: "Theme" });
   await theme.selectOption("nether:anime");
   const canvas = page.locator("canvas.theme-effect");

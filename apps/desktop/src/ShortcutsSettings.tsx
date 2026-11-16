@@ -1,19 +1,19 @@
-// The keyboard shortcuts of every command, and the keys to change them:
+// The keyboard shortcuts of every command, and the keys to change them, a
+// tab of the vault's settings:
 // Change listens for the next keys pressed, Escape stops listening, and
 // Backspace leaves the command with none. Keys another command had move
 // to this one. A shortcut needs Ctrl, Cmd or Alt, or a function key, so
 // that typing never runs a command. The vault keeps the choices.
-import { type KeyboardEvent, type SyntheticEvent, useEffect, useRef, useState } from "react";
+import { type KeyboardEvent, type SyntheticEvent, useEffect, useState } from "react";
 import { t } from "./messages.ts";
 import { type Hotkeys, canBeShortcut, eventKeys, formatKeys } from "./shortcuts.ts";
-import { useModal } from "./useModal.ts";
 
-export function ShortcutsDialog(props: {
+export function ShortcutsSettings(props: {
   readonly commands: readonly { readonly id: string; readonly name: string }[];
   readonly defaults: Hotkeys;
   /** The vault's own choices, over the defaults. */
   readonly chosen: Hotkeys;
-  /** Called with true while the dialog listens for keys, so they run no command. */
+  /** Called with true while the tab listens for keys, so they run no command. */
   readonly onListening: (listening: boolean) => void;
   readonly onSave: (chosen: Hotkeys) => Promise<void>;
   readonly onClose: () => void;
@@ -28,10 +28,7 @@ export function ShortcutsDialog(props: {
     onListening(listening !== undefined);
   }, [listening, onListening]);
 
-  const dialog = useRef<HTMLFormElement>(null);
-  useModal(dialog);
-
-  // Commands run again when the dialog closes.
+  // Commands run again when the tab closes.
   useEffect(
     () => () => {
       onListening(false);
@@ -97,102 +94,90 @@ export function ShortcutsDialog(props: {
   };
 
   return (
-    <div
-      className="switcher-backdrop"
-      onMouseDown={(event) => {
-        // A click outside the dialog closes it.
-        if (event.target === event.currentTarget) onClose();
+    <form
+      className="settings-form"
+      onSubmit={submit}
+      onKeyDown={(event) => {
+        if (event.key === "Escape" && listening === undefined) {
+          event.preventDefault();
+          onClose();
+        }
       }}
     >
-      <form
-        className="switcher dialog settings-dialog"
-        ref={dialog}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="shortcuts-title"
-        onSubmit={submit}
-        onKeyDown={(event) => {
-          if (event.key === "Escape" && listening === undefined) {
-            event.preventDefault();
-            onClose();
-          }
-        }}
-      >
-        <h2 id="shortcuts-title">{t("shortcuts")}</h2>
-        <div className="dialog-body">
-          <table className="shortcuts">
-            <thead>
-              <tr>
-                <th scope="col">{t("command")}</th>
-                <th scope="col">{t("shortcut")}</th>
-                <th scope="col">
-                  <span className="visually-hidden">{t("change")}</span>
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {commands.map((command) => {
-                const keys = keysOf(command.id);
-                return (
-                  <tr key={command.id}>
-                    <th scope="row">{command.name}</th>
-                    <td>
-                      {keys.length === 0 ? (
-                        <span className="hint">{t("noShortcut")}</span>
-                      ) : (
-                        keys.map((each) => <kbd key={each}>{formatKeys(each)}</kbd>)
-                      )}
-                    </td>
-                    <td className="shortcut-actions">
+      <h3>{t("shortcuts")}</h3>
+      <div className="dialog-body">
+        <table className="shortcuts">
+          <thead>
+            <tr>
+              <th scope="col">{t("command")}</th>
+              <th scope="col">{t("shortcut")}</th>
+              <th scope="col">
+                <span className="visually-hidden">{t("change")}</span>
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {commands.map((command) => {
+              const keys = keysOf(command.id);
+              return (
+                <tr key={command.id}>
+                  <th scope="row">{command.name}</th>
+                  <td>
+                    {keys.length === 0 ? (
+                      <span className="hint">{t("noShortcut")}</span>
+                    ) : (
+                      keys.map((each) => <kbd key={each}>{formatKeys(each)}</kbd>)
+                    )}
+                  </td>
+                  <td className="shortcut-actions">
+                    <button
+                      type="button"
+                      className="quiet"
+                      aria-label={t("changeShortcut", { name: command.name })}
+                      aria-pressed={listening === command.id}
+                      onClick={() => {
+                        setMessage(undefined);
+                        setListening(listening === command.id ? undefined : command.id);
+                      }}
+                      onKeyDown={(event) => {
+                        if (listening === command.id) listen(command.id, event);
+                      }}
+                      onBlur={() => {
+                        if (listening === command.id) setListening(undefined);
+                      }}
+                    >
+                      {listening === command.id ? t("pressKeys") : t("change")}
+                    </button>
+                    {command.id in chosen ? (
                       <button
                         type="button"
                         className="quiet"
-                        aria-label={t("changeShortcut", { name: command.name })}
-                        aria-pressed={listening === command.id}
+                        aria-label={t("resetShortcut", { name: command.name })}
                         onClick={() => {
-                          setMessage(undefined);
-                          setListening(listening === command.id ? undefined : command.id);
-                        }}
-                        onKeyDown={(event) => {
-                          if (listening === command.id) listen(command.id, event);
-                        }}
-                        onBlur={() => {
-                          if (listening === command.id) setListening(undefined);
+                          setChosen((current) =>
+                            withKeys(current, command.id, defaults[command.id] ?? []),
+                          );
                         }}
                       >
-                        {listening === command.id ? t("pressKeys") : t("change")}
+                        {t("reset")}
                       </button>
-                      {command.id in chosen ? (
-                        <button
-                          type="button"
-                          className="quiet"
-                          aria-label={t("resetShortcut", { name: command.name })}
-                          onClick={() => {
-                            setChosen((current) =>
-                              withKeys(current, command.id, defaults[command.id] ?? []),
-                            );
-                          }}
-                        >
-                          {t("reset")}
-                        </button>
-                      ) : null}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-        {message === undefined ? null : <p role="status">{message}</p>}
-        <div className="dialog-actions">
-          <button type="button" className="quiet" onClick={onClose}>
-            {t("cancel")}
-          </button>
-          <button type="submit" className="primary">
-            {t("save")}
-          </button>
-        </div>
-      </form>
-    </div>
+                    ) : null}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+      {message === undefined ? null : <p role="status">{message}</p>}
+      <div className="dialog-actions">
+        <button type="button" className="quiet" onClick={onClose}>
+          {t("cancel")}
+        </button>
+        <button type="submit" className="primary">
+          {t("save")}
+        </button>
+      </div>
+    </form>
   );
 }

@@ -1,7 +1,7 @@
 {
   "id": "backlinks",
   "name": "Backlinks",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "api": "^0.1",
   "description": "Shows beside a note the notes that link to it, with the text around each link, and those that mention it without a link.",
   "author": "Nether contributors",
@@ -9,6 +9,15 @@
     "panels": [
       { "id": "linked", "name": "Linked from", "place": "note" },
       { "id": "unlinked", "name": "Unlinked mentions", "place": "note", "folded": true }
+    ],
+    "settings": [
+      {
+        "id": "context",
+        "name": "Show the text around each link",
+        "description": "Under each note that links here, the lines its links are in.",
+        "type": "toggle",
+        "default": true
+      }
     ]
   }
 }

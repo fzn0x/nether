@@ -105,7 +105,7 @@ test("the settings turn on weekly notes, and the vault keeps them", async ({ pag
   await expect(page.getByRole("button", { name: "This week" })).toBeHidden();
   await page.getByRole("menuitem", { name: "Settings" }).click();
   await page.getByRole("menuitem", { name: /^Templates and periodic notes/ }).click();
-  const dialog = page.getByRole("dialog", { name: "Templates and periodic notes" });
+  const dialog = page.getByRole("tabpanel", { name: "Templates" });
   // Obsidian's settings for daily notes show, until Nether's own are saved.
   const daily = dialog.getByRole("group", { name: "Daily notes" });
   await expect(daily.getByRole("textbox", { name: "Folder" })).toHaveValue("Daily");

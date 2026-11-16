@@ -1,10 +1,11 @@
-// The vault's settings for templates and periodic notes: the templates
+// The vault's settings for templates and periodic notes, a tab of its
+// settings: the templates
 // folder, how dates and times are written, and for each of the day, the
 // week and the month whether the app offers its note, where it goes, how
 // it is named, and the template it starts from. Each format shows what it
 // writes for now as it is typed.
 import { type Period, formatDate } from "@nether/core";
-import { type KeyboardEvent, type SyntheticEvent, useRef, useState } from "react";
+import { type KeyboardEvent, type SyntheticEvent, useState } from "react";
 import { t } from "./messages.ts";
 import {
   type PeriodicSettings,
@@ -14,7 +15,6 @@ import {
   periodicNote,
   periods,
 } from "./templates.ts";
-import { useModal } from "./useModal.ts";
 
 function TextField(props: {
   readonly label: string;
@@ -40,7 +40,7 @@ function TextField(props: {
   );
 }
 
-export function TemplateSettingsDialog(props: {
+export function TemplateSettings(props: {
   readonly settings: TemplateSettings;
   /** The paths of the templates folder's notes, which the template fields suggest. */
   readonly templates: readonly string[];
@@ -52,9 +52,6 @@ export function TemplateSettingsDialog(props: {
   const [draft, setDraft] = useState<TemplateSettings>(settings);
   const [error, setError] = useState<string | undefined>();
   const now = new Date();
-  const dialog = useRef<HTMLFormElement>(null);
-
-  useModal(dialog);
 
   const setPeriod = (period: Period, change: Partial<PeriodicSettings>) => {
     setDraft((current) => ({ ...current, [period]: { ...current[period], ...change } }));
@@ -97,109 +94,93 @@ export function TemplateSettingsDialog(props: {
   };
 
   return (
-    <div
-      className="switcher-backdrop"
-      onMouseDown={(event) => {
-        // A click outside the dialog closes it.
-        if (event.target === event.currentTarget) onClose();
-      }}
-    >
-      <form
-        className="switcher dialog settings-dialog"
-        ref={dialog}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="settings-title"
-        onSubmit={submit}
-        onKeyDown={onKeyDown}
-      >
-        <h2 id="settings-title">{t("templateSettings")}</h2>
-        <datalist id="template-paths">
-          {templates.map((path) => (
-            <option key={path} value={path} />
-          ))}
-        </datalist>
-        <div className="dialog-body">
-          <fieldset>
-            <legend>{t("templates")}</legend>
-            <TextField
-              label={t("templatesFolder")}
-              value={draft.folder}
-              onChange={(folder) => {
-                setDraft((current) => ({ ...current, folder }));
-              }}
-            />
-            <TextField
-              label={t("dateFormat")}
-              value={draft.dateFormat}
-              example={t("formatExample", { text: formatDate(now, draft.dateFormat) })}
-              onChange={(dateFormat) => {
-                setDraft((current) => ({ ...current, dateFormat }));
-              }}
-            />
-            <TextField
-              label={t("timeFormat")}
-              value={draft.timeFormat}
-              example={t("formatExample", { text: formatDate(now, draft.timeFormat) })}
-              onChange={(timeFormat) => {
-                setDraft((current) => ({ ...current, timeFormat }));
-              }}
-            />
-          </fieldset>
-          {periods.map((period) => {
-            const values = draft[period];
-            return (
-              <fieldset key={period}>
-                <legend>{t(`${period}Notes`)}</legend>
-                <label className="field-check">
-                  <input
-                    type="checkbox"
-                    checked={values.enabled}
-                    onChange={(event) => {
-                      setPeriod(period, { enabled: event.target.checked });
-                    }}
-                  />
-                  {t("offerNote")}
-                </label>
-                <TextField
-                  label={t("noteFolder")}
-                  value={values.folder}
-                  onChange={(folder) => {
-                    setPeriod(period, { folder });
+    <form className="settings-form" onSubmit={submit} onKeyDown={onKeyDown}>
+      <h3>{t("templateSettings")}</h3>
+      <datalist id="template-paths">
+        {templates.map((path) => (
+          <option key={path} value={path} />
+        ))}
+      </datalist>
+      <div className="dialog-body">
+        <fieldset>
+          <legend>{t("templates")}</legend>
+          <TextField
+            label={t("templatesFolder")}
+            value={draft.folder}
+            onChange={(folder) => {
+              setDraft((current) => ({ ...current, folder }));
+            }}
+          />
+          <TextField
+            label={t("dateFormat")}
+            value={draft.dateFormat}
+            example={t("formatExample", { text: formatDate(now, draft.dateFormat) })}
+            onChange={(dateFormat) => {
+              setDraft((current) => ({ ...current, dateFormat }));
+            }}
+          />
+          <TextField
+            label={t("timeFormat")}
+            value={draft.timeFormat}
+            example={t("formatExample", { text: formatDate(now, draft.timeFormat) })}
+            onChange={(timeFormat) => {
+              setDraft((current) => ({ ...current, timeFormat }));
+            }}
+          />
+        </fieldset>
+        {periods.map((period) => {
+          const values = draft[period];
+          return (
+            <fieldset key={period}>
+              <legend>{t(`${period}Notes`)}</legend>
+              <label className="field-check">
+                <input
+                  type="checkbox"
+                  checked={values.enabled}
+                  onChange={(event) => {
+                    setPeriod(period, { enabled: event.target.checked });
                   }}
                 />
-                <TextField
-                  label={t("nameFormat")}
-                  value={values.format}
-                  example={t("formatExample", {
-                    text: values.format.trim() === "" ? "" : periodicNote(draft, period, now).path,
-                  })}
-                  onChange={(format) => {
-                    setPeriod(period, { format });
-                  }}
-                />
-                <TextField
-                  label={t("template")}
-                  value={values.template}
-                  list="template-paths"
-                  onChange={(template) => {
-                    setPeriod(period, { template });
-                  }}
-                />
-              </fieldset>
-            );
-          })}
-        </div>
-        {error === undefined ? null : <p role="alert">{error}</p>}
-        <div className="dialog-actions">
-          <button type="button" className="quiet" onClick={onClose}>
-            {t("cancel")}
-          </button>
-          <button type="submit" className="primary">
-            {t("save")}
-          </button>
-        </div>
-      </form>
-    </div>
+                {t("offerNote")}
+              </label>
+              <TextField
+                label={t("noteFolder")}
+                value={values.folder}
+                onChange={(folder) => {
+                  setPeriod(period, { folder });
+                }}
+              />
+              <TextField
+                label={t("nameFormat")}
+                value={values.format}
+                example={t("formatExample", {
+                  text: values.format.trim() === "" ? "" : periodicNote(draft, period, now).path,
+                })}
+                onChange={(format) => {
+                  setPeriod(period, { format });
+                }}
+              />
+              <TextField
+                label={t("template")}
+                value={values.template}
+                list="template-paths"
+                onChange={(template) => {
+                  setPeriod(period, { template });
+                }}
+              />
+            </fieldset>
+          );
+        })}
+      </div>
+      {error === undefined ? null : <p role="alert">{error}</p>}
+      <div className="dialog-actions">
+        <button type="button" className="quiet" onClick={onClose}>
+          {t("cancel")}
+        </button>
+        <button type="submit" className="primary">
+          {t("save")}
+        </button>
+      </div>
+    </form>
   );
 }
