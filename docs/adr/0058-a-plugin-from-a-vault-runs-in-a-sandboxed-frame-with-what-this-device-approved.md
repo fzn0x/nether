@@ -1,6 +1,6 @@
 # 0058. A plugin from a vault runs in a sandboxed frame, with what this device approved
 
-- Status: Accepted
+- Status: Accepted; its plan for views is replaced by [0063](0063-a-vault-plugins-views-draw-in-its-worker-and-the-page-shows-them-cleaned.md)
 - Date: 2026-11-16
 
 ## Context
