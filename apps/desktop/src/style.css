@@ -2322,6 +2322,40 @@ button {
   margin: 0.15rem 0 0;
 }
 
+/* The plugin and theme directory, in the Plugins and Appearance tabs (ADR 0065). */
+.directory {
+  margin-top: 1.5rem;
+}
+
+.directory button {
+  padding: 0.3rem 0.8rem;
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  background: none;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.directory button:hover:not(:disabled) {
+  background: var(--hover);
+}
+
+.directory button:active:not(:disabled) {
+  background: var(--pressed);
+}
+
+.directory button:disabled {
+  color: var(--muted);
+  cursor: default;
+}
+
+.directory-entry {
+  display: flex;
+  gap: 1rem;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
 @media (max-width: 40rem) {
   .settings-layout {
     flex-direction: column;
