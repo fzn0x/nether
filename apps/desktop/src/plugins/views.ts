@@ -18,6 +18,13 @@ export interface PaneViewHostProps {
   readonly media: VaultMedia;
   /** For a view of files, the file open, by its path. */
   readonly path?: string;
+  /**
+   * Where in the file a link asked to go: what followed its `#`, as
+   * `page=3`, and a key new each time it is asked, even for the same place.
+   */
+  readonly at?: { readonly part: string; readonly key: number } | undefined;
+  /** Resolves once the vault's links are in the graph, starting them loading if they have not. */
+  readonly linksLoaded?: () => Promise<void>;
   /** The note open in the focused pane, if one is. */
   readonly note?: NoteId;
   /** Opens a note, or a part of one, here, in a new tab or in the pane to the right. */

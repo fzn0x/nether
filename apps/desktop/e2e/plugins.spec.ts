@@ -55,6 +55,7 @@ test("the settings turn a built-in plugin off and on again, and the vault keeps 
       backlinks: true,
       canvas: true,
       graph: true,
+      pdf: true,
       layouts: true,
     });
 

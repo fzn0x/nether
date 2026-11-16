@@ -72,6 +72,11 @@ export default function NoteView(props: {
   readonly focus: (NotePart & { readonly key: number }) | undefined;
   /** Opens another note, or a part of one, as a link in this one does. */
   readonly onOpenNote: (id: NoteId, part?: NotePart) => void;
+  /**
+   * Opens a file a link names, as a PDF, at what followed the link's `#`;
+   * false when no view opens it.
+   */
+  readonly onOpenFile?: (path: string, part?: string) => boolean;
   /** Shows the notes with a tag, as a tag in this note does. */
   readonly onOpenTag: (name: string) => void;
   readonly mode: NoteMode;
@@ -120,6 +125,7 @@ export default function NoteView(props: {
     mode,
     onMode,
     onOpenNote,
+    onOpenFile,
     onOpenTag,
     onTrash,
     onExport,
@@ -195,6 +201,7 @@ export default function NoteView(props: {
           setFileError(error instanceof Error ? error.message : String(error));
         },
         onOpenTag,
+        onOpenFile,
       ),
       // What plugins draw below a code block: a diagram, the notes a query finds.
       renderCode: (language: string, info: string, source: string) => (
@@ -227,7 +234,7 @@ export default function NoteView(props: {
         />
       ),
     }),
-    [vault, media, graph, plugins, id, onOpenNote, onOpenTag],
+    [vault, media, graph, plugins, id, onOpenNote, onOpenTag, onOpenFile],
   );
 
   const toggle = async () => {

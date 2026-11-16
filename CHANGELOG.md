@@ -101,6 +101,15 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   Reading a note gives an `ETag`, and `If-Match` keeps a change from
   overwriting what others typed since. A write takes a write token and
   edit access where the note is.
+- PDFs open in a tab, drawn by pdf.js in a built-in plugin's view, and
+  show in the sidebar beside notes
+  ([ADR 0061](docs/adr/0061-pdfs-show-through-pdf-js-and-a-highlight-is-a-callout-that-links-to-its-passage.md)).
+  Words selected, or found with Find from the keyboard, become highlights:
+  callouts in a note beside the PDF, each linking to its passage as
+  Obsidian's Copy link to selection does, with a comment written in it.
+  The list beside the pages shows, comments on, links to and removes
+  them. A link to a page, a passage or a highlight opens the PDF there,
+  and a link to a file a view opens no longer makes a note of its name.
 
 ### Changed
 
