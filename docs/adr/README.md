@@ -64,3 +64,4 @@ record supersedes it and says so. Start a new one from
 | [0054](0054-docker-compose-starts-the-server-with-postgresql-valkey-and-volumes.md) | Docker Compose starts the server with PostgreSQL, Valkey and volumes | Accepted |
 | [0055](0055-plugins-declare-what-they-add-and-reach-the-app-only-by-messages.md) | Plugins declare what they add, and reach the app only by messages | Accepted |
 | [0056](0056-a-plugins-database-layout-is-named-for-it-and-a-base-shows-it-as-a-table.md) | A plugin's database layout is named for it, and a base shows it as a table | Accepted |
+| [0057](0057-a-plugins-property-type-stores-as-one-of-the-apps-which-shows-without-it.md) | A plugin's property type stores as one of the app's, which shows without it | Accepted |
