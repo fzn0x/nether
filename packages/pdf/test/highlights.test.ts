@@ -10,6 +10,7 @@ import {
   readHighlight,
   readHighlights,
   rewrite,
+  withColor,
   withComment,
   withoutHighlight,
 } from "../src/index.ts";
@@ -123,6 +124,34 @@ describe("highlights in a note", () => {
       "deep01",
       "new1",
     ]);
+  });
+
+  it("keeps a highlight's color, writes one, and changes or clears it in its link only", () => {
+    const callout = highlightCallout({
+      id: id("c1"),
+      target: "paper.pdf",
+      passage: {
+        page: 2,
+        selection: { beginIndex: 1, beginOffset: 2, endIndex: 3, endOffset: 4 },
+        color: "red",
+      },
+      name: "paper, page 2",
+      words: "Red words",
+    });
+    const text = highlightsNote(callout);
+    expect(text).toContain("[[paper.pdf#page=2&selection=1,2,3,4&color=red|paper, page 2]]");
+    const parsed = parseMarkdown(text);
+    expect(readHighlights(parsed.content)[0]?.passage.color).toBe("red");
+
+    const blue = withColor(parsed.content, id("c1"), "note");
+    expect(rewrite(parsed, blue ?? [])).toBe(
+      "> [!quote] [[paper.pdf#page=2&selection=1,2,3,4&color=note|paper, page 2]]\n> Red words\n\n^c1\n",
+    );
+    const plain = withColor(parsed.content, id("c1"), undefined);
+    expect(rewrite(parsed, plain ?? [])).toContain(
+      "[[paper.pdf#page=2&selection=1,2,3,4|paper, page 2]]",
+    );
+    expect(withColor(parsed.content, id("nothing"), "red")).toBeUndefined();
   });
 
   it("changes a highlight's comment, and only its comment", () => {

@@ -30,6 +30,7 @@ export {
   readHighlight,
   readHighlights,
   rewrite,
+  withColor,
   withComment,
   withoutHighlight,
 } from "./highlights.ts";

@@ -38,7 +38,7 @@ export interface Highlight {
   readonly comment: readonly ContentBlock[];
 }
 
-function inlineWords(content: readonly Inline[]): string {
+export function inlineWords(content: readonly Inline[]): string {
   return normalizeWords(
     content
       .map((inline) => {
@@ -82,7 +82,11 @@ export function readHighlight(block: ContentBlock): Highlight | undefined {
   return {
     id: block.id,
     target: link.target.title,
-    passage: { page: place.page, selection: place.selection },
+    passage: {
+      page: place.page,
+      selection: place.selection,
+      ...(place.color === undefined ? {} : { color: place.color }),
+    },
     words: quoted ? inlineWords(first.content) : "",
     comment: quoted ? rest : (block.children ?? []),
   };
@@ -163,6 +167,30 @@ export function withComment(
   const [quote] = block.children ?? [];
   if (quote?.type !== "paragraph") return undefined;
   return replaceBlock(content, id, { ...block, children: [quote, ...comment] });
+}
+
+/**
+ * A note's blocks with a highlight's color changed, PDF++'s `&color=` in
+ * its link; none for the default. Undefined when the note has no such highlight.
+ */
+export function withColor(
+  content: readonly ContentBlock[],
+  id: BlockId,
+  color: string | undefined,
+): ContentBlock[] | undefined {
+  const block = [...walkBlocks(content)].find(
+    (each): each is Callout => each.id === id && each.type === "callout",
+  );
+  const highlight = block === undefined ? undefined : readHighlight(block);
+  if (block === undefined || highlight === undefined) return undefined;
+  const { page, selection } = highlight.passage;
+  const heading = writePdfPlace({ page, selection, ...(color === undefined ? {} : { color }) });
+  const title = block.content.map((inline) =>
+    inline.type === "wikiLink" && "title" in inline.target
+      ? { ...inline, target: { ...inline.target, heading } }
+      : inline,
+  );
+  return replaceBlock(content, id, { ...block, content: title });
 }
 
 function without(blocks: readonly ContentBlock[], id: BlockId): ContentBlock[] | undefined {
