@@ -1,0 +1,24 @@
+{
+  "name": "@nether/pdf",
+  "version": "0.0.0",
+  "private": true,
+  "description": "PDF highlights as Markdown: Obsidian's links to a page or a passage, highlights as callouts that link to their passage, and finding a passage's words on a page.",
+  "license": "AGPL-3.0-or-later",
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run --coverage"
+  },
+  "dependencies": {
+    "@nether/core": "workspace:*",
+    "@nether/markdown": "workspace:*"
+  },
+  "devDependencies": {
+    "@vitest/coverage-v8": "^5.0.5",
+    "vitest": "^5.0.5"
+  }
+}
