@@ -121,6 +121,14 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   ([ADR 0060](docs/adr/0060-webhooks-tell-of-notes-made-changed-and-removed-signed-and-sent-to-public-addresses.md)).
   A note made through the API at a path an app had just taken leaves
   nothing behind.
+- A PDF shows every other note's link to one of its passages, as
+  Obsidian's Copy as quote and PDF++ write them, marked on its page and
+  listed under Linked from notes
+  ([ADR 0062](docs/adr/0062-every-link-to-a-passage-shows-on-the-pdf-in-pdf-plus-plus-colors.md)).
+  Highlights and links take PDF++'s colors, `&color=` in the link: new
+  highlights in yellow, red, blue or purple, and each recolored from the
+  list. The PDF's own outline shows beside its pages, its links to its
+  pages and to the web work, and Back returns from where one was followed.
 
 ### Changed
 
