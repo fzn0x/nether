@@ -110,8 +110,10 @@ export function ServersDialog(props: {
   readonly invitation?: string;
   /** Called when an account signs in or out. */
   readonly onAccount?: () => void;
+  /** Opens the API tokens of the account on a server (ADR 0059), where the app can. */
+  readonly onTokens?: (server: string) => void;
 }) {
-  const { onClose, only, onAccount } = props;
+  const { onClose, only, onAccount, onTokens } = props;
   const [accounts, setAccounts] = useState<readonly ServerAccount[] | undefined>();
   const [step, setStep] = useState<Step>({ kind: "list" });
   const [address, setAddress] = useState("");
@@ -438,6 +440,18 @@ export function ServersDialog(props: {
                   {t("serverAccount", { name: account.user.name, email: account.user.email })}
                 </span>
                 {encryptionLine(account)}
+                {onTokens === undefined ? null : (
+                  <button
+                    type="button"
+                    className="quiet"
+                    disabled={busy}
+                    onClick={() => {
+                      onTokens(account.url);
+                    }}
+                  >
+                    {t("apiTokensOf", { server: hostOf(account.url) })}
+                  </button>
+                )}
                 <button
                   type="button"
                   className="quiet"

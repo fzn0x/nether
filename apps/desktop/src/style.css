@@ -3332,6 +3332,30 @@ kbd {
   font-size: 0.9375rem;
 }
 
+/* A workspace's webhooks: each one's lines and buttons under its address, then its events. */
+.webhook-list li {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.webhook-list .member-name {
+  overflow-wrap: anywhere;
+}
+
+.webhook-deliveries {
+  display: grid;
+  gap: 0.25rem;
+  margin: 0;
+  padding-inline-start: 1rem;
+  font-size: 0.875rem;
+}
+
+.webhook-list .webhook-deliveries li {
+  display: grid;
+  border-bottom: 0;
+  padding: 0;
+}
+
 /* Spaces and sharing: who has access, then giving it. */
 .unit-people {
   display: grid;

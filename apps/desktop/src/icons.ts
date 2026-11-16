@@ -27,6 +27,7 @@ import {
   FolderTree,
   GitMerge,
   History,
+  KeyRound,
   Keyboard,
   LayoutDashboard,
   LayoutGrid,
@@ -57,6 +58,7 @@ import {
   UserRound,
   UserRoundCheck,
   Users,
+  Webhook,
 } from "lucide-react";
 import type { CommandId } from "./commands.ts";
 
@@ -100,6 +102,8 @@ export const commandIcons: Readonly<Record<CommandId, LucideIcon>> = {
   spaces: LayoutGrid,
   share: Share2,
   notifications: Bell,
+  webhooks: Webhook,
+  apiTokens: KeyRound,
   shortcuts: Keyboard,
   checkUpdates: RotateCw,
   updateChecks: ToggleRight,

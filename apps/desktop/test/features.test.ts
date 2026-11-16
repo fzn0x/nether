@@ -14,10 +14,19 @@ describe("commandShown", () => {
 
   it("leaves sync out of a build made with VITE_NETHER_SYNC=off", () => {
     const local = { web: false, sync: false };
-    for (const id of ["servers", "sync", "members", "spaces", "share", "notifications"] as const) {
+    for (const id of [
+      "servers",
+      "sync",
+      "members",
+      "spaces",
+      "share",
+      "notifications",
+      "webhooks",
+      "apiTokens",
+    ] as const) {
       expect(shownIn(local, id)).toBe(false);
     }
-    expect(commandIds.filter((id) => shownIn(local, id))).toHaveLength(commandIds.length - 6);
+    expect(commandIds.filter((id) => shownIn(local, id))).toHaveLength(commandIds.length - 8);
     expect(shownIn(local, "newNote")).toBe(true);
   });
 
@@ -29,6 +38,8 @@ describe("commandShown", () => {
       "spaces",
       "share",
       "notifications",
+      "webhooks",
+      "apiTokens",
       "export",
       "import",
     ] as const) {
