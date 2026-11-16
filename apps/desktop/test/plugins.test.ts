@@ -13,6 +13,7 @@ import {
 import { describe, expect, it } from "vitest";
 import { coreMenus, commandIds } from "../src/commands.ts";
 import { BlockRegistry, slashEntries } from "../src/plugins/blocks.ts";
+import { PanelRegistry } from "../src/plugins/panels.ts";
 import { builtinPlugins } from "../src/plugins/builtins.ts";
 import { CodeBlockRegistry, type CodeBlockView } from "../src/plugins/codeBlocks.ts";
 import { type BuiltinContext, PluginHost } from "../src/plugins/host.ts";
@@ -244,6 +245,46 @@ function tallier(extra?: (context: BuiltinContext) => Promise<void>) {
 
 const shown = { attrs: { count: 1 }, editable: true, theme: "light" } as const;
 
+const counter = {
+  id: "counter",
+  name: "Counter",
+  version: "1.0.0",
+  api: "^0.1",
+  contributes: {
+    panels: [
+      { id: "words", name: { en: "Words", fr: "Mots" }, place: "note", folded: true },
+      { id: "stats", name: "Statistics", place: "sidebar" },
+    ],
+  },
+};
+
+/** A plugin whose panel shows the title of the note it is beside. */
+function counting(extra?: (context: BuiltinContext) => void) {
+  const seen: string[] = [];
+  const module = {
+    async activate(context: BuiltinContext) {
+      await context.panels.register("words", {
+        mount(element, props) {
+          element.textContent = props.note?.title ?? "";
+          return {
+            update(next) {
+              seen.push(`update ${next.note?.title ?? ""} ${next.theme}`);
+            },
+            unmount() {
+              seen.push("unmount");
+            },
+          };
+        },
+      });
+      extra?.(context);
+    },
+  };
+  return { seen, load: () => Promise.resolve({ default: module }) };
+}
+
+const beside = (title: string) =>
+  ({ theme: "light", note: { id: "n1", title, path: `${title}.md` } }) as const;
+
 /** Waits for what a command set going to finish, as menus run commands without waiting. */
 async function settle(): Promise<void> {
   for (let turn = 0; turn < 20; turn++) await new Promise((resolve) => setTimeout(resolve, 0));
@@ -264,9 +305,10 @@ for (const [name, connect] of Object.entries(connections)) {
       errors: string[] = [],
       codeBlocks = new CodeBlockRegistry(),
       blocks = new BlockRegistry(),
+      panels = new PanelRegistry(),
     ) =>
       new PluginHost(
-        { commands: registry, codeBlocks, blocks },
+        { commands: registry, codeBlocks, blocks, panels },
         {
           language: "fr",
           direction: "ltr",
@@ -510,6 +552,94 @@ for (const [name, connect] of Object.entries(connections)) {
       plugins.close();
     });
 
+    it("fills a plugin's panel with its view, mounted beside a note", async () => {
+      const panels = new PanelRegistry();
+      const plugins = host(
+        new CommandRegistry(),
+        [],
+        new CodeBlockRegistry(),
+        new BlockRegistry(),
+        panels,
+      );
+      const { seen, load } = counting();
+      expect(plugins.add({ manifest: counter, load })).toEqual([]);
+      const words = panels.get("counter:words");
+      expect(words?.name()).toBe("Mots");
+      expect([words?.place, words?.folded]).toEqual(["note", true]);
+      expect([panels.get("counter:stats")?.place, panels.get("counter:stats")?.folded]).toEqual([
+        "sidebar",
+        false,
+      ]);
+      const drawing = await words?.load();
+      expect(drawing?.view).toBeUndefined();
+      const element = { textContent: "" } as HTMLElement;
+      const view = await drawing?.mount?.(element, beside("Roadmap"));
+      expect(element.textContent).toBe("Roadmap");
+      await view?.update({ ...beside("Ideas"), theme: "dark" });
+      view?.unmount();
+      await settle();
+      expect(seen).toEqual(["update Ideas dark", "unmount"]);
+      // A panel its code attached no view of says so.
+      await expect(panels.get("counter:stats")?.load()).rejects.toThrow(
+        "Its code did not attach a view of the stats panel.",
+      );
+      plugins.remove("counter");
+      expect(panels.all()).toEqual([]);
+    });
+
+    it("gives a built-in plugin's panel a live view through the host", async () => {
+      const panels = new PanelRegistry();
+      const plugins = host(
+        new CommandRegistry(),
+        [],
+        new CodeBlockRegistry(),
+        new BlockRegistry(),
+        panels,
+      );
+      const view = () => null;
+      let refused: unknown;
+      plugins.add({
+        manifest: counter,
+        load: counting((context) => {
+          context.host.panels.view("stats", view);
+          try {
+            context.host.panels.view("nope", view);
+          } catch (error) {
+            refused = error;
+          }
+        }).load,
+      });
+      expect((await panels.get("counter:stats")?.load())?.view).toBe(view);
+      expect(String(refused)).toBe('Error: The manifest declares no panel "nope".');
+      plugins.close();
+    });
+
+    it("refuses a view of a panel its manifest does not declare", async () => {
+      const panels = new PanelRegistry();
+      const plugins = host(
+        new CommandRegistry(),
+        [],
+        new CodeBlockRegistry(),
+        new BlockRegistry(),
+        panels,
+      );
+      plugins.add({
+        manifest: counter,
+        load: () =>
+          Promise.resolve({
+            default: {
+              async activate(context: BuiltinContext) {
+                await context.panels.register("nope", { mount: () => undefined });
+              },
+            },
+          }),
+      });
+      await expect(panels.get("counter:words")?.load()).rejects.toThrow(
+        'The manifest declares no panel "nope".',
+      );
+      plugins.close();
+    });
+
     it("says when a view cannot mount, and keeps no slot for it", async () => {
       const blocks = new BlockRegistry();
       const plugins = host(new CommandRegistry(), [], new CodeBlockRegistry(), blocks);
@@ -537,7 +667,9 @@ describe("PluginHost, adding", () => {
     codeBlocks = new CodeBlockRegistry(),
     commands = new CommandRegistry(),
     blocks = new BlockRegistry(),
-  ) => new PluginHost({ commands, codeBlocks, blocks }, { language: "en", direction: "ltr" });
+    panels = new PanelRegistry(),
+  ) =>
+    new PluginHost({ commands, codeBlocks, blocks, panels }, { language: "en", direction: "ltr" });
   const load = fixture().load;
 
   it("keeps out a plugin whose manifest is wrong, or which needs another API", () => {
@@ -568,9 +700,10 @@ describe("PluginHost, adding", () => {
     expect(host.ids()).toEqual(["abc"]);
   });
 
-  it("adds the built-in plugins, each drawing its language", () => {
+  it("adds the built-in plugins, with their languages and panels", () => {
     const codeBlocks = new CodeBlockRegistry();
-    const host = plugins(codeBlocks);
+    const panels = new PanelRegistry();
+    const host = plugins(codeBlocks, new CommandRegistry(), new BlockRegistry(), panels);
     for (const builtin of builtinPlugins) expect(host.add(builtin)).toEqual([]);
     expect(codeBlocks.get("mermaid")?.plugin).toBe("mermaid");
     expect(codeBlocks.get("base")?.plugin).toBe("query");
@@ -585,6 +718,32 @@ describe("PluginHost, adding", () => {
       ["code:mermaid", "Diagram", "flowchart LR"],
       ["code:base", "Query", "views:"],
     ]);
+    // The sidebar's Tags and Assigned, and the outline, backlinks and unlinked mentions beside a note.
+    expect(
+      panels.all().map((panel) => [panel.id, panel.place, panel.name(), panel.folded]),
+    ).toEqual([
+      ["tags:tags", "sidebar", "Tags", false],
+      ["assigned:assigned", "sidebar", "Assigned", false],
+      ["outline:outline", "note", "Outline", false],
+      ["backlinks:linked", "note", "Linked from", false],
+      ["backlinks:unlinked", "note", "Unlinked mentions", true],
+    ]);
+  });
+
+  it("keeps a panel for the plugin that had it", () => {
+    const panels = new PanelRegistry();
+    const panel = {
+      id: "a:b",
+      plugin: "a",
+      place: "note",
+      folded: false,
+      name: () => "B",
+      load: () => Promise.reject(new Error("unused")),
+    } as const;
+    panels.add(panel);
+    expect(() => {
+      panels.add(panel);
+    }).toThrow("A panel a:b is there already.");
   });
 
   it("offers a plugin's blocks in the slash menu, after its code blocks", () => {
@@ -648,7 +807,12 @@ describe("PluginHost, adding", () => {
     const registry = new CommandRegistry();
     const errors: string[] = [];
     const host = new PluginHost(
-      { commands: registry, codeBlocks: new CodeBlockRegistry(), blocks: new BlockRegistry() },
+      {
+        commands: registry,
+        codeBlocks: new CodeBlockRegistry(),
+        blocks: new BlockRegistry(),
+        panels: new PanelRegistry(),
+      },
       {
         language: "en",
         direction: "ltr",

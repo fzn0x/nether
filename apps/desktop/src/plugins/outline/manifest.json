@@ -1,0 +1,11 @@
+{
+  "id": "outline",
+  "name": "Outline",
+  "version": "1.0.0",
+  "api": "^0.1",
+  "description": "Shows beside a note its headings, each opening the note there.",
+  "author": "Nether contributors",
+  "contributes": {
+    "panels": [{ "id": "outline", "name": "Outline", "place": "note" }]
+  }
+}
