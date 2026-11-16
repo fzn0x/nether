@@ -17,6 +17,7 @@ import { BlockRegistry, slashEntries } from "../src/plugins/blocks.ts";
 import { PanelRegistry } from "../src/plugins/panels.ts";
 import { ViewRegistry, extensionOf } from "../src/plugins/views.ts";
 import { type LayoutActions, LayoutRegistry } from "../src/plugins/layouts.ts";
+import { PropertyTypeRegistry } from "../src/plugins/propertyTypes.ts";
 import { isOn, readBuiltins, readOn } from "../src/plugins/state.ts";
 import { builtinPlugins } from "../src/plugins/builtins.ts";
 import { CodeBlockRegistry, type CodeBlockView } from "../src/plugins/codeBlocks.ts";
@@ -313,9 +314,10 @@ for (const [name, connect] of Object.entries(connections)) {
       views = new ViewRegistry(),
       opened: string[] = [],
       layouts = new LayoutRegistry(),
+      propertyTypes = new PropertyTypeRegistry(),
     ) =>
       new PluginHost(
-        { commands: registry, codeBlocks, blocks, panels, views, layouts },
+        { commands: registry, codeBlocks, blocks, panels, views, layouts, propertyTypes },
         {
           language: "fr",
           direction: "ltr",
@@ -792,6 +794,63 @@ for (const [name, connect] of Object.entries(connections)) {
       expect(layouts.all()).toEqual([]);
     });
 
+    it("shows a value of a plugin's property type in its view, which sets it through the app", async () => {
+      const propertyTypes = new PropertyTypeRegistry();
+      const plugins = host(
+        new CommandRegistry(),
+        [],
+        new CodeBlockRegistry(),
+        new BlockRegistry(),
+        new PanelRegistry(),
+        new ViewRegistry(),
+        [],
+        new LayoutRegistry(),
+        propertyTypes,
+      );
+      let setValue: ((value: number) => Promise<void>) | undefined;
+      plugins.add({
+        manifest: {
+          id: "stars",
+          name: "Stars",
+          version: "1.0.0",
+          api: "^0.1",
+          contributes: {
+            propertyTypes: [{ id: "rating", name: { en: "Rating", fr: "Note" }, stores: "number" }],
+          },
+        },
+        load: () =>
+          Promise.resolve({
+            default: {
+              async activate(context: BuiltinContext) {
+                await context.propertyTypes.register("rating", {
+                  mount(element, props, property) {
+                    element.textContent = JSON.stringify(props.value);
+                    setValue = (value) => property.setValue(value);
+                    return undefined;
+                  },
+                });
+              },
+            },
+          }),
+      });
+      const rating = propertyTypes.get("stars/rating");
+      expect([rating?.plugin, rating?.stores, rating?.name()]).toEqual(["stars", "number", "Note"]);
+      const element = { textContent: "" } as HTMLElement;
+      const set: unknown[] = [];
+      const drawing = await rating?.load();
+      const view = await drawing?.mount(
+        element,
+        { key: "rating", value: 3, editable: true, theme: "light" },
+        (value) => set.push(value),
+      );
+      expect(element.textContent).toBe("3");
+      await setValue?.(4);
+      expect(set).toEqual([4]);
+      view?.unmount();
+      plugins.close();
+      expect(propertyTypes.all()).toEqual([]);
+    });
+
     it("refuses a view of a panel its manifest does not declare", async () => {
       const panels = new PanelRegistry();
       const plugins = host(
@@ -878,9 +937,10 @@ describe("PluginHost, adding", () => {
     panels = new PanelRegistry(),
     views = new ViewRegistry(),
     layouts = new LayoutRegistry(),
+    propertyTypes = new PropertyTypeRegistry(),
   ) =>
     new PluginHost(
-      { commands, codeBlocks, blocks, panels, views, layouts },
+      { commands, codeBlocks, blocks, panels, views, layouts, propertyTypes },
       { language: "en", direction: "ltr" },
     );
   const load = fixture().load;
@@ -1084,6 +1144,7 @@ describe("PluginHost, adding", () => {
         panels: new PanelRegistry(),
         views: new ViewRegistry(),
         layouts: new LayoutRegistry(),
+        propertyTypes: new PropertyTypeRegistry(),
       },
       {
         language: "en",

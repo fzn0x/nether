@@ -19,6 +19,8 @@ import {
 } from "react";
 import type * as Y from "yjs";
 import { t } from "./messages.ts";
+import { PropertyValueOutput } from "./PropertyValueOutput.tsx";
+import { type PropertyTypeRegistry, usePropertyTypes } from "./plugins/propertyTypes.ts";
 import {
   type PropertyTypes,
   convertValue,
@@ -27,6 +29,8 @@ import {
   moveProperty,
   newPropertyKey,
   readPropertyTypes,
+  type PluginTypeChoice,
+  pluginTypeOf,
   typeOf,
 } from "./properties.ts";
 import { myName, peopleNames, personKeysOf, subscribeMyName } from "./people.ts";
@@ -202,8 +206,11 @@ export function PropertiesPanel(props: {
   readonly document: Y.Doc;
   readonly vault: Vault;
   readonly graph: LinkGraph;
+  /** The property types plugins add (ADR 0057). */
+  readonly propertyTypes: PropertyTypeRegistry;
 }) {
-  const { document, vault, graph } = props;
+  const { document, vault, graph, propertyTypes } = props;
+  const pluginTypes = usePropertyTypes(propertyTypes);
   const [entries, setEntries] = useState<readonly PropertyEntry[]>(() =>
     documentProperties(document),
   );
@@ -243,13 +250,15 @@ export function PropertiesPanel(props: {
   };
   const keys = entries.map((entry) => entry.key);
 
-  const setType = (key: string, type: PropertyType) => {
+  /** Gives a key a type, the app's or a plugin's, carrying its value over to what it stores as. */
+  const setType = (key: string, type: PropertyType | PluginTypeChoice) => {
     const next = { ...types, [key]: type };
     setTypes(next);
     void vault.writeData("properties", next);
+    const stored = typeof type === "string" ? type : type.stores;
     save(
       entries.map((entry) =>
-        entry.key === key ? { key, value: convertValue(entry.value, type) } : entry,
+        entry.key === key ? { key, value: convertValue(entry.value, stored) } : entry,
       ),
     );
   };
@@ -330,6 +339,9 @@ export function PropertiesPanel(props: {
     >
       {shown.map((entry, index) => {
         const type = typeOf(entry.key, entry.value, types);
+        // A plugin's type, shown by its plugin's view when the plugin is here.
+        const choice = pluginTypeOf(entry.key, types);
+        const processor = choice === undefined ? undefined : propertyTypes.get(choice.type);
         return (
           <div
             key={entry.key}
@@ -388,9 +400,17 @@ export function PropertiesPanel(props: {
             <select
               className="property-type"
               aria-label={t("propertyType", { name: entry.key })}
-              value={type}
+              value={choice?.type ?? type}
               onChange={(event) => {
-                setType(entry.key, event.target.value as PropertyType);
+                const chosen = event.target.value;
+                if (chosen === choice?.type) return;
+                const plugin = pluginTypes.find((each) => each.type === chosen);
+                setType(
+                  entry.key,
+                  plugin === undefined
+                    ? (chosen as PropertyType)
+                    : { type: plugin.type, stores: plugin.stores },
+                );
               }}
             >
               {editableTypes.map((option) => (
@@ -398,18 +418,45 @@ export function PropertiesPanel(props: {
                   {t(`type_${option}`)}
                 </option>
               ))}
+              {pluginTypes.map((each) => (
+                <option key={each.type} value={each.type}>
+                  {each.name()}
+                </option>
+              ))}
+              {choice === undefined || processor !== undefined ? null : (
+                // A type no plugin here has, named as the vault has it; its value edits as what it stores as.
+                <option value={choice.type}>{choice.type}</option>
+              )}
             </select>
-            <ValueEditor
-              name={entry.key}
-              type={type}
-              value={entry.value}
-              {...(isPerson(entry.key, entry.value) ? { people } : {})}
-              onChange={(value) => {
-                save(
-                  entries.map((item) => (item.key === entry.key ? { key: item.key, value } : item)),
-                );
-              }}
-            />
+            {processor === undefined ? (
+              <ValueEditor
+                name={entry.key}
+                type={type}
+                value={entry.value}
+                {...(isPerson(entry.key, entry.value) ? { people } : {})}
+                onChange={(value) => {
+                  save(
+                    entries.map((item) =>
+                      item.key === entry.key ? { key: item.key, value } : item,
+                    ),
+                  );
+                }}
+              />
+            ) : (
+              <PropertyValueOutput
+                processor={processor}
+                propertyKey={entry.key}
+                value={entry.value}
+                editable
+                onChange={(value) => {
+                  save(
+                    entries.map((item) =>
+                      item.key === entry.key ? { key: item.key, value } : item,
+                    ),
+                  );
+                }}
+              />
+            )}
             <button
               type="button"
               className="quiet property-remove"

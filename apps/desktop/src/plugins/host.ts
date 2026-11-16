@@ -15,6 +15,7 @@ import {
   type PaneViewProps,
   type PanelProps,
   type Plugin,
+  type PropertyViewProps,
   type PluginContext,
   type Transport,
   apiVersion,
@@ -37,6 +38,7 @@ import type {
 import type { PanelDrawing, PanelHostView, PanelRegistry } from "./panels.ts";
 import type { PaneViewDrawing, PaneViewHost, ViewRegistry } from "./views.ts";
 import type { LayoutActions, LayoutDrawing, LayoutHost, LayoutRegistry } from "./layouts.ts";
+import type { PropertyTypeDrawing, PropertyTypeRegistry } from "./propertyTypes.ts";
 import type { CommandRegistry } from "./registry.ts";
 
 /**
@@ -93,6 +95,7 @@ export interface Registries {
   readonly panels: PanelRegistry;
   readonly views: ViewRegistry;
   readonly layouts: LayoutRegistry;
+  readonly propertyTypes: PropertyTypeRegistry;
 }
 
 export interface HostOptions {
@@ -126,6 +129,8 @@ interface Added {
   readonly paneViews: Map<string, number | PaneViewHost>;
   /** The layouts its code attached views to, by ID: a callback, or a live view through the host. */
   readonly layoutViews: Map<string, number | LayoutHost>;
+  /** The property types its code attached views to, each to the callback that runs the view. */
+  readonly propertyViews: Map<string, number>;
   /** Its connection, once its code has been asked for. */
   running?: Promise<readonly [Endpoint, Endpoint]> | undefined;
 }
@@ -142,6 +147,13 @@ interface Slot {
   readonly onChange?: (attrs: JsonObject) => void;
   /** What a layout's view changes in its database. */
   readonly layout?: LayoutActions;
+  /** Told what a property type's view sets its value to. */
+  readonly setValue?: (value: Json) => void;
+}
+
+/** A property type's view's props as they cross to a plugin. */
+function propertyProps(props: PropertyViewProps): Json {
+  return { key: props.key, value: props.value, editable: props.editable, theme: props.theme };
 }
 
 /** A layout's props as they cross to a plugin. */
@@ -252,6 +264,7 @@ export class PluginHost {
       panelViews: new Map(),
       paneViews: new Map(),
       layoutViews: new Map(),
+      propertyViews: new Map(),
     };
     this.#plugins.set(manifest.id, plugin);
     for (const block of manifest.contributes.codeBlocks) {
@@ -308,6 +321,17 @@ export class PluginHost {
           plugin: manifest.id,
           name: () => localize(layout.name, language),
           load: () => this.#layoutDrawing(plugin, layout.id),
+        }),
+      );
+    }
+    for (const property of manifest.contributes.propertyTypes) {
+      plugin.removers.push(
+        this.#registries.propertyTypes.add({
+          type: `${manifest.id}/${property.id}`,
+          plugin: manifest.id,
+          stores: property.stores,
+          name: () => localize(property.name, language),
+          load: () => this.#propertyDrawing(plugin, property.id),
         }),
       );
     }
@@ -467,6 +491,22 @@ export class PluginHost {
     };
   }
 
+  /** Starts a plugin for a value of a property type of its own, and gives what shows it. */
+  async #propertyDrawing(plugin: Added, id: string): Promise<PropertyTypeDrawing> {
+    const [app] = await this.#start(plugin);
+    const missing = () => new Error(`Its code did not attach a view of the ${id} type.`);
+    if (!plugin.propertyViews.has(id)) throw missing();
+    return {
+      mount: (element, props, onChange) => {
+        const callback = plugin.propertyViews.get(id);
+        if (callback === undefined) return Promise.reject(missing());
+        return this.#mount(app, plugin, callback, element, propertyProps, props, {
+          setValue: onChange,
+        });
+      },
+    };
+  }
+
   /**
    * Mounts a plugin's view in `element`, through a slot named for it, and
    * gives what updates and unmounts it.
@@ -478,7 +518,7 @@ export class PluginHost {
     element: HTMLElement,
     toJson: (props: P) => Json,
     props: P,
-    told: Pick<Slot, "onChange" | "layout"> = {},
+    told: Pick<Slot, "onChange" | "layout" | "setValue"> = {},
   ): Promise<{ update(props: P): Promise<void>; unmount(): void }> {
     const id = plugin.manifest.id;
     const slot = `${id}:${String(++this.#nextSlot)}`;
@@ -528,6 +568,7 @@ export class PluginHost {
     const panels = new Set(contributes.panels.map((panel) => panel.id));
     const views = new Set(contributes.views.map((view) => view.id));
     const layouts = new Set(contributes.layouts.map((layout) => layout.id));
+    const propertyTypes = new Set(contributes.propertyTypes.map((property) => property.id));
     // Those of their own, with no extensions, which a plugin may open.
     const ownViews = new Set(
       contributes.views.filter((view) => view.extensions.length === 0).map((view) => view.id),
@@ -567,6 +608,16 @@ export class PluginHost {
     attachable("panels", panels, "panel", plugin.panelViews);
     attachable("views", views, "view", plugin.paneViews);
     attachable("layouts", layouts, "layout", plugin.layoutViews);
+    attachable("propertyTypes", propertyTypes, "property type", plugin.propertyViews);
+    app.handle("propertyTypes.set", (slot, value) => {
+      const at = typeof slot === "string" ? this.#slots.get(slot) : undefined;
+      // A plugin sets only the values its own views show.
+      if (at?.plugin !== id || at.setValue === undefined) {
+        throw new Error("The plugin shows no such value.");
+      }
+      at.setValue(value ?? null);
+      return null;
+    });
     /** The database a slot's layout shows, for this plugin only. */
     const laidOut = (slot: unknown): LayoutActions => {
       const at = typeof slot === "string" ? this.#slots.get(slot) : undefined;
