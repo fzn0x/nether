@@ -86,6 +86,17 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   Reading a note gives an `ETag`, and `If-Match` keeps a change from
   overwriting what others typed since. A write takes a write token and
   edit access where the note is.
+- Webhooks, which a workspace's owners and admins make through the API:
+  each tells another service when a note is made, changed or deleted, a
+  burst of changes as one event, with the note's ID and path, never its
+  text, and only of notes its maker can open. Events are signed as
+  Standard Webhooks has them, tried again over two days, and a webhook
+  failing for three days is turned off and its maker emailed. They reach
+  public addresses only, checked each time they are sent, unless the
+  admin allows others with `NETHER_WEBHOOK_PRIVATE`
+  ([ADR 0060](docs/adr/0060-webhooks-tell-of-notes-made-changed-and-removed-signed-and-sent-to-public-addresses.md)).
+  A note made through the API at a path an app had just taken leaves
+  nothing behind.
 
 ### Changed
 
