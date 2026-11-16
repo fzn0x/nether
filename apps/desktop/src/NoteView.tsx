@@ -4,9 +4,11 @@
 // beside it, their text highlighted in it (ADR 0044).
 import type { JsonObject, NoteId } from "@nether/core";
 import {
+  type AssistSelection,
   type CommentAnchor,
   type CommentAuthor,
   type CommentThread,
+  type NoteAssistView,
   type NoteCommentsView,
   NoteEditor,
 } from "@nether/editor";
@@ -32,12 +34,27 @@ import { useSlashEntries } from "./plugins/blocks.ts";
 import { type PanelRegistry, usePanels } from "./plugins/panels.ts";
 import { NotePanelSection } from "./PanelOutput.tsx";
 import type { Registries } from "./plugins/host.ts";
+import type { AIProvider } from "./mygo.ts";
 
 export type NoteMode = "blocks" | "source";
+
+/** Writing assist in the note, while the vault has an AI provider (ADR 0069). */
+export interface NoteAi {
+  readonly provider: AIProvider;
+  /** Changes when the user asks for writing assist on the selection. */
+  readonly request: number;
+  /** Whether AI may run now, as the workspace's server says before text is sent. */
+  readonly allowedNow: () => Promise<boolean>;
+}
 
 // CodeMirror loads the first time a note shows its source.
 const SourceEditor = lazy(() =>
   import("@nether/editor/source").then(({ SourceEditor: editor }) => ({ default: editor })),
+);
+
+// Writing assist, with the providers' code, loads the first time it is asked for.
+const WritingAssist = lazy(() =>
+  import("./WritingAssist.tsx").then(({ WritingAssist: panel }) => ({ default: panel })),
 );
 
 const vimKey = "nether.vim";
@@ -113,6 +130,8 @@ export default function NoteView(props: {
   readonly threadRequest?: { readonly thread: string; readonly key: number } | undefined;
   /** The ID of the note's name, its own in each pane. */
   readonly titleId?: string;
+  /** Writing assist, while the vault has an AI provider; nothing of it shows otherwise. */
+  readonly ai?: NoteAi;
 }) {
   const {
     vault,
@@ -143,6 +162,7 @@ export default function NoteView(props: {
     onMention,
     threadRequest,
     titleId = "note-title",
+    ai,
   } = props;
   const note = vault.note(id);
   const { state, saveError, editText, refresh } = useNote(vault, id);
@@ -179,6 +199,28 @@ export default function NoteView(props: {
       request: commentRequest,
     };
   }, [comments, draft, activeThread, canComment, commentRequest]);
+  // What writing assist works on while it shows, and the round it shows for.
+  const [assisting, setAssisting] = useState<
+    { readonly selection: AssistSelection | undefined; readonly round: number } | undefined
+  >();
+  const aiOn = ai !== undefined;
+  useEffect(() => {
+    setAssisting(undefined);
+  }, [id, aiOn, mode]);
+  const assistRequest = ai?.request;
+  const assistView = useMemo(
+    (): NoteAssistView | undefined =>
+      assistRequest === undefined
+        ? undefined
+        : {
+            request: assistRequest,
+            onAssist: (selection) => {
+              setAssisting((current) => ({ selection, round: (current?.round ?? 0) + 1 }));
+            },
+            active: assisting?.selection?.anchor,
+          },
+    [assistRequest, assisting],
+  );
   // What plugins add to the slash menu.
   const slashEntries = useSlashEntries(plugins.codeBlocks, plugins.blocks);
   // The editor takes focus when the user switches modes, not when a note opens.
@@ -389,6 +431,7 @@ export default function NoteView(props: {
               {...(focus === undefined ? {} : { focus })}
               {...(collaboration === undefined ? {} : { collaboration })}
               {...(commentsView === undefined ? {} : { comments: commentsView })}
+              {...(assistView === undefined ? {} : { assist: assistView })}
             />
             <DatabaseSlot
               // Its panels, view and errors are the note's: another note starts afresh.
@@ -417,6 +460,21 @@ export default function NoteView(props: {
         onOpenNote={onOpenNote}
         onOpenTag={onOpenTag}
       >
+        {assisting === undefined || ai === undefined ? null : (
+          <Suspense fallback={null}>
+            <WritingAssist
+              // Each request starts afresh.
+              key={assisting.round}
+              provider={ai.provider}
+              selection={assisting.selection}
+              noteTitle={(note) => vault.note(note)?.title}
+              allowedNow={ai.allowedNow}
+              onClose={() => {
+                setAssisting(undefined);
+              }}
+            />
+          </Suspense>
+        )}
         {comments === undefined || me === undefined ? null : (
           <CommentsPanel
             comments={comments}

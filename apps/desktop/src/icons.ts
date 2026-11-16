@@ -46,6 +46,7 @@ import {
   Server,
   Settings,
   Share2,
+  Sparkles,
   SquarePlus,
   SquareX,
   Table2,
@@ -105,6 +106,9 @@ export const commandIcons: Readonly<Record<CommandId, LucideIcon>> = {
   updateChecks: ToggleRight,
   closeVault: LogOut,
 };
+
+/** Writing assist's command, which shows only once AI is set up (ADR 0068). */
+export const assistIcon: LucideIcon = Sparkles;
 
 /** The menu bar's menus. */
 export const menuIcons = {
