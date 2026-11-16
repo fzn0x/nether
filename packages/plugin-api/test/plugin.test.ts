@@ -52,6 +52,16 @@ function fakeApp(
     registered.set(`view-of ${id as string}`, callback as number);
     return null;
   });
+  app.handle("layouts.register", (id, callback) => {
+    registered.set(`layout ${id as string}`, callback as number);
+    return null;
+  });
+  for (const method of ["layouts.open", "layouts.set", "layouts.options"]) {
+    app.handle(method, (...args) => {
+      told.push(`${method} ${JSON.stringify(args)}`);
+      return null;
+    });
+  }
   app.handle("views.open", (id) => {
     told.push(`open ${id as string}`);
     return null;
@@ -280,6 +290,48 @@ describe("startPlugin", () => {
     await app.call("callback", sheet, "unmount", "v1");
     await openStats?.();
     expect(told).toContain("open stats");
+    endpoint.close();
+    app.close();
+  });
+
+  it("mounts a layout's view of a database's rows, which changes them through the app", async () => {
+    const { app, pluginSide, registered, told } = fakeApp();
+    const element = { textContent: "" } as HTMLElement;
+    let database: import("../src/plugin.ts").LaidOut | undefined;
+    const endpoint = await startPlugin(
+      definePlugin({
+        async activate(context) {
+          await context.layouts.register("pins", {
+            mount(into, props, laidOut) {
+              into.textContent = props.rows.map((row) => row.title).join(", ");
+              database = laidOut;
+              return undefined;
+            },
+          });
+        },
+      }),
+      pluginSide,
+      { element: () => element },
+    );
+    await app.call("callback", registered.get("layout pins") ?? 0, "mount", "l1", {
+      view: { name: "Map", options: {} },
+      rows: [
+        { id: "r1", title: "Paris", values: {} },
+        { id: "r2", title: "Lyon", values: {} },
+      ],
+      properties: [],
+      editable: true,
+      theme: "light",
+    });
+    expect(element.textContent).toBe("Paris, Lyon");
+    await database?.openRow("r1");
+    await database?.setValue("r2", "visited", true);
+    await database?.setOptions({ zoom: 5 });
+    expect(told.filter((line) => line.startsWith("layouts."))).toEqual([
+      'layouts.open ["l1","r1"]',
+      'layouts.set ["l1","r2","visited",true]',
+      'layouts.options ["l1",{"zoom":5}]',
+    ]);
     endpoint.close();
     app.close();
   });

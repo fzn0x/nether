@@ -2,15 +2,18 @@
 // keeping every key Nether does not own, and read back when Obsidian
 // changes it. Nether owns the base's `filters`, which find the database's
 // rows, and each view's `type`, `name`, `order`, `groupBy` and `filters`;
-// a view of a type it has no layout for, such as a map, is Obsidian's.
+// a view of a type it has no layout for, such as a map, is Obsidian's. A
+// view of a plugin's layout is a table there, as a calendar is (ADR 0056).
 import {
   type Condition,
   type DatabaseSchema,
   type Filter,
   type FilterOperator,
   type JsonValue,
+  type BuiltInLayout,
   type View,
   type ViewLayout,
+  isPluginLayout,
   readDatabaseSchema,
 } from "@nether/core";
 import { Document, YAMLMap, YAMLSeq, isMap, isSeq, parse, parseDocument } from "yaml";
@@ -22,7 +25,7 @@ export function basePath(databasePath: string): string {
   return `${rowFolder(databasePath)}.base`;
 }
 
-const typeOf: Record<ViewLayout, string> = {
+const typeOf: Record<BuiltInLayout, string> = {
   table: "table",
   board: "kanban",
   gallery: "cards",
@@ -32,11 +35,22 @@ const typeOf: Record<ViewLayout, string> = {
   timeline: "table",
 };
 
-/** The layout of a base's view, keeping a calendar or timeline Obsidian shows as a table. */
+/** A view's type in the base: a plugin's layout, which Obsidian has not, is a table of its rows. */
+function baseType(layout: ViewLayout): string {
+  return isPluginLayout(layout) ? "table" : typeOf[layout];
+}
+
+/**
+ * The layout of a base's view, keeping a calendar, a timeline or a
+ * plugin's layout, which Obsidian shows as a table.
+ */
 function layoutOf(type: unknown, current: View | undefined): ViewLayout | undefined {
   switch (type) {
     case "table":
-      return current?.layout === "calendar" || current?.layout === "timeline"
+      return current !== undefined &&
+        (current.layout === "calendar" ||
+          current.layout === "timeline" ||
+          isPluginLayout(current.layout))
         ? current.layout
         : "table";
     case "kanban":
@@ -222,7 +236,7 @@ function namesRollup(filter: Filter | undefined, rollups: ReadonlySet<string>): 
 function viewValue(view: View, schema: DatabaseSchema): Record<string, JsonValue> {
   const rollups = rollupKeys(schema);
   return {
-    type: typeOf[view.layout],
+    type: baseType(view.layout),
     name: view.name,
     order: ["file.name", ...view.visible.filter((key) => !rollups.has(key)).map(column)],
     ...(view.groupBy === undefined
@@ -341,6 +355,8 @@ export function readBase(text: string, schema: DatabaseSchema): DatabaseSchema {
     const date = current?.date;
     const end = current?.end;
     const cover = current?.cover;
+    // A plugin's layout keeps its options while the base still shows it as a table.
+    const options = layout === current?.layout ? current.options : undefined;
     const view: View = {
       id: viewIdOf(base.name),
       name: base.name,
@@ -352,6 +368,7 @@ export function readBase(text: string, schema: DatabaseSchema): DatabaseSchema {
       ...(date === undefined ? {} : { date }),
       ...(end === undefined ? {} : { end }),
       ...(cover === undefined ? {} : { cover }),
+      ...(options === undefined ? {} : { options }),
     };
     // A view the schema cannot hold, as a board without a property to group by, stays as it was.
     try {

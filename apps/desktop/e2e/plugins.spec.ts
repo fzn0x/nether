@@ -54,6 +54,7 @@ test("the settings turn a built-in plugin off and on again, and the vault keeps 
       backlinks: true,
       canvas: true,
       graph: true,
+      layouts: true,
     });
 
   await openSettings(page, /^Plugins/);
@@ -142,5 +143,42 @@ test("with the canvas plugin off, a canvas says no plugin opens it, and New canv
   await plugins.getByRole("checkbox", { name: "Canvas" }).check();
   await plugins.getByRole("button", { name: "Save" }).click();
   await expect(page.getByRole("heading", { name: "Board", level: 1 })).toBeVisible();
+  expect(errors).toEqual([]);
+});
+
+test("with the layouts plugin off, a board shows as a table, and keeps its layout", async ({
+  page,
+}) => {
+  const errors = errorsOf(page);
+  await openSample(page);
+  await page.keyboard.press("Control+p");
+  await page.keyboard.type("new database");
+  await page.keyboard.press("Enter");
+  await expect(page.locator("#note-title")).toHaveText("Untitled database");
+  const database = page.getByRole("region", { name: "Database" });
+  await database.getByRole("button", { name: "Properties" }).click();
+  await database.getByRole("textbox", { name: "Property name" }).fill("Status");
+  await database.getByRole("combobox", { name: "Type of the new property" }).selectOption("Select");
+  await database.getByRole("button", { name: "Add a property" }).click();
+  const layout = database.getByRole("combobox", { name: "Layout" });
+  await layout.selectOption("board");
+  await expect(database.getByRole("combobox", { name: "Columns" })).toHaveValue("Status");
+
+  const settings = await openSettings(page, /^Plugins/);
+  const plugins = settings.getByRole("tabpanel", { name: "Plugins" });
+  await plugins.getByRole("checkbox", { name: "Database layouts" }).uncheck();
+  await plugins.getByRole("button", { name: "Save" }).click();
+  await expect(
+    database.getByText("No plugin here shows the board layout, so its rows show as a table."),
+  ).toBeVisible();
+  await expect(database.getByRole("table")).toBeVisible();
+  // The view is still a board, as the note's schema says.
+  await expect(layout).toHaveValue("board");
+  await expect.poll(() => fileText(page, "Untitled database.md")).toContain("layout: board");
+
+  await openSettings(page, /^Plugins/);
+  await plugins.getByRole("checkbox", { name: "Database layouts" }).check();
+  await plugins.getByRole("button", { name: "Save" }).click();
+  await expect(database.getByRole("combobox", { name: "Columns" })).toHaveValue("Status");
   expect(errors).toEqual([]);
 });

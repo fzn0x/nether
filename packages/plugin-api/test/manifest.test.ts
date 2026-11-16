@@ -59,6 +59,7 @@ describe("readManifest", () => {
       blocks: [],
       panels: [],
       views: [],
+      layouts: [],
       settings: [],
     });
     expect(manifest).not.toHaveProperty("description");
@@ -251,6 +252,28 @@ describe("readManifest", () => {
       "contributes.views[2].extensions has md, which notes are.",
       'contributes.views[3].id "b" is there twice.',
     ]);
+  });
+
+  it("reads database layouts, and says what is wrong with them", () => {
+    const { manifest } = readManifest({
+      ...good,
+      contributes: { layouts: [{ id: "pins", name: { en: "Map" } }] },
+    });
+    expect(manifest?.contributes.layouts).toEqual([{ id: "pins", name: { en: "Map" } }]);
+    expect(
+      readManifest({
+        ...good,
+        contributes: { layouts: [{ id: "Pins", name: "A" }, { id: "b" }, { id: "b", name: "B" }] },
+      }).problems,
+    ).toEqual([
+      "contributes.layouts[0].id is not a lowercase letter, then letters, digits and hyphens.",
+      "contributes.layouts[1].name is not a name.",
+      'contributes.layouts[2].id "b" is there twice.',
+    ]);
+    expect(
+      readManifest({ ...good, id: "3d", contributes: { layouts: [{ id: "a", name: "A" }] } })
+        .problems,
+    ).toEqual(["id starts with a digit, which a plugin that adds layouts cannot."]);
   });
 
   it("reads settings fields, each with a default of its type", () => {

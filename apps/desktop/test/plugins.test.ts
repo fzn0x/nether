@@ -5,6 +5,7 @@
 import {
   type CodeBlockContext,
   type JsonObject,
+  type LaidOut,
   type Plugin,
   type Transport,
   definePlugin,
@@ -15,6 +16,7 @@ import { coreMenus, commandIds } from "../src/commands.ts";
 import { BlockRegistry, slashEntries } from "../src/plugins/blocks.ts";
 import { PanelRegistry } from "../src/plugins/panels.ts";
 import { ViewRegistry, extensionOf } from "../src/plugins/views.ts";
+import { type LayoutActions, LayoutRegistry } from "../src/plugins/layouts.ts";
 import { isOn, readBuiltins, readOn } from "../src/plugins/state.ts";
 import { builtinPlugins } from "../src/plugins/builtins.ts";
 import { CodeBlockRegistry, type CodeBlockView } from "../src/plugins/codeBlocks.ts";
@@ -310,9 +312,10 @@ for (const [name, connect] of Object.entries(connections)) {
       panels = new PanelRegistry(),
       views = new ViewRegistry(),
       opened: string[] = [],
+      layouts = new LayoutRegistry(),
     ) =>
       new PluginHost(
-        { commands: registry, codeBlocks, blocks, panels, views },
+        { commands: registry, codeBlocks, blocks, panels, views, layouts },
         {
           language: "fr",
           direction: "ltr",
@@ -722,6 +725,73 @@ for (const [name, connect] of Object.entries(connections)) {
       expect(views.all()).toEqual([]);
     });
 
+    it("shows a database's rows in a plugin's layout, which changes them through the app", async () => {
+      const layouts = new LayoutRegistry();
+      const plugins = host(
+        new CommandRegistry(),
+        [],
+        new CodeBlockRegistry(),
+        new BlockRegistry(),
+        new PanelRegistry(),
+        new ViewRegistry(),
+        [],
+        layouts,
+      );
+      let database: LaidOut | undefined;
+      plugins.add({
+        manifest: {
+          id: "maps",
+          name: "Maps",
+          version: "1.0.0",
+          api: "^0.1",
+          contributes: { layouts: [{ id: "pins", name: { en: "Map", fr: "Carte" } }] },
+        },
+        load: () =>
+          Promise.resolve({
+            default: {
+              async activate(context: BuiltinContext) {
+                await context.layouts.register("pins", {
+                  mount(element, props, laidOut) {
+                    element.textContent = props.rows.map((row) => row.title).join(", ");
+                    database = laidOut;
+                    return undefined;
+                  },
+                });
+              },
+            },
+          }),
+      });
+      const pins = layouts.get("maps/pins");
+      expect([pins?.plugin, pins?.name()]).toEqual(["maps", "Carte"]);
+      const told: string[] = [];
+      const actions: LayoutActions = {
+        openRow: (row) => told.push(`open ${row}`),
+        setValue: (row, key, value) => told.push(`set ${row} ${key} ${JSON.stringify(value)}`),
+        setOptions: (options) => told.push(`options ${JSON.stringify(options)}`),
+      };
+      const element = { textContent: "" } as HTMLElement;
+      const drawing = await pins?.load();
+      const view = await drawing?.mount?.(
+        element,
+        {
+          view: { name: "Map", options: {} },
+          rows: [{ id: "r1", title: "Paris", values: { visited: false } }],
+          properties: [{ key: "visited", name: "visited", type: "checkbox" }],
+          editable: true,
+          theme: "light",
+        },
+        actions,
+      );
+      expect(element.textContent).toBe("Paris");
+      await database?.setValue("r1", "visited", true);
+      await database?.openRow("r1");
+      await database?.setOptions({ zoom: 3 });
+      expect(told).toEqual(["set r1 visited true", "open r1", 'options {"zoom":3}']);
+      view?.unmount();
+      plugins.close();
+      expect(layouts.all()).toEqual([]);
+    });
+
     it("refuses a view of a panel its manifest does not declare", async () => {
       const panels = new PanelRegistry();
       const plugins = host(
@@ -807,9 +877,10 @@ describe("PluginHost, adding", () => {
     blocks = new BlockRegistry(),
     panels = new PanelRegistry(),
     views = new ViewRegistry(),
+    layouts = new LayoutRegistry(),
   ) =>
     new PluginHost(
-      { commands, codeBlocks, blocks, panels, views },
+      { commands, codeBlocks, blocks, panels, views, layouts },
       { language: "en", direction: "ltr" },
     );
   const load = fixture().load;
@@ -870,6 +941,32 @@ describe("PluginHost, adding", () => {
       ["backlinks:linked", "note", "Linked from", false],
       ["backlinks:unlinked", "note", "Unlinked mentions", true],
     ]);
+  });
+
+  it("gives the built-in layouts plugin's layouts the app's own names, and others the plugin's", () => {
+    const layouts = new LayoutRegistry();
+    const host = plugins(
+      new CodeBlockRegistry(),
+      new CommandRegistry(),
+      new BlockRegistry(),
+      new PanelRegistry(),
+      new ViewRegistry(),
+      layouts,
+    );
+    for (const builtin of builtinPlugins) host.add(builtin);
+    expect(layouts.all().map((layout) => [layout.layout, layout.plugin, layout.name()])).toEqual([
+      ["board", "layouts", "Board"],
+      ["gallery", "layouts", "Gallery"],
+      ["list", "layouts", "List"],
+      ["calendar", "layouts", "Calendar"],
+      ["timeline", "layouts", "Timeline"],
+    ]);
+    // A plugin of its own is named for its plugin, even as `board`.
+    host.add({
+      manifest: { ...manifest, contributes: { layouts: [{ id: "board", name: "Board" }] } },
+      load,
+    });
+    expect(layouts.get("word-count/board")?.plugin).toBe("word-count");
   });
 
   it("keeps out a plugin that opens files another plugin opens", () => {
@@ -986,6 +1083,7 @@ describe("PluginHost, adding", () => {
         blocks: new BlockRegistry(),
         panels: new PanelRegistry(),
         views: new ViewRegistry(),
+        layouts: new LayoutRegistry(),
       },
       {
         language: "en",

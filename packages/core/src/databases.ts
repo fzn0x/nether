@@ -1,7 +1,8 @@
 // Databases: a note with a schema, whose rows are the notes under it. Views
-// show the rows as a table, board, calendar, timeline, gallery or list.
+// show the rows as a table, board, calendar, timeline, gallery or list, or
+// in a layout a plugin adds, named `plugin-id/layout` (ADR 0056).
 import { type ViewId, readViewId } from "./ids.ts";
-import { type JsonValue, readJson } from "./json.ts";
+import { type JsonObject, type JsonValue, readJson, readJsonObject } from "./json.ts";
 import {
   type PropertyDefinition,
   type PropertyEntry,
@@ -20,7 +21,18 @@ import {
 } from "./read.ts";
 
 export const viewLayouts = ["table", "board", "calendar", "timeline", "gallery", "list"] as const;
-export type ViewLayout = (typeof viewLayouts)[number];
+/** A layout the app has of its own. */
+export type BuiltInLayout = (typeof viewLayouts)[number];
+/** A layout a plugin adds, named as a plugin's block type is: `plugin-id/layout`. */
+export type PluginLayout = `${string}/${string}`;
+export type ViewLayout = BuiltInLayout | PluginLayout;
+
+const pluginLayoutPattern = /^[a-z][a-z0-9-]*\/[a-z][a-zA-Z0-9-]*$/;
+
+/** Whether a layout is a plugin's, `plugin-id/layout`, rather than one of the app's. */
+export function isPluginLayout(layout: string): layout is PluginLayout {
+  return pluginLayoutPattern.test(layout);
+}
 
 /** Properties every row has without a schema entry; views refer to them by these names. */
 export const builtInProperties = ["$title", "$created", "$updated"] as const;
@@ -78,6 +90,8 @@ export interface View {
   readonly end?: string;
   /** A gallery's cover image: a file property. */
   readonly cover?: string;
+  /** A plugin's layout's own settings, kept as the plugin writes them. */
+  readonly options?: JsonObject;
 }
 
 export interface DatabaseSchema {
@@ -130,9 +144,12 @@ function readView(
     value,
     path,
     ["id", "name", "layout", "visible"],
-    ["filter", "sorts", "groupBy", "date", "end", "cover"],
+    ["filter", "sorts", "groupBy", "date", "end", "cover", "options"],
   );
-  const layout = readOneOf(fields.layout, `${path}.layout`, viewLayouts);
+  const layout: ViewLayout =
+    typeof fields.layout === "string" && isPluginLayout(fields.layout)
+      ? fields.layout
+      : readOneOf(fields.layout, `${path}.layout`, viewLayouts);
   const property = (key: string) => (item: unknown, itemPath: string) => {
     const name = readString(item, itemPath);
     const type = typeOf(name, itemPath);
@@ -190,6 +207,12 @@ function readView(
     if (layout !== "gallery") fail(`${path}.cover`, "is only for galleries");
     if (cover.type !== "file") fail(`${path}.cover`, "must be a file property");
   }
+  const options = readOptional(fields, "options", path, (item, itemPath) =>
+    readJsonObject(item, itemPath),
+  );
+  if (options !== undefined && !isPluginLayout(layout)) {
+    fail(`${path}.options`, "is only for a plugin's layout");
+  }
 
   return {
     id: readViewId(fields.id, `${path}.id`),
@@ -202,6 +225,7 @@ function readView(
     ...(date === undefined ? {} : { date: date.name }),
     ...(end === undefined ? {} : { end: end.name }),
     ...(cover === undefined ? {} : { cover: cover.name }),
+    ...(options === undefined ? {} : { options }),
   };
 }
 

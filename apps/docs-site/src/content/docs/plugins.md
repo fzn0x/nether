@@ -57,7 +57,7 @@ reach your computer.
 | `api` | The versions of the plugin API it works with, as `^0.1` |
 | `description` | What it does, optional, a string or strings by language |
 | `author`, `authorUrl` | Who made it, optional |
-| `contributes` | What it adds: for now, `commands`, `codeBlocks`, `blocks`, `panels`, `views` and `settings` |
+| `contributes` | What it adds: for now, `commands`, `codeBlocks`, `blocks`, `panels`, `views`, `layouts` and `settings` |
 
 The app reads the manifest before the plugin's code runs. Its commands
 show in the menus and the palette at once, and its slash menu entries in
@@ -95,6 +95,7 @@ export default definePlugin({
 | `context.blocks` | `register(type, view)`, which shows blocks of a type the manifest declares |
 | `context.panels` | `register(id, view)`, which fills a panel the manifest declares |
 | `context.views` | `register(id, view)`, which draws a view the manifest declares, and `open(id)`, which opens a view of its own |
+| `context.layouts` | `register(id, view)`, which shows a database's rows in a layout the manifest declares |
 | `context.settings` | `values()`, the plugin's settings, and `onChange(listener)` |
 
 Every call to the app is async, and takes and returns plain JSON values,
@@ -317,6 +318,47 @@ its tab.
 The canvas, the view of `.canvas` files, and the graph, a view of its
 own, are built-in plugins' views. With the canvas plugin off, New canvas
 waits for it.
+
+## Database layouts
+
+A plugin can add layouts of a database's rows, beside the app's table,
+board, gallery, list, calendar and timeline. A view in one names it
+`plugin-id/id` in the database's schema, and the Obsidian base beside the
+database shows it as a table, so Obsidian still shows its rows.
+
+```json
+"contributes": {
+  "layouts": [{ "id": "pins", "name": "Map" }]
+}
+```
+
+The plugin's view shows the rows the view's filter finds:
+
+```js
+await context.layouts.register("pins", {
+  mount(element, props, database) {
+    for (const row of props.rows) {
+      const pin = document.createElement("button");
+      pin.textContent = row.title;
+      pin.onclick = () => database.openRow(row.id);
+      element.append(pin);
+    }
+  },
+});
+```
+
+- **`props`** holds the `view`'s name and its `options`, the `rows`, each
+  with its `id`, `title` and the `values` of the properties the view
+  shows, the `groups` when the view groups its rows, the `properties`
+  shown with their types, whether the database is `editable` here, and
+  the page's `theme`.
+- **`database.openRow(id)`** opens a row's note,
+  **`database.setValue(row, key, value)`** sets one of its properties, and
+  **`database.setOptions(options)`** keeps the layout's own settings in the
+  view, in the database's schema.
+
+A view of a layout no plugin here shows keeps it, and its options, and
+shows its rows as a table until its plugin is on.
 
 ## Settings
 

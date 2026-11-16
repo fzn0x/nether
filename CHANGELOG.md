@@ -36,6 +36,12 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Plugins can add views that fill a pane: of files by their extension,
   opened in a tab as notes are, or of their own, opened by a command. A
   file no plugin opens says so in its tab.
+- Plugins can add database layouts, named `plugin-id/layout` in a
+  database's schema with options of their own, which the Obsidian base
+  shows as a table
+  ([ADR 0056](docs/adr/0056-a-plugins-database-layout-is-named-for-it-and-a-base-shows-it-as-a-table.md)).
+  A view whose layout no plugin here shows keeps it, and shows its rows
+  as a table.
 
 ### Changed
 
@@ -56,6 +62,9 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   of the settings dialog, where they were dialogs of their own.
 - The canvas and the graph are built-in plugins' views. With the canvas
   plugin off, New canvas waits for it.
+- Boards, galleries, lists, calendars and timelines are the built-in
+  Database layouts plugin's, keeping their names; the table stays the
+  app's own.
 
 - The desktop app keeps one copy of each link target, tag, heading and
   property value its notes' indexes repeat, as the vault's links load: on

@@ -84,6 +84,17 @@ export interface ViewContribution {
   readonly extensions: readonly string[];
 }
 
+/**
+ * A layout of a database's rows a plugin adds, beside the app's table,
+ * board, calendar, timeline, gallery and list (ADR 0056). A database's
+ * schema names it `plugin-id/id`; the base beside it shows it as a table.
+ */
+export interface LayoutContribution {
+  /** A lowercase letter, then letters, digits and hyphens. */
+  readonly id: string;
+  readonly name: Localized;
+}
+
 /** The kinds of settings field the app draws for a plugin. */
 export const settingTypes = ["text", "number", "toggle", "choice"] as const;
 export type SettingType = (typeof settingTypes)[number];
@@ -117,6 +128,7 @@ export interface Contributions {
   readonly blocks: readonly BlockContribution[];
   readonly panels: readonly PanelContribution[];
   readonly views: readonly ViewContribution[];
+  readonly layouts: readonly LayoutContribution[];
   readonly settings: readonly SettingField[];
 }
 
@@ -328,6 +340,21 @@ function readViews(value: unknown, problems: string[]): ViewContribution[] {
   });
 }
 
+function readLayouts(value: unknown, problems: string[]): LayoutContribution[] {
+  const seen = new Set<string>();
+  return readList(value, "layouts", problems, (item, where) => {
+    const { id, name } = item;
+    if (typeof id !== "string" || !blockTypePattern.test(id)) {
+      problems.push(`${where}.id is not a lowercase letter, then letters, digits and hyphens.`);
+      return undefined;
+    }
+    if (seen.has(id)) problems.push(`${where}.id "${id}" is there twice.`);
+    seen.add(id);
+    if (!isLocalized(name)) problems.push(`${where}.name is not a name.`);
+    return { id, name: isLocalized(name) ? name : id };
+  });
+}
+
 /** A field's value when it is not set, by its type. */
 function defaultOf(
   type: SettingType,
@@ -464,10 +491,14 @@ export function readManifest(value: unknown): ManifestResult {
   const blocks = readBlocks(isObject(contributes) ? contributes.blocks : undefined, problems);
   const panels = readPanels(isObject(contributes) ? contributes.panels : undefined, problems);
   const views = readViews(isObject(contributes) ? contributes.views : undefined, problems);
+  const layouts = readLayouts(isObject(contributes) ? contributes.layouts : undefined, problems);
   const settings = readSettings(isObject(contributes) ? contributes.settings : undefined, problems);
-  // A plugin block's type starts with its plugin's ID, which must then start with a letter.
+  // A plugin block's type and a layout's name start with its plugin's ID, which must then start with a letter.
   if (blocks.length > 0 && typeof id === "string" && !/^[a-z]/.test(id)) {
     problems.push("id starts with a digit, which a plugin that adds blocks cannot.");
+  }
+  if (layouts.length > 0 && typeof id === "string" && !/^[a-z]/.test(id)) {
+    problems.push("id starts with a digit, which a plugin that adds layouts cannot.");
   }
   if (problems.length > 0) return { problems };
   return {
@@ -479,7 +510,7 @@ export function readManifest(value: unknown): ManifestResult {
       ...(description === undefined ? {} : { description: description as Localized }),
       ...(author === undefined ? {} : { author: author as string }),
       ...(authorUrl === undefined ? {} : { authorUrl: authorUrl as string }),
-      contributes: { commands, codeBlocks, blocks, panels, views, settings },
+      contributes: { commands, codeBlocks, blocks, panels, views, layouts, settings },
     },
   };
 }

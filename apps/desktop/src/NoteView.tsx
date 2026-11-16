@@ -392,6 +392,7 @@ export default function NoteView(props: {
               graph={graph}
               document={state.document}
               path={note.path}
+              layouts={plugins.layouts}
               onOpenNote={(row) => {
                 onOpenNote(row);
               }}

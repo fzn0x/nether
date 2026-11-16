@@ -67,6 +67,13 @@ Rows with no date are listed under a calendar or a timeline. To move a
 row to another day, change its date in a table or in the row's
 properties. Lists and galleries group by a property too.
 
+Boards, lists, galleries, calendars and timelines come with the built-in
+**Database layouts** plugin, and other plugins can add layouts of their
+own ([Writing plugins](../plugins/)). A view whose layout no plugin here
+shows, because its plugin is off or missing, shows its rows as a table
+and says so; the database keeps its layout, and Obsidian shows such a
+view as a table too.
+
 ## Assigning work
 
 A **person** property says who works on a row: a list of names, as
