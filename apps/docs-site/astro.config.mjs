@@ -31,6 +31,7 @@ export default defineConfig({
             "links",
             "graph",
             "canvas",
+            "pdfs",
             "search",
             "export",
             "import",

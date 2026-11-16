@@ -133,6 +133,59 @@ describe("noteLinks", () => {
       "Fresh idea.md",
     ]);
   });
+
+  it("opens a file a view opens at the place a link names, and a highlight at its passage", async () => {
+    const files = {
+      "Welcome.md": "Hello",
+      "Papers/paper.pdf": "%PDF-1.4",
+      "photo.png": "not an image",
+      "Papers/paper highlights.md":
+        "> [!quote] [[paper.pdf#page=2&selection=1,0,1,4|paper, page 2]]\n> Four\n\n^aaa111\n\nA paragraph ^bbb222\n",
+    };
+    const vault = new Vault(new MemoryFiles(files), new MemoryStore());
+    await vault.open();
+    const graph = new LinkGraph();
+    for (const note of vault.notes()) {
+      const parsed = parseMarkdown(files[note.path as keyof typeof files]);
+      graph.set(note.id, note.path, indexNote(parsed, parsed.writtenIds));
+    }
+    const welcome = vault.noteAt("Welcome.md")?.id;
+    if (welcome === undefined) throw new Error("The note is not in the vault.");
+    const opened: unknown[] = [];
+    const links = noteLinks(
+      vault,
+      graph,
+      welcome,
+      (id, part) => opened.push([vault.note(id)?.path, part]),
+      () => undefined,
+      undefined,
+      (path, part) => {
+        if (!path.endsWith(".pdf")) return false;
+        opened.push([path, part]);
+        return true;
+      },
+    );
+    links.open({ title: "paper.pdf", heading: "page=3&selection=0,0,0,4" });
+    links.open({ title: "paper highlights", block: "aaa111" as BlockId });
+    await vi.waitFor(() => {
+      expect(opened).toHaveLength(2);
+    });
+    links.open({ title: "paper highlights", block: "bbb222" as BlockId });
+    await vi.waitFor(() => {
+      expect(opened).toHaveLength(3);
+    });
+    expect(opened).toEqual([
+      ["Papers/paper.pdf", "page=3&selection=0,0,0,4"],
+      ["Papers/paper.pdf", "page=2&selection=1,0,1,4"],
+      ["Papers/paper highlights.md", { block: "bbb222" }],
+    ]);
+    // A file no view opens is not opened as one.
+    links.open({ title: "photo.png" });
+    await vi.waitFor(() => {
+      expect(opened).toHaveLength(4);
+    });
+    expect(opened[3]).toEqual(["photo.png.md", undefined]);
+  });
 });
 
 describe("blockQuery", () => {

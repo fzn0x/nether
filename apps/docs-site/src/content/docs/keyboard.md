@@ -54,7 +54,8 @@ The other commands, such as opening this week's note, moving the note to
 the trash or showing the tags, have no shortcut until you give them one.
 
 In the editor, blocks have their own keys: Ctrl+D duplicates the block the
-caret is in, and Ctrl+Shift+↑ and Ctrl+Shift+↓ move it.
+caret is in, and Ctrl+Shift+↑ and Ctrl+Shift+↓ move it. In a PDF, Ctrl+F
+finds words and Ctrl+Shift+H highlights them ([PDFs](../pdfs/)).
 
 ## Changing a shortcut
 

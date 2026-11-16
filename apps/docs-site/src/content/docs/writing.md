@@ -100,7 +100,8 @@ note, and links written in either app find the same files.
 
 A PDF's card can open it in your system's PDF app, and any other file's
 card shows it in your file manager. On Linux, whose web view has no PDF
-viewer, PDFs show as cards.
+viewer, PDFs show as cards. Open a PDF from the sidebar to read it in
+Nether and highlight it: see [PDFs](../pdfs/).
 
 ## Web links
 

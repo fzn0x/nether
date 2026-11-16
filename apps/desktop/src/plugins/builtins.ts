@@ -12,6 +12,7 @@ import layouts from "./layouts/manifest.json";
 import type { BuiltinPlugin } from "./host.ts";
 import mermaid from "./mermaid/manifest.json";
 import outline from "./outline/manifest.json";
+import pdf from "./pdf/manifest.json";
 import query from "./query/manifest.json";
 import tags from "./tags/manifest.json";
 
@@ -24,6 +25,7 @@ export const builtinPlugins: readonly BuiltinPlugin[] = [
   { manifest: backlinks, load: () => import("./backlinks/plugin.tsx") },
   { manifest: canvas, load: () => import("./canvas/plugin.tsx") },
   { manifest: graph, load: () => import("./graph/plugin.tsx") },
+  { manifest: pdf, load: () => import("./pdf/plugin.tsx") },
   // Its board, gallery, list, calendar and timeline keep their names in a database's schema.
   { manifest: layouts, load: () => import("./layouts/plugin.tsx"), appLayouts: true },
 ];

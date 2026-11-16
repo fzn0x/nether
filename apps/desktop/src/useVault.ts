@@ -90,22 +90,28 @@ const none: readonly NoteEntry[] = [];
 const noFolders: readonly string[] = [];
 
 /**
- * The vault's canvases, `.canvas` files (ADR 0051), by path, sorted, kept
- * current: read when the vault changes, from the files that are not notes,
- * not on every render, and the same list until one is added, moved or removed.
+ * The vault's files that open in a tab, by path, sorted, kept current: those
+ * with an extension given, as canvases (ADR 0051) and PDFs (ADR 0061). Read
+ * when the vault changes, from the files that are not notes, not on every
+ * render, and the same list until one is added, moved or removed.
  */
-export function useCanvasFiles(vault: Vault | undefined): readonly string[] {
+export function useViewFiles(
+  vault: Vault | undefined,
+  extensions: readonly string[],
+): readonly string[] {
   const [files, setFiles] = useState<readonly string[]>(noFolders);
+  const wanted = extensions.join(" ");
   useEffect(() => {
     if (vault === undefined) {
       setFiles(noFolders);
       return;
     }
+    const opened = new Set(wanted.split(" "));
     let last: readonly string[] = noFolders;
     const read = () => {
       const found = vault
         .attachments()
-        .filter((path) => /\.canvas$/i.test(path))
+        .filter((path) => opened.has(path.slice(path.lastIndexOf(".") + 1).toLowerCase()))
         .sort();
       if (found.length === last.length && found.every((path, at) => path === last[at])) return;
       last = found;
@@ -113,7 +119,7 @@ export function useCanvasFiles(vault: Vault | undefined): readonly string[] {
     };
     read();
     return vault.subscribe(read);
-  }, [vault]);
+  }, [vault, wanted]);
   return files;
 }
 

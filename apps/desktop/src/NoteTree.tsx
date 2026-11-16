@@ -425,7 +425,12 @@ export function NoteTree(props: {
                 className={
                   node.kind === "folder"
                     ? "tree-folder"
-                    : `note-title${node.kind === "file" ? " tree-canvas" : ""}`
+                    : `note-title${node.kind === "file" ? " tree-file" : ""}`
+                }
+                data-kind={
+                  node.kind === "file"
+                    ? node.path.slice(node.path.lastIndexOf(".") + 1).toLowerCase()
+                    : undefined
                 }
               >
                 {nameOf(node)}

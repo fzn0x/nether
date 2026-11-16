@@ -1,3 +1,6 @@
+import { readFileSync, readdirSync } from "node:fs";
+import { createRequire } from "node:module";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import react from "@vitejs/plugin-react";
 import { type Plugin, build, defineConfig } from "vite";
@@ -135,8 +138,58 @@ function pluginFrame(): Plugin {
   };
 }
 
+/**
+ * What pdf.js fetches when a PDF needs it (ADR 0061), built and served
+ * under pdfjs/, each with its license: the CMaps of Chinese, Japanese and
+ * Korean text; the WebAssembly decoders of JBIG2, JPEG 2000 and ICC
+ * colors; and the Symbol and Dingbats fonts. Not the Liberation fonts,
+ * whose license ADR 0001 does not list: system fonts stand in for them.
+ */
+function pdfjsFiles(): Plugin {
+  const root = dirname(createRequire(import.meta.url).resolve("pdfjs-dist/package.json"));
+  const files = (): string[] => [
+    ...readdirSync(join(root, "cmaps")).map((name) => `cmaps/${name}`),
+    ...["jbig2", "openjpeg", "qcms"].flatMap((name) => [
+      `wasm/${name === "qcms" ? "qcms_bg" : name}.wasm`,
+      `wasm/LICENSE_${name.toUpperCase()}`,
+      `wasm/LICENSE_PDFJS_${name.toUpperCase()}`,
+    ]),
+    "standard_fonts/FoxitSymbol.pfb",
+    "standard_fonts/FoxitDingbats.pfb",
+    "standard_fonts/LICENSE_FOXIT",
+  ];
+  return {
+    name: "nether:pdfjs-files",
+    configureServer(server) {
+      const served = new Set(files());
+      server.middlewares.use((request, response, next) => {
+        const path = (request.url ?? "").split("?")[0] ?? "";
+        const file = path.startsWith("/pdfjs/") ? path.slice("/pdfjs/".length) : "";
+        if (!served.has(file)) {
+          next();
+          return;
+        }
+        response.setHeader(
+          "content-type",
+          file.endsWith(".wasm") ? "application/wasm" : "application/octet-stream",
+        );
+        response.end(readFileSync(join(root, file)));
+      });
+    },
+    generateBundle() {
+      for (const file of files()) {
+        this.emitFile({
+          type: "asset",
+          fileName: `pdfjs/${file}`,
+          source: readFileSync(join(root, file)),
+        });
+      }
+    },
+  };
+}
+
 export default defineConfig({
-  plugins: [react(), decodeEntitiesWithoutDom(), pluginFrame()],
+  plugins: [react(), decodeEntitiesWithoutDom(), pluginFrame(), pdfjsFiles()],
   worker: {
     format: "es",
     plugins: () => [decodeEntitiesWithoutDom()],
