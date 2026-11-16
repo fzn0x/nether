@@ -139,6 +139,66 @@ export interface Views {
   open(id: string): Promise<void>;
 }
 
+/** A database's row, as a layout shows it. */
+export interface LayoutRow {
+  /** The row's note's ID. */
+  readonly id: string;
+  readonly title: string;
+  /** The values of the properties the view shows, by key; one the row has not is left out. */
+  readonly values: JsonObject;
+}
+
+/** A property a layout's view shows. */
+export interface LayoutProperty {
+  readonly key: string;
+  readonly name: string;
+  /** Its type, as `text`, `number`, `select` or `date`. */
+  readonly type: string;
+}
+
+/** What a layout's view is given when it mounts, and again as the rows change. */
+export interface LayoutProps {
+  /** The database's view: its name, and the layout's options, as the plugin set them. */
+  readonly view: { readonly name: string; readonly options: JsonObject };
+  /** The rows the view's filter finds, in its order. */
+  readonly rows: readonly LayoutRow[];
+  /** When the view groups its rows: each group's value, and its rows' IDs. */
+  readonly groups?: readonly { readonly value: Json; readonly rows: readonly string[] }[];
+  /** The properties the view shows, in order. */
+  readonly properties: readonly LayoutProperty[];
+  /** Whether the database can be changed here. */
+  readonly editable: boolean;
+  /** Whether the page it shows on is light or dark. */
+  readonly theme: "light" | "dark";
+}
+
+/** The database a layout's view shows, which it changes through the app. */
+export interface LaidOut {
+  /** Opens a row's note, as a link does. */
+  openRow(id: string): Promise<void>;
+  /** Sets a property of a row, as its note's frontmatter holds it. */
+  setValue(row: string, key: string, value: Json): Promise<void>;
+  /** Keeps the layout's options in the view, in the database's schema. */
+  setOptions(options: JsonObject): Promise<void>;
+}
+
+/** A mounted view of a layout, which the app updates and unmounts. */
+export interface MountedLayout {
+  update?(props: LayoutProps): void;
+  unmount?(): void;
+}
+
+/** Shows a database's rows in a layout the manifest declares, drawing into an element of its own. */
+export interface LayoutView {
+  mount(element: HTMLElement, props: LayoutProps, database: LaidOut): MountedLayout | undefined;
+}
+
+/** The layouts a plugin's manifest declares, attached to their views. */
+export interface Layouts {
+  /** Shows the layout the manifest declares as `id` with `view`. */
+  register(id: string, view: LayoutView): Promise<Disposable>;
+}
+
 /**
  * Where a plugin's views mount: the element made for each, by the slot
  * the app names for it. A built-in plugin is given the page's, and a
@@ -171,6 +231,7 @@ export interface PluginContext {
   readonly blocks: Blocks;
   readonly panels: Panels;
   readonly views: Views;
+  readonly layouts: Layouts;
   readonly settings: Settings;
 }
 
@@ -377,6 +438,26 @@ export async function startPlugin(
       async open(id) {
         await endpoint.call("views.open", id);
       },
+    },
+    layouts: {
+      register: (id, view) =>
+        attach(
+          "layouts",
+          id,
+          viewCallback((element, props: LayoutProps, slot) =>
+            view.mount(element, props, {
+              async openRow(row) {
+                await endpoint.call("layouts.open", slot, row);
+              },
+              async setValue(row, key, value) {
+                await endpoint.call("layouts.set", slot, row, key, value);
+              },
+              async setOptions(options) {
+                await endpoint.call("layouts.options", slot, options);
+              },
+            }),
+          ),
+        ),
     },
   };
   await plugin.activate(context);
