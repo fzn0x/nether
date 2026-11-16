@@ -5,7 +5,9 @@
 // A link to a block that has no ID writes one, `^id`, after the block in
 // its note's file, as Obsidian does. A block of another note embedded by its
 // ID is a synced block (ADR 0023): its edits are written to that note's
-// file, and its embeds show the note again whenever it changes.
+// file, and its embeds show the note again whenever it changes. A link to
+// a file a view opens, as a PDF, opens it at the place it names, and a link
+// to a highlight opens its PDF at its passage (ADR 0061).
 import {
   type Block,
   type BlockId,
@@ -17,10 +19,13 @@ import {
   replaceBlock,
   walkBlocks,
 } from "@nether/core";
-import type { LinkSuggestion, NoteLinks } from "@nether/editor";
+import { type LinkSuggestion, type NoteLinks, isNoteLink } from "@nether/editor";
 import { type LinkGraph, noteSection } from "@nether/graph";
 import { type ParsedMarkdown, parseMarkdown, serializeMarkdown } from "@nether/markdown";
 import { ChangedOnDisk, type NoteEntry, type Vault } from "@nether/storage";
+
+// What tells a highlight from another block loads when a link to a block is followed.
+const loadHighlights = () => import("./pdfHighlights.ts");
 
 /** How many notes `[[` suggests at most. */
 const limit = 20;
@@ -165,6 +170,8 @@ export function noteLinks(
   open: (note: NoteId, part?: NotePart) => void,
   report: (error: unknown) => void,
   openTag?: (name: string) => void,
+  /** Opens a file a view opens, as a PDF, at what followed a link's `#`; false when none does. */
+  openFile?: (path: string, part?: string) => boolean,
 ): NoteLinks {
   const from = () => vault.note(id)?.path ?? "";
   /** The shortest text that links to a note from this one: its title, or its path when another note has the title. */
@@ -277,7 +284,29 @@ export function noteLinks(
         open(id, part);
         return;
       }
+      // A file a view opens, as a PDF, opens there, at the place the link
+      // names, rather than making a note of its name (ADR 0061).
+      if (openFile !== undefined && !isNoteLink(target.title)) {
+        const path = vault.resolveFile(target.title, from());
+        if (path !== undefined && openFile(path, target.heading)) return;
+      }
       const note = resolve(target.title);
+      if (note !== undefined && openFile !== undefined && target.block !== undefined) {
+        // A link to a highlight opens its PDF at its passage, any other block its note.
+        const block = target.block;
+        loadHighlights()
+          .then(({ highlightedPassage }) => highlightedPassage(vault, note, block))
+          .then(
+            (found) => {
+              if (found === undefined || !openFile(found.path, found.part)) open(note, part);
+            },
+            (error: unknown) => {
+              report(error);
+              open(note, part);
+            },
+          );
+        return;
+      }
       if (note !== undefined) {
         open(note, part);
         return;

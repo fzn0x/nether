@@ -577,6 +577,16 @@ export function VaultView(props: {
     [changeLayout, ask],
   );
 
+  /** Opens a file a link names, at the place the link names, when a plugin's view opens it. */
+  const openLinkedFile = useCallback(
+    (path: string, part?: string): boolean => {
+      if (views.forFile(path) === undefined) return false;
+      openFile(path, "here", part);
+      return true;
+    },
+    [views, openFile],
+  );
+
   const showTag = useCallback((name: string) => {
     setTag(name);
     setPanel("notes");
@@ -2325,6 +2335,7 @@ export function VaultView(props: {
                           titleId={index === 0 ? "note-title" : "note-title-right"}
                           focus={paneAsks.focus}
                           onOpenNote={openNote}
+                          onOpenFile={openLinkedFile}
                           onOpenTag={showTag}
                           mode={paneAsks.mode}
                           onMode={(next) => {
