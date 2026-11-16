@@ -3,7 +3,7 @@
 // vault uses, or none; and for a vault that syncs, its workspace's switch,
 // which its owners and admins change for everyone in it. It is the one
 // place AI shows before a provider is set up.
-import { type ProviderKind, providerUrl } from "@nether/ai";
+import { type ProviderKind, isLocal, providerUrl } from "@nether/ai";
 import { type SyntheticEvent, useEffect, useState } from "react";
 import type { VaultAiChoice } from "./ai.ts";
 import { providerWhere } from "./aiWords.ts";
@@ -174,6 +174,15 @@ function ProviderForm(props: {
             {draft.hasKey ? t("aiProviderKeyKept") : t("aiProviderKeyHint")}
           </span>
         </div>
+        {(() => {
+          // An address of another computer over plain HTTP carries the key and the text unencrypted.
+          const url = providerUrl(draft.url);
+          return url?.startsWith("http://") === true && !isLocal(url) ? (
+            <p className="hint" role="status">
+              {t("aiPlainHttp")}
+            </p>
+          ) : null;
+        })()}
         {draft.hasKey ? (
           <label className="field-check">
             <input

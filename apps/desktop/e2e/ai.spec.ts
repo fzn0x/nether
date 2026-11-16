@@ -108,7 +108,11 @@ test("nothing of AI shows until a provider is set up, then writing assist rewrit
   expect(await violations(page)).toEqual([]);
   await tab.getByRole("button", { name: "Add a provider" }).click();
   await tab.getByLabel("Name", { exact: true }).fill("Local");
+  // Another computer over plain HTTP is said to be unencrypted.
+  await tab.getByLabel("Address").fill("http://192.168.1.20:11434/v1");
+  await expect(tab.getByText(/over plain HTTP/)).toBeVisible();
   await tab.getByLabel("Address").fill(`${baseURL ?? ""}/fake-ai/v1`);
+  await expect(tab.getByText(/over plain HTTP/)).toHaveCount(0);
   await tab.getByLabel("Model").fill("test-model");
   await tab.getByLabel("Key", { exact: true }).fill("sk-local");
   expect(await violations(page)).toEqual([]);

@@ -515,6 +515,8 @@ export const messages = {
   aiProviderKeyKept: "A key is kept. Type another to replace it.",
   aiRemoveKey: "Remove the key",
   aiBadUrl: "That is not an http or https address.",
+  aiPlainHttp:
+    "This address is another computer's over plain HTTP: the key and the text you send cross the network unencrypted. Use https:// where the provider offers it.",
   aiNeedsNameModel: "Give the provider a name and a model.",
   aiWhere: "{model} at {host}",
   aiWhereLocal: "{model} on this computer",
