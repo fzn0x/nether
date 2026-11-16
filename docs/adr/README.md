@@ -71,3 +71,4 @@ record supersedes it and says so. Start a new one from
 | [0061](0061-pdfs-show-through-pdf-js-and-a-highlight-is-a-callout-that-links-to-its-passage.md) | PDFs show through pdf.js, and a highlight is a callout that links to its passage | Accepted |
 | [0063](0063-a-vault-plugins-views-draw-in-its-worker-and-the-page-shows-them-cleaned.md) | A vault plugin's views draw in its worker, and the page shows them cleaned | Accepted |
 | [0064](0064-a-plugin-reads-and-writes-notes-through-the-app-as-far-as-it-asked.md) | A plugin reads and writes notes through the app, as far as it asked | Accepted |
+| [0065](0065-the-directory-is-an-index-in-the-repository-of-files-pinned-by-commit-and-hash.md) | The directory is an index in the repository, of files pinned by commit and hash | Accepted |

@@ -1457,6 +1457,8 @@ export function VaultView(props: {
                   state={loaded}
                   onSave={pluginState.saveOn}
                   onClose={closeDialog}
+                  vault={open}
+                  onInstalled={pluginState.reload}
                 />
               ),
             },
