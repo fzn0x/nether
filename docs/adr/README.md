@@ -67,3 +67,4 @@ record supersedes it and says so. Start a new one from
 | [0057](0057-a-plugins-property-type-stores-as-one-of-the-apps-which-shows-without-it.md) | A plugin's property type stores as one of the app's, which shows without it | Accepted |
 | [0058](0058-a-plugin-from-a-vault-runs-in-a-sandboxed-frame-with-what-this-device-approved.md) | A plugin from a vault runs in a sandboxed frame, with what this device approved | Accepted |
 | [0059](0059-the-public-api-takes-tokens-that-act-as-their-account-and-gives-notes-as-markdown.md) | The public API takes tokens that act as their account, and gives notes as Markdown | Accepted |
+| [0060](0060-webhooks-tell-of-notes-made-changed-and-removed-signed-and-sent-to-public-addresses.md) | Webhooks tell of notes made, changed and removed, signed, and sent to public addresses | Accepted |
