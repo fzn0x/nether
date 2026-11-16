@@ -1,12 +1,14 @@
 // A PDF's highlights in the vault (ADR 0061): the callouts that link to a
 // passage of it, in whatever notes hold them, found through the link
-// index; and adding, commenting on and removing one, each a write of its
+// index, with every other link to a passage of it (ADR 0062); and adding,
+// commenting on, coloring and removing a highlight, each a write of its
 // note, read again and written again when another app changed it meanwhile.
 import { type BlockId, type ContentBlock, type NoteId, newBlockId, walkBlocks } from "@nether/core";
 import type { LinkGraph } from "@nether/graph";
 import { parseMarkdown } from "@nether/markdown";
 import {
   type Highlight,
+  type PassageLink,
   type PdfPassage,
   addHighlight,
   commentBlocks,
@@ -15,7 +17,9 @@ import {
   namesPassage,
   readHighlight,
   readHighlights,
+  readPassageLinks,
   rewrite,
+  withColor,
   withComment,
   withoutHighlight,
   writePdfPlace,
@@ -44,29 +48,49 @@ export function notesWithPassages(vault: Vault, graph: LinkGraph, path: string):
   return found;
 }
 
-/** The highlights of the PDF at `path` that some notes hold, the notes in path order. */
-export async function readPdfHighlights(
+/** A link to a passage in a note's prose, and whether its block's ID is written, which a link to it needs. */
+export interface NotePassageLink {
+  readonly note: NoteId;
+  readonly link: PassageLink;
+  readonly written: boolean;
+}
+
+/** What some notes say of the PDF at `path`: its highlights, and the other links to its passages. */
+export interface PdfMarks {
+  readonly highlights: readonly NoteHighlight[];
+  readonly links: readonly NotePassageLink[];
+}
+
+/** The highlights of the PDF at `path` that some notes hold, and their other links to it, the notes in path order. */
+export async function readPdfMarks(
   vault: Vault,
   notes: Iterable<NoteId>,
   path: string,
-): Promise<NoteHighlight[]> {
+): Promise<PdfMarks> {
   const entries = [...new Set(notes)]
     .flatMap((id) => {
       const entry = vault.note(id);
       return entry === undefined ? [] : [entry];
     })
     .sort((a, b) => a.path.localeCompare(b.path));
-  const found: NoteHighlight[] = [];
+  const highlights: NoteHighlight[] = [];
+  const links: NotePassageLink[] = [];
   for (const entry of entries) {
     const file = await vault.read(entry.id);
     if (file.missing === true || file.binary === true) continue;
-    for (const highlight of readHighlights(parseMarkdown(file.text).content)) {
+    const parsed = parseMarkdown(file.text);
+    for (const highlight of readHighlights(parsed.content)) {
       if (vault.resolveFile(highlight.target, entry.path) === path) {
-        found.push({ note: entry.id, highlight });
+        highlights.push({ note: entry.id, highlight });
+      }
+    }
+    for (const link of readPassageLinks(parsed.content)) {
+      if (vault.resolveFile(link.target, entry.path) === path) {
+        links.push({ note: entry.id, link, written: parsed.writtenIds.has(link.block) });
       }
     }
   }
-  return found;
+  return { highlights, links };
 }
 
 /** The note new highlights go in: the one that holds most of them, the first when as many. */
@@ -176,6 +200,16 @@ export function setHighlightComment(
   markdown: string,
 ): Promise<boolean> {
   return changeNote(vault, note, (content) => withComment(content, id, commentBlocks(markdown)));
+}
+
+/** Changes a highlight's color, PDF++'s name, none for the default; false when its note no longer has it. */
+export function setHighlightColor(
+  vault: Vault,
+  note: NoteId,
+  id: BlockId,
+  color: string | undefined,
+): Promise<boolean> {
+  return changeNote(vault, note, (content) => withColor(content, id, color));
 }
 
 /** Takes a highlight out of its note; false when the note no longer has it. */

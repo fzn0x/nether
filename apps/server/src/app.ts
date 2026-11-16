@@ -4,6 +4,7 @@ import Fastify, { type FastifyInstance } from "fastify";
 import type { Redis } from "ioredis";
 import { registerApi } from "./api.ts";
 import { registerAttachments } from "./attachments.ts";
+import { purgeDeliveries, startWebhooks } from "./deliveries.ts";
 import type { BlobStore } from "./blobs.ts";
 import { registerCodes } from "./codes.ts";
 import type { Config } from "./config.ts";
@@ -26,6 +27,7 @@ import { backfillSearch, registerSearch } from "./search.ts";
 import { setSessionCookies, signInRoutes, wantsCookie } from "./cookies.ts";
 import { backupIfDue, backupTarget, noBlobs } from "./backups.ts";
 import { registerWebApp } from "./web.ts";
+import { registerWebhooks } from "./webhooks.ts";
 import { registerWorkspaces } from "./workspaces.ts";
 import { registerWrites } from "./writes.ts";
 
@@ -73,6 +75,11 @@ export interface Services {
   readonly redis?: Redis;
   /** The modules of the enterprise features this build includes; none are written yet. */
   readonly enterpriseModules?: readonly EnterpriseModule[];
+  /**
+   * Whether webhooks' worker runs every few seconds (ADR 0060), as it does
+   * unless a test turns it off to run its rounds by hand.
+   */
+  readonly webhookWorker?: boolean;
 }
 
 /** Builds the server: its routes, and the modules of the enterprise features that are switched on. */
@@ -140,6 +147,9 @@ export async function buildApp(config: Config, services: Services): Promise<Fast
     await purgeNotifications(services.db).catch((error: unknown) => {
       app.log.error({ err: error }, "Could not delete the notifications kept too long");
     });
+    await purgeDeliveries(services.db).catch((error: unknown) => {
+      app.log.error({ err: error }, "Could not delete the webhooks' old deliveries");
+    });
   };
   const hourly = setInterval(() => void purge(), 3_600_000);
   hourly.unref();
@@ -191,7 +201,19 @@ export async function buildApp(config: Config, services: Services): Promise<Fast
   registerUnits(app, services.db, reconnect, sync);
   // The public API, for personal access tokens (ADR 0059).
   registerTokens(app, services.db);
-  registerWrites(app, services.db, sync, registerApi(app, services.db, sync));
+  const api = registerApi(app, services.db, sync);
+  registerWrites(app, services.db, sync, api);
+  // Webhooks, and the worker that sends their events (ADR 0060).
+  registerWebhooks(app, services.db, config.webhookPrivate, api);
+  if (services.webhookWorker !== false) {
+    const webhooks = startWebhooks(services.db, {
+      policy: config.webhookPrivate,
+      ...(services.mailer === undefined ? {} : { mailer: services.mailer }),
+      log: app.log,
+    });
+    // Its round ends before the database closes.
+    app.addHook("onClose", () => webhooks.stop());
+  }
   if (services.mailer !== undefined) {
     registerCodes(app, services.db, services.mailer, config.publicUrl);
   }

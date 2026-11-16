@@ -24,6 +24,11 @@ export interface Config {
    * address: none, all, or their addresses and ranges.
    */
   readonly trustProxy: boolean | readonly string[];
+  /**
+   * Which addresses that are not public webhooks may reach (ADR 0060): none,
+   * all, or these addresses and ranges, for services on the admin's network.
+   */
+  readonly webhookPrivate: boolean | readonly string[];
   /** The SMTP server to send email through, if any; without one the server sends none. */
   readonly mail: MailConfig | null;
   /**
@@ -171,6 +176,20 @@ function readTrustProxy(env: NodeJS.ProcessEnv): boolean | readonly string[] {
     );
   }
   return proxies;
+}
+
+function readWebhookPrivate(env: NodeJS.ProcessEnv): boolean | readonly string[] {
+  const value = env.NETHER_WEBHOOK_PRIVATE?.trim() ?? "";
+  if (off.includes(value.toLowerCase())) return false;
+  if (on.includes(value.toLowerCase())) return true;
+  const ranges = value.split(",").map((item) => item.trim());
+  if (!ranges.every(isProxy)) {
+    throw new ConfigError(
+      "NETHER_WEBHOOK_PRIVATE",
+      `must be on, off, or the addresses and ranges webhooks may reach separated by commas, not "${value}"`,
+    );
+  }
+  return ranges;
 }
 
 function readMail(env: NodeJS.ProcessEnv): MailConfig | null {
@@ -414,6 +433,7 @@ export function readConfig(env: NodeJS.ProcessEnv): Config {
     databaseUrl: readDatabaseUrl(env),
     redisUrl: readRedisUrl(env),
     trustProxy: readTrustProxy(env),
+    webhookPrivate: readWebhookPrivate(env),
     mail: readMail(env),
     publicUrl,
     oidc: readOidc(env, publicUrl),

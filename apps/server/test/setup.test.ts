@@ -62,6 +62,9 @@ describe("migrate", () => {
       "units",
       "user_keys",
       "users",
+      "webhook_changes",
+      "webhook_deliveries",
+      "webhooks",
       "workspace_keys",
       "workspaces",
     ]);

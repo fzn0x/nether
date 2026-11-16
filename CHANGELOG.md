@@ -76,6 +76,13 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   back. No plugin reaches a hidden folder, as `.nether` or `.obsidian`.
   The plugin sandbox, Phase 4's third item, is done
   ([ADR 0064](docs/adr/0064-a-plugin-reads-and-writes-notes-through-the-app-as-far-as-it-asked.md)).
+- The plugin and theme directory: Browse the directory, in the Plugins
+  and Appearance tabs, reads `registry/index.json` from Nether's
+  repository when asked, and installs a plugin or a theme from the commit
+  and hashes its entry names. A plugin installs off, until this device
+  approves it; a theme that would load from an address is refused. The
+  web app's policy lets it reach `raw.githubusercontent.com`
+  ([ADR 0065](docs/adr/0065-the-directory-is-an-index-in-the-repository-of-files-pinned-by-commit-and-hash.md)).
 - The server's REST API, first part: personal access tokens, read or
   write, for one workspace or all, with an expiry, made with the
   account's password, shown once, kept as hashes and revoked with a
@@ -103,6 +110,25 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   The list beside the pages shows, comments on, links to and removes
   them. A link to a page, a passage or a highlight opens the PDF there,
   and a link to a file a view opens no longer makes a note of its name.
+- Webhooks, which a workspace's owners and admins make through the API:
+  each tells another service when a note is made, changed or deleted, a
+  burst of changes as one event, with the note's ID and path, never its
+  text, and only of notes its maker can open. Events are signed as
+  Standard Webhooks has them, tried again over two days, and a webhook
+  failing for three days is turned off and its maker emailed. They reach
+  public addresses only, checked each time they are sent, unless the
+  admin allows others with `NETHER_WEBHOOK_PRIVATE`
+  ([ADR 0060](docs/adr/0060-webhooks-tell-of-notes-made-changed-and-removed-signed-and-sent-to-public-addresses.md)).
+  A note made through the API at a path an app had just taken leaves
+  nothing behind.
+- A PDF shows every other note's link to one of its passages, as
+  Obsidian's Copy as quote and PDF++ write them, marked on its page and
+  listed under Linked from notes
+  ([ADR 0062](docs/adr/0062-every-link-to-a-passage-shows-on-the-pdf-in-pdf-plus-plus-colors.md)).
+  Highlights and links take PDF++'s colors, `&color=` in the link: new
+  highlights in yellow, red, blue or purple, and each recolored from the
+  list. The PDF's own outline shows beside its pages, its links to its
+  pages and to the web work, and Back returns from where one was followed.
 - AI from a provider you bring, first part: `@nether/ai`, streamed chat
   and embeddings from any OpenAI-compatible endpoint (OpenAI, Ollama,
   vLLM, LM Studio) or Anthropic's Messages API, over fetch, with no

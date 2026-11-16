@@ -17,6 +17,7 @@ import * as Y from "yjs";
 import { type Database, readBytes, readCount, readText } from "./db.ts";
 import { socketCookieToken } from "./cookies.ts";
 import { fail, uuidField } from "./http.ts";
+import { hasWebhooks, keepListChanges, keepNoteChange } from "./outbox.ts";
 import { indexNote, indexPaths } from "./search.ts";
 import { sessionAccount, signedIn, accountOf } from "./sessions.ts";
 import {
@@ -75,7 +76,8 @@ interface Changes {
  * Stores a document's state under a new number, and gives the number. For a
  * note, the state it replaces is first kept as a version when the note's
  * last version is ten minutes old, so its history has it as it was before
- * each spell of editing.
+ * each spell of editing. In a workspace with webhooks, the notes it makes,
+ * changes and removes go to their outbox in the same transaction (ADR 0060).
  */
 export async function storeDocument(
   db: Database,
@@ -91,6 +93,9 @@ export async function storeDocument(
           document,
         ])
       : undefined;
+    const watched = !isComments(document) && (await hasWebhooks(tx, workspaceId));
+    // Compared with the state stored, which the store replaces below.
+    if (watched && before === undefined) await keepNoteChange(tx, workspaceId, document, state);
     if (!document.startsWith("vault") && !isComments(document)) {
       await tx.query(
         `INSERT INTO document_versions (workspace_id, name, state)
@@ -116,6 +121,8 @@ export async function storeDocument(
     if (before !== undefined) {
       const unit = document === "vault" ? general : document.slice("vault.".length);
       const old = before.rows[0] === undefined ? undefined : readBytes(before.rows[0], "state");
+      // Read against the index's paths before it takes the new ones.
+      if (watched) await keepListChanges(tx, workspaceId, unit, state, old);
       await indexPaths(tx, workspaceId, unit, state, old);
     } else if (!isComments(document)) {
       await indexNote(tx, workspaceId, document, state);
