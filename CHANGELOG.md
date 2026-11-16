@@ -60,8 +60,14 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   or why it cannot run; turning one on approves its code on this device,
   and one whose code changes stays off until approved again. What they
   draw is cleaned of scripts, handlers, styles and, without the network,
-  addresses outside the page. For now they add commands, code blocks and
-  settings. In the web app they start while the server answers.
+  addresses outside the page. In the web app they start while the server
+  answers.
+- Plugins from a vault add blocks, panels, views, database layouts and
+  property types too. Their views draw in a DOM of their worker's own,
+  which the app copies into each view's box, cleaned of what could load
+  from elsewhere or leave the box, and the events they listen for go back
+  to them
+  ([ADR 0063](docs/adr/0063-a-vault-plugins-views-draw-in-its-worker-and-the-page-shows-them-cleaned.md)).
 
 ### Changed
 
