@@ -95,6 +95,24 @@ export interface LayoutContribution {
   readonly name: Localized;
 }
 
+/**
+ * The app's types a plugin's property type may store as (ADR 0057): what
+ * a note's frontmatter holds, which shows without the plugin.
+ */
+export const storedTypes = ["text", "number", "checkbox", "date", "url", "multiSelect"] as const;
+export type StoredType = (typeof storedTypes)[number];
+
+/**
+ * A property type a plugin adds, named `plugin-id/id` where the vault
+ * writes it, which stores as one of the app's types.
+ */
+export interface PropertyTypeContribution {
+  /** A lowercase letter, then letters, digits and hyphens. */
+  readonly id: string;
+  readonly name: Localized;
+  readonly stores: StoredType;
+}
+
 /** The kinds of settings field the app draws for a plugin. */
 export const settingTypes = ["text", "number", "toggle", "choice"] as const;
 export type SettingType = (typeof settingTypes)[number];
@@ -129,6 +147,7 @@ export interface Contributions {
   readonly panels: readonly PanelContribution[];
   readonly views: readonly ViewContribution[];
   readonly layouts: readonly LayoutContribution[];
+  readonly propertyTypes: readonly PropertyTypeContribution[];
   readonly settings: readonly SettingField[];
 }
 
@@ -355,6 +374,25 @@ function readLayouts(value: unknown, problems: string[]): LayoutContribution[] {
   });
 }
 
+function readPropertyTypes(value: unknown, problems: string[]): PropertyTypeContribution[] {
+  const seen = new Set<string>();
+  return readList(value, "propertyTypes", problems, (item, where) => {
+    const { id, name, stores } = item;
+    if (typeof id !== "string" || !blockTypePattern.test(id)) {
+      problems.push(`${where}.id is not a lowercase letter, then letters, digits and hyphens.`);
+      return undefined;
+    }
+    if (seen.has(id)) problems.push(`${where}.id "${id}" is there twice.`);
+    seen.add(id);
+    if (!isLocalized(name)) problems.push(`${where}.name is not a name.`);
+    if (!storedTypes.includes(stores as StoredType)) {
+      problems.push(`${where}.stores is not one of ${storedTypes.join(", ")}.`);
+      return undefined;
+    }
+    return { id, name: isLocalized(name) ? name : id, stores: stores as StoredType };
+  });
+}
+
 /** A field's value when it is not set, by its type. */
 function defaultOf(
   type: SettingType,
@@ -492,6 +530,10 @@ export function readManifest(value: unknown): ManifestResult {
   const panels = readPanels(isObject(contributes) ? contributes.panels : undefined, problems);
   const views = readViews(isObject(contributes) ? contributes.views : undefined, problems);
   const layouts = readLayouts(isObject(contributes) ? contributes.layouts : undefined, problems);
+  const propertyTypes = readPropertyTypes(
+    isObject(contributes) ? contributes.propertyTypes : undefined,
+    problems,
+  );
   const settings = readSettings(isObject(contributes) ? contributes.settings : undefined, problems);
   // A plugin block's type and a layout's name start with its plugin's ID, which must then start with a letter.
   if (blocks.length > 0 && typeof id === "string" && !/^[a-z]/.test(id)) {
@@ -499,6 +541,9 @@ export function readManifest(value: unknown): ManifestResult {
   }
   if (layouts.length > 0 && typeof id === "string" && !/^[a-z]/.test(id)) {
     problems.push("id starts with a digit, which a plugin that adds layouts cannot.");
+  }
+  if (propertyTypes.length > 0 && typeof id === "string" && !/^[a-z]/.test(id)) {
+    problems.push("id starts with a digit, which a plugin that adds property types cannot.");
   }
   if (problems.length > 0) return { problems };
   return {
@@ -510,7 +555,16 @@ export function readManifest(value: unknown): ManifestResult {
       ...(description === undefined ? {} : { description: description as Localized }),
       ...(author === undefined ? {} : { author: author as string }),
       ...(authorUrl === undefined ? {} : { authorUrl: authorUrl as string }),
-      contributes: { commands, codeBlocks, blocks, panels, views, layouts, settings },
+      contributes: {
+        commands,
+        codeBlocks,
+        blocks,
+        panels,
+        views,
+        layouts,
+        propertyTypes,
+        settings,
+      },
     },
   };
 }

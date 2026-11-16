@@ -52,6 +52,14 @@ function fakeApp(
     registered.set(`view-of ${id as string}`, callback as number);
     return null;
   });
+  app.handle("propertyTypes.register", (id, callback) => {
+    registered.set(`property ${id as string}`, callback as number);
+    return null;
+  });
+  app.handle("propertyTypes.set", (slot, value) => {
+    told.push(`set ${slot as string} ${JSON.stringify(value)}`);
+    return null;
+  });
   app.handle("layouts.register", (id, callback) => {
     registered.set(`layout ${id as string}`, callback as number);
     return null;
@@ -332,6 +340,38 @@ describe("startPlugin", () => {
       'layouts.set ["l1","r2","visited",true]',
       'layouts.options ["l1",{"zoom":5}]',
     ]);
+    endpoint.close();
+    app.close();
+  });
+
+  it("mounts a property type's view of a value, which sets it through the app", async () => {
+    const { app, pluginSide, registered, told } = fakeApp();
+    const element = { textContent: "" } as HTMLElement;
+    let setValue: ((value: number) => Promise<void>) | undefined;
+    const endpoint = await startPlugin(
+      definePlugin({
+        async activate(context) {
+          await context.propertyTypes.register("rating", {
+            mount(into, props, property) {
+              into.textContent = "*".repeat(typeof props.value === "number" ? props.value : 0);
+              setValue = (value) => property.setValue(value);
+              return undefined;
+            },
+          });
+        },
+      }),
+      pluginSide,
+      { element: () => element },
+    );
+    await app.call("callback", registered.get("property rating") ?? 0, "mount", "p1", {
+      key: "rating",
+      value: 3,
+      editable: true,
+      theme: "light",
+    });
+    expect(element.textContent).toBe("***");
+    await setValue?.(4);
+    expect(told).toContain("set p1 4");
     endpoint.close();
     app.close();
   });

@@ -199,6 +199,45 @@ export interface Layouts {
   register(id: string, view: LayoutView): Promise<Disposable>;
 }
 
+/** What a property type's view is given when it mounts, and again as the value changes. */
+export interface PropertyViewProps {
+  /** The property's key, in the note's frontmatter. */
+  readonly key: string;
+  /** Its value, as the app's type the plugin's type stores as holds it; null when empty. */
+  readonly value: Json;
+  /** Whether the note can be changed here. */
+  readonly editable: boolean;
+  /** Whether the page it shows on is light or dark. */
+  readonly theme: "light" | "dark";
+}
+
+/** The property a view shows. */
+export interface ViewedProperty {
+  /** Sets its value, which the app checks as the type it stores as before writing it. */
+  setValue(value: Json): Promise<void>;
+}
+
+/** A mounted view of a property, which the app updates and unmounts. */
+export interface MountedProperty {
+  update?(props: PropertyViewProps): void;
+  unmount?(): void;
+}
+
+/** Shows and edits values of a property type the manifest declares, drawing into an element of its own. */
+export interface PropertyView {
+  mount(
+    element: HTMLElement,
+    props: PropertyViewProps,
+    property: ViewedProperty,
+  ): MountedProperty | undefined;
+}
+
+/** The property types a plugin's manifest declares, attached to their views. */
+export interface PropertyTypes {
+  /** Shows values of the type the manifest declares as `id` with `view`. */
+  register(id: string, view: PropertyView): Promise<Disposable>;
+}
+
 /**
  * Where a plugin's views mount: the element made for each, by the slot
  * the app names for it. A built-in plugin is given the page's, and a
@@ -232,6 +271,7 @@ export interface PluginContext {
   readonly panels: Panels;
   readonly views: Views;
   readonly layouts: Layouts;
+  readonly propertyTypes: PropertyTypes;
   readonly settings: Settings;
 }
 
@@ -454,6 +494,20 @@ export async function startPlugin(
               },
               async setOptions(options) {
                 await endpoint.call("layouts.options", slot, options);
+              },
+            }),
+          ),
+        ),
+    },
+    propertyTypes: {
+      register: (id, view) =>
+        attach(
+          "propertyTypes",
+          id,
+          viewCallback((element, props: PropertyViewProps, slot) =>
+            view.mount(element, props, {
+              async setValue(value) {
+                await endpoint.call("propertyTypes.set", slot, value);
               },
             }),
           ),
