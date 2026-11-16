@@ -3984,12 +3984,12 @@ kbd {
   text-align: start;
 }
 
-/* A canvas in the sidebar's tree, told from a note. */
-.tree-canvas::after {
+/* A file in the sidebar's tree, as a canvas or a PDF, told from a note by its kind. */
+.tree-file::after {
   margin-inline-start: 0.4rem;
   color: var(--muted);
   font-size: 0.7rem;
-  content: "canvas";
+  content: attr(data-kind);
 }
 
 /* What is assigned to me, by database, in the sidebar. */

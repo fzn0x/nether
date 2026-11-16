@@ -105,7 +105,7 @@ import { useTemplateSettings } from "./useTemplateSettings.ts";
 import { useSync } from "./useSync.ts";
 import { usePeople, useNotifications } from "./useNotifications.ts";
 import { queueMention } from "./notify.ts";
-import { useCanvasFiles, useFolders, useNotes, useVault } from "./useVault.ts";
+import { useFolders, useNotes, useVault, useViewFiles } from "./useVault.ts";
 
 /** What the app's own commands do as the latest render has it. */
 interface CommandState {
@@ -310,7 +310,6 @@ export function VaultView(props: {
   const graph = state.status === "open" ? state.indexer.graph : undefined;
   const notes = useNotes(vault);
   const folders = useFolders(vault);
-  const canvases = useCanvasFiles(vault);
   const [sidebarWidth, setSidebarWidth] = useSidebarWidth();
   const bookmarks = useBookmarks(vault);
   // Where notes are open: tabs in one pane or two (ADR 0046). Commands
@@ -414,6 +413,13 @@ export function VaultView(props: {
   const allViews = useViews(views);
   // Whether a plugin opens canvases, for New canvas.
   const canvasOpens = allViews.some((view) => view.extensions.includes("canvas"));
+  // The files that open in a tab, beside the notes: those plugins open, as
+  // PDFs, and canvases, which showed there before a plugin opened them.
+  const viewExtensions = useMemo(
+    () => [...new Set(["canvas", ...allViews.flatMap((view) => view.extensions)])].sort(),
+    [allViews],
+  );
+  const viewFiles = useViewFiles(vault, viewExtensions);
   const sidebarPanels = usePanels(panels, "sidebar");
   const commands = useSyncExternalStore(
     useCallback((listener: () => void) => registry.subscribe(listener), [registry]),
@@ -1832,7 +1838,7 @@ export function VaultView(props: {
                     onNewIn={newNoteIn}
                     onMenu={openMenu}
                     folders={folders}
-                    files={canvases}
+                    files={viewFiles}
                     onOpenFile={(path, newTab) => {
                       openFile(path, newTab ? "tab" : "here");
                     }}
