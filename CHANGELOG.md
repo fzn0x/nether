@@ -68,6 +68,14 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   from elsewhere or leave the box, and the events they listen for go back
   to them
   ([ADR 0063](docs/adr/0063-a-vault-plugins-views-draw-in-its-worker-and-the-page-shows-them-cleaned.md)).
+- Plugins reach the vault through `context.vault`, as far as their
+  manifest asks: with `vault:read`, its notes, their Markdown as it is
+  now, its other files and the notes that change; with `vault:write`,
+  notes written through their documents, as source mode's text is, and
+  moved to the trash as the app moves them, with a notice to put them
+  back. No plugin reaches a hidden folder, as `.nether` or `.obsidian`.
+  The plugin sandbox, Phase 4's third item, is done
+  ([ADR 0064](docs/adr/0064-a-plugin-reads-and-writes-notes-through-the-app-as-far-as-it-asked.md)).
 - The server's REST API, first part: personal access tokens, read or
   write, for one workspace or all, with an expiry, made with the
   account's password, shown once, kept as hashes and revoked with a
