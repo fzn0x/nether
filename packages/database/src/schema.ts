@@ -114,7 +114,9 @@ export function databaseOf(
 export function writeDatabase(schema: DatabaseSchema, linkTo: LinkTo): JsonValue {
   return {
     properties: schema.properties.map((property) => {
-      const { relation, options, rollup, ...rest } = property;
+      const { relation, options, rollup, plugin, ...rest } = property;
+      // A plugin's type, with the app's type it stores as (ADR 0057).
+      if (plugin !== undefined) return { key: property.key, type: plugin, stores: property.type };
       return {
         ...rest,
         ...(options === undefined

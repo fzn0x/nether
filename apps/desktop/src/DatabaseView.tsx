@@ -48,6 +48,12 @@ import { myName, peopleNames, subscribeMyName } from "./people.ts";
 import type * as Y from "yjs";
 import { boardTypes, groupLabel, valueText } from "./DatabaseLayouts.tsx";
 import { LayoutOutput } from "./LayoutOutput.tsx";
+import { PropertyValueOutput } from "./PropertyValueOutput.tsx";
+import {
+  type PropertyTypeProcessor,
+  type PropertyTypeRegistry,
+  usePropertyTypes,
+} from "./plugins/propertyTypes.ts";
 import { type LayoutRegistry, useLayouts } from "./plugins/layouts.ts";
 import { useDocumentProperties } from "./DatabaseSlot.tsx";
 import { ListEditor } from "./PropertiesPanel.tsx";
@@ -460,15 +466,24 @@ function AddProperty(props: {
   readonly self: string;
   /** This database's relations, each with the properties of the rows it links to, for a rollup. */
   readonly relations: readonly { readonly key: string; readonly properties: readonly string[] }[];
+  /** The property types plugins add, each stored as one of the app's (ADR 0057). */
+  readonly pluginTypes: readonly PropertyTypeProcessor[];
   readonly onAdd: (
     key: string,
     type: PropertyType,
-    more?: { readonly relation?: NewRelation; readonly rollup?: Rollup; readonly formula?: string },
+    more?: {
+      readonly relation?: NewRelation;
+      readonly rollup?: Rollup;
+      readonly formula?: string;
+      readonly plugin?: PropertyTypeProcessor["type"];
+    },
   ) => void;
 }) {
-  const { taken, databases, self, relations, onAdd } = props;
+  const { taken, databases, self, relations, pluginTypes, onAdd } = props;
   const [key, setKey] = useState("");
-  const [type, setType] = useState<PropertyType>("text");
+  // The app's type, or a plugin's by its name.
+  const [type, setType] = useState<string>("text");
+  const plugin = pluginTypes.find((each) => each.type === type);
   const [chosenTarget, setTarget] = useState<NoteId | undefined>();
   const [twoWay, setTwoWay] = useState(true);
   const [back, setBack] = useState(self);
@@ -513,8 +528,10 @@ function AddProperty(props: {
           onAdd(name, type, {
             rollup: { relation: through, property: source, function: calculate },
           });
+        } else if (plugin !== undefined) {
+          onAdd(name, plugin.stores, { plugin: plugin.type });
         } else {
-          onAdd(name, type);
+          onAdd(name, type as PropertyType);
         }
         setKey("");
       }}
@@ -531,7 +548,7 @@ function AddProperty(props: {
         aria-label={t("newPropertyType")}
         value={type}
         onChange={(event) => {
-          setType(event.target.value as PropertyType);
+          setType(event.target.value);
         }}
       >
         {[
@@ -545,6 +562,11 @@ function AddProperty(props: {
               {t(`type_${option}` as MessageKey)}
             </option>
           ))}
+        {pluginTypes.map((each) => (
+          <option key={each.type} value={each.type}>
+            {each.name()}
+          </option>
+        ))}
       </select>
       {type === "formula" ? (
         <>
@@ -668,6 +690,8 @@ export interface DatabaseProps {
   readonly onOpenNote: (id: NoteId) => void;
   /** The layouts plugins add, beside the table (ADR 0056). */
   readonly layouts: LayoutRegistry;
+  /** The property types plugins add (ADR 0057). */
+  readonly propertyTypes: PropertyTypeRegistry;
 }
 
 /**
@@ -683,6 +707,12 @@ export function DatabaseView(props: DatabaseProps) {
 function Database(props: DatabaseProps & { readonly entries: readonly PropertyEntry[] }) {
   const { vault, media, exporter, graph, document, path, onOpenNote, layouts, entries } = props;
   const available = useLayouts(layouts);
+  const pluginTypes = usePropertyTypes(props.propertyTypes);
+  /** The view of a property of a plugin's type, when its plugin is here. */
+  const typeViewOf = (property: PropertyDefinition) =>
+    property.plugin === undefined
+      ? undefined
+      : pluginTypes.find((each) => each.type === property.plugin);
   const version = useGraph(graph);
   const me = useSyncExternalStore(subscribeMyName, myName);
   const notes = useNotes(vault);
@@ -1020,47 +1050,65 @@ function Database(props: DatabaseProps & { readonly entries: readonly PropertyEn
               {title}
             </button>
           </th>
-          {visible.map((property) => (
-            <td key={property.key}>
-              {property.type === "rollup" || property.type === "formula" ? (
-                row.errors?.has(property.key) === true ? (
-                  <span className="database-error" title={row.errors.get(property.key)}>
-                    {t("formulaError", { error: row.errors.get(property.key) ?? "" })}
-                  </span>
+          {visible.map((property) => {
+            const typeView = typeViewOf(property);
+            return (
+              <td key={property.key}>
+                {property.type === "rollup" || property.type === "formula" ? (
+                  row.errors?.has(property.key) === true ? (
+                    <span className="database-error" title={row.errors.get(property.key)}>
+                      {t("formulaError", { error: row.errors.get(property.key) ?? "" })}
+                    </span>
+                  ) : (
+                    <span className="database-rollup">
+                      {rollupText(
+                        row.properties.find((entry) => entry.key === property.key)?.value,
+                      )}
+                    </span>
+                  )
+                ) : typeView !== undefined ? (
+                  // A plugin's type, in its plugin's view; without it, the cell edits as what it stores as.
+                  <PropertyValueOutput
+                    processor={typeView}
+                    propertyKey={property.key}
+                    value={
+                      row.properties.find((entry) => entry.key === property.key)?.value ?? null
+                    }
+                    editable
+                    onChange={(value) => {
+                      write(row.id, property.key, value);
+                    }}
+                  />
                 ) : (
-                  <span className="database-rollup">
-                    {rollupText(row.properties.find((entry) => entry.key === property.key)?.value)}
-                  </span>
-                )
-              ) : (
-                <Cell
-                  label={t("cellLabel", { name: property.key, row: title })}
-                  property={property}
-                  value={row.properties.find((entry) => entry.key === property.key)?.value}
-                  onCommit={(value, base) => {
-                    write(row.id, property.key, value, base);
-                  }}
-                  people={people}
-                  {...(property.type === "relation"
-                    ? {
-                        related: {
-                          names: relatedRows(property).map(rowTitle),
-                          // The row of that name, by the shortest link that finds it; else a link to a note not yet written.
-                          toValue: (name: string) => {
-                            const found = relatedRows(property).find(
-                              (item) => rowTitle(item).toLowerCase() === name.toLowerCase(),
-                            );
-                            return found === undefined
-                              ? `[[${name}]]`
-                              : shortLink(vault, found.path, row.path);
+                  <Cell
+                    label={t("cellLabel", { name: property.key, row: title })}
+                    property={property}
+                    value={row.properties.find((entry) => entry.key === property.key)?.value}
+                    onCommit={(value, base) => {
+                      write(row.id, property.key, value, base);
+                    }}
+                    people={people}
+                    {...(property.type === "relation"
+                      ? {
+                          related: {
+                            names: relatedRows(property).map(rowTitle),
+                            // The row of that name, by the shortest link that finds it; else a link to a note not yet written.
+                            toValue: (name: string) => {
+                              const found = relatedRows(property).find(
+                                (item) => rowTitle(item).toLowerCase() === name.toLowerCase(),
+                              );
+                              return found === undefined
+                                ? `[[${name}]]`
+                                : shortLink(vault, found.path, row.path);
+                            },
                           },
-                        },
-                      }
-                    : {})}
-                />
-              )}
-            </td>
-          ))}
+                        }
+                      : {})}
+                  />
+                )}
+              </td>
+            );
+          })}
         </tr>
       );
     });
@@ -1341,7 +1389,17 @@ function Database(props: DatabaseProps & { readonly entries: readonly PropertyEn
                     },
                   ];
                 })}
+                pluginTypes={pluginTypes}
                 onAdd={(key, type, more) => {
+                  if (more?.plugin !== undefined) {
+                    saveSchema({
+                      properties: [...schema.properties, { key, type, plugin: more.plugin }],
+                      views: schema.views.map((item) =>
+                        item.id === view.id ? { ...item, visible: [...item.visible, key] } : item,
+                      ),
+                    });
+                    return;
+                  }
                   if (more?.relation !== undefined) {
                     addRelation(key, more.relation, view);
                     return;

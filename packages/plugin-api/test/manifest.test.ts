@@ -60,6 +60,7 @@ describe("readManifest", () => {
       panels: [],
       views: [],
       layouts: [],
+      propertyTypes: [],
       settings: [],
     });
     expect(manifest).not.toHaveProperty("description");
@@ -274,6 +275,40 @@ describe("readManifest", () => {
       readManifest({ ...good, id: "3d", contributes: { layouts: [{ id: "a", name: "A" }] } })
         .problems,
     ).toEqual(["id starts with a digit, which a plugin that adds layouts cannot."]);
+  });
+
+  it("reads property types, each with the app's type it stores as", () => {
+    expect(
+      readManifest({
+        ...good,
+        contributes: { propertyTypes: [{ id: "rating", name: "Rating", stores: "number" }] },
+      }).manifest?.contributes.propertyTypes,
+    ).toEqual([{ id: "rating", name: "Rating", stores: "number" }]);
+    expect(
+      readManifest({
+        ...good,
+        contributes: {
+          propertyTypes: [
+            { id: "Rating", name: "R", stores: "number" },
+            { id: "a", stores: "select" },
+            { id: "b", name: "B", stores: "text" },
+            { id: "b", name: "B", stores: "text" },
+          ],
+        },
+      }).problems,
+    ).toEqual([
+      "contributes.propertyTypes[0].id is not a lowercase letter, then letters, digits and hyphens.",
+      "contributes.propertyTypes[1].name is not a name.",
+      "contributes.propertyTypes[1].stores is not one of text, number, checkbox, date, url, multiSelect.",
+      'contributes.propertyTypes[3].id "b" is there twice.',
+    ]);
+    expect(
+      readManifest({
+        ...good,
+        id: "3d",
+        contributes: { propertyTypes: [{ id: "a", name: "A", stores: "text" }] },
+      }).problems,
+    ).toEqual(["id starts with a digit, which a plugin that adds property types cannot."]);
   });
 
   it("reads settings fields, each with a default of its type", () => {

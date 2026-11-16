@@ -52,8 +52,9 @@ mentions, history and backups, and serves the web app.
 
 Version 0.1.0, the first public release, with sync and the server, is
 ready to [install](../install/). The fifth phase, the platform,
-is under way. The [roadmap](../roadmap/) lists what each phase
-delivers.
+is under way: the [plugin API](../plugins/) is done, and Nether's own
+diagrams, panels, canvas, graph and database layouts are built-in plugins
+on it. The [roadmap](../roadmap/) lists what each phase delivers.
 
 The full requirements, the architecture and the decision records live in
 the [repository](https://github.com/fzn0x/nether/tree/main/docs).

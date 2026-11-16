@@ -182,3 +182,36 @@ test("with the layouts plugin off, a board shows as a table, and keeps its layou
   await expect(database.getByRole("combobox", { name: "Columns" })).toHaveValue("Status");
   expect(errors).toEqual([]);
 });
+
+test("a property of a type no plugin here has edits as what it stores as, and keeps its type", async ({
+  page,
+}) => {
+  const errors = errorsOf(page);
+  const notes = await openSample(page);
+  await page.evaluate(() => {
+    const files = (
+      globalThis as unknown as {
+        netherPreview: { files: { edit(path: string, text: string): void } };
+      }
+    ).netherPreview.files;
+    files.edit(".nether/properties.json", '{"rating":{"type":"stars/rating","stores":"number"}}');
+    files.edit("Rated.md", "---\nrating: 4\n---\n\nA rated note.\n");
+  });
+  await notes.getByRole("button", { name: /^Rated/ }).click();
+  const properties = page.getByRole("region", { name: "Properties" });
+  // Its type is named as the vault has it, and its value is a number.
+  const type = properties.getByRole("combobox", { name: "Type of rating" });
+  await expect(type).toHaveValue("stars/rating");
+  await expect(type.locator("option:checked")).toHaveText("stars/rating");
+  const value = properties.getByRole("spinbutton", { name: "rating" });
+  await expect(value).toHaveValue("4");
+  await value.fill("5");
+  await value.press("Enter");
+  await expect.poll(() => fileText(page, "Rated.md")).toContain("rating: 5");
+  // The vault still says what the type is.
+  expect(JSON.parse((await fileText(page, ".nether/properties.json")) ?? "{}")).toEqual({
+    rating: { type: "stars/rating", stores: "number" },
+  });
+  expect(await violations(page)).toEqual([]);
+  expect(errors).toEqual([]);
+});

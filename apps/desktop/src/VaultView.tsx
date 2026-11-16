@@ -46,6 +46,7 @@ import { CodeBlockRegistry } from "./plugins/codeBlocks.ts";
 import { PanelRegistry, usePanels } from "./plugins/panels.ts";
 import { ViewRegistry, extensionOf, useViews } from "./plugins/views.ts";
 import { LayoutRegistry } from "./plugins/layouts.ts";
+import { PropertyTypeRegistry } from "./plugins/propertyTypes.ts";
 import { PaneViewOutput } from "./PaneViewOutput.tsx";
 import { SidebarPanel } from "./PanelOutput.tsx";
 import { PluginHost } from "./plugins/host.ts";
@@ -403,9 +404,11 @@ export function VaultView(props: {
   const [views] = useState(() => new ViewRegistry());
   // And their database layouts, beside the table.
   const [layouts] = useState(() => new LayoutRegistry());
+  // And their property types, each stored as one of the app's.
+  const [propertyTypes] = useState(() => new PropertyTypeRegistry());
   const plugins = useMemo(
-    () => ({ commands: registry, codeBlocks, blocks, panels, views, layouts }),
-    [registry, codeBlocks, blocks, panels, views, layouts],
+    () => ({ commands: registry, codeBlocks, blocks, panels, views, layouts, propertyTypes }),
+    [registry, codeBlocks, blocks, panels, views, layouts, propertyTypes],
   );
   const allViews = useViews(views);
   // Whether a plugin opens canvases, for New canvas.

@@ -57,7 +57,7 @@ reach your computer.
 | `api` | The versions of the plugin API it works with, as `^0.1` |
 | `description` | What it does, optional, a string or strings by language |
 | `author`, `authorUrl` | Who made it, optional |
-| `contributes` | What it adds: for now, `commands`, `codeBlocks`, `blocks`, `panels`, `views`, `layouts` and `settings` |
+| `contributes` | What it adds: `commands`, `codeBlocks`, `blocks`, `panels`, `views`, `layouts`, `propertyTypes` and `settings` |
 
 The app reads the manifest before the plugin's code runs. Its commands
 show in the menus and the palette at once, and its slash menu entries in
@@ -96,6 +96,7 @@ export default definePlugin({
 | `context.panels` | `register(id, view)`, which fills a panel the manifest declares |
 | `context.views` | `register(id, view)`, which draws a view the manifest declares, and `open(id)`, which opens a view of its own |
 | `context.layouts` | `register(id, view)`, which shows a database's rows in a layout the manifest declares |
+| `context.propertyTypes` | `register(id, view)`, which shows values of a property type the manifest declares |
 | `context.settings` | `values()`, the plugin's settings, and `onChange(listener)` |
 
 Every call to the app is async, and takes and returns plain JSON values,
@@ -359,6 +360,47 @@ await context.layouts.register("pins", {
 
 A view of a layout no plugin here shows keeps it, and its options, and
 shows its rows as a table until its plugin is on.
+
+## Property types
+
+A plugin can add property types. Each stores as one of the app's types:
+text, number, checkbox, date, URL or multi-select, which is what a note's
+frontmatter holds, so Obsidian and other tools read its values as they
+are.
+
+```json
+"contributes": {
+  "propertyTypes": [{ "id": "rating", "name": "Rating", "stores": "number" }]
+}
+```
+
+The type menus list it beside the app's types, and the vault writes it as
+`word-count/rating` with what it stores as: in `.nether/properties.json`
+as `{ "type": "word-count/rating", "stores": "number" }`, and in a
+database's schema as `type` and `stores`. Its plugin's view shows a value,
+in a note's properties and in a database's table:
+
+```js
+await context.propertyTypes.register("rating", {
+  mount(element, props, property) {
+    const stars = document.createElement("button");
+    const show = (value) => {
+      stars.textContent = "*".repeat(typeof value === "number" ? value : 0);
+    };
+    show(props.value);
+    stars.onclick = () => property.setValue(((props.value ?? 0) % 5) + 1);
+    element.append(stars);
+    return { update: (next) => show(next.value) };
+  },
+});
+```
+
+`props` holds the property's `key`, its `value`, whether it is `editable`
+here, and the page's `theme`. `property.setValue(value)` sets it; the app
+checks the value as the type it stores as before writing it. Without the
+plugin, a property of its type shows and edits as what it stores as, and
+keeps its type
+([ADR 0057](https://github.com/fzn0x/nether/blob/main/docs/adr/0057-a-plugins-property-type-stores-as-one-of-the-apps-which-shows-without-it.md)).
 
 ## Settings
 

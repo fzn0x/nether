@@ -3,6 +3,7 @@ import {
   type JsonValue,
   type PropertyType,
   checkPropertyValue,
+  isPluginPropertyType,
   isPropertyKey,
 } from "../src/index.ts";
 import { readPropertyDefinition, readPropertyEntries } from "../src/properties.ts";
@@ -89,6 +90,27 @@ describe("property definitions", () => {
       type: "relation",
       relation,
     });
+  });
+
+  it("read a plugin's type as the app's type it stores as, naming the plugin's", () => {
+    expect(
+      readPropertyDefinition({ key: "rating", type: "stars/rating", stores: "number" }, "p"),
+    ).toEqual({ key: "rating", type: "number", plugin: "stars/rating" });
+    expect(
+      ["stars/rating", "a-b/c2", "text", "Stars/x", "a/b/c"].map(isPluginPropertyType),
+    ).toEqual([true, true, false, false, false]);
+  });
+
+  it.each([
+    [{ key: "x", type: "stars/rating" }, "p.stores is needed by a plugin's type"],
+    [{ key: "x", type: "stars/rating", stores: "select" }, "p.stores must be one of"],
+    [
+      { key: "x", type: "stars/rating", stores: "text", options: [] },
+      "p.options is not for a plugin's type",
+    ],
+    [{ key: "x", type: "text", stores: "text" }, "p.stores is only for a plugin's type"],
+  ])("refuse a plugin's type %j", (definition, message) => {
+    expect(() => readPropertyDefinition(definition, "p")).toThrow(message);
   });
 
   it.each([

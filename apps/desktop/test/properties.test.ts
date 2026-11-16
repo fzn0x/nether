@@ -8,6 +8,8 @@ import {
   isListType,
   moveProperty,
   newPropertyKey,
+  pluginTypeOf,
+  readPropertyTypes,
   typeOf,
 } from "../src/properties.ts";
 
@@ -80,5 +82,28 @@ describe("moveProperty", () => {
     expect(keys(moveProperty(entries, "x", "a", "before"))).toEqual(["a", "b", "c", "d"]);
     expect(keys(moveProperty(entries, "a", "x", "before"))).toEqual(["a", "b", "c", "d"]);
     expect(keys(moveProperty(entries, "b", "b", "after"))).toEqual(["a", "b", "c", "d"]);
+  });
+});
+
+describe("the vault's chosen types", () => {
+  const types = readPropertyTypes({
+    due: "date",
+    rating: { type: "stars/rating", stores: "number" },
+    odd: "chart",
+    broken: { type: "stars/rating", stores: "select" },
+    loose: { type: "Not a plugin", stores: "text" },
+  });
+
+  it("keep the app's types and plugins' with what they store as, and nothing else", () => {
+    expect(types).toEqual({ due: "date", rating: { type: "stars/rating", stores: "number" } });
+    expect(readPropertyTypes(null)).toEqual({});
+  });
+
+  it("give a plugin's type as the app's type it stores as, and name it apart", () => {
+    expect(typeOf("rating", 4, types)).toBe("number");
+    expect(typeOf("due", "x", types)).toBe("date");
+    expect(typeOf("other", true, types)).toBe("checkbox");
+    expect(pluginTypeOf("rating", types)).toEqual({ type: "stars/rating", stores: "number" });
+    expect(pluginTypeOf("due", types)).toBeUndefined();
   });
 });

@@ -30,8 +30,9 @@ Notion exports. Self-hosting is available for enterprise.
 > ([how to install it](https://fzn0x.github.io/nether/install/)) and the
 > server's image, `ghcr.io/fzn0x/nether-server`
 > ([how to run it](https://fzn0x.github.io/nether/self-hosting/)). Phase 4,
-> the platform, is under way, and the
-> [roadmap](docs/roadmap.md#phase-4-platform) ticks it off as it lands.
+> the platform, is under way: the plugin API is done, with Nether's own
+> diagrams, panels, canvas, graph and database layouts built on it, and the
+> [roadmap](docs/roadmap.md#phase-4-platform) ticks off the rest as it lands.
 
 [Documentation](https://fzn0x.github.io/nether/) ·
 [Roadmap](docs/roadmap.md) · [Requirements](docs/requirements.md) ·
@@ -65,7 +66,7 @@ Notion exports. Self-hosting is available for enterprise.
 | 1. Local-first notes | The desktop app: a vault on disk, the block and Markdown editor, links and backlinks, tags, search, templates, export | ✅ |
 | 2. Databases and structure | Databases with six views, relations, rollups, formulas, synced blocks, the graph view, importers from Obsidian and Notion | ✅ |
 | 3. Sync and collaboration | The first public release: the server, end-to-end encrypted sync, co-editing, comments, permissions, the web app, the canvas, backups | ✅ |
-| 4. Platform | Plugins in a sandbox, bring-your-own AI, publishing, the REST API, the web clipper, automations | 🚧 1 of 11 |
+| 4. Platform | Plugins in a sandbox, bring-your-own AI, publishing, the REST API, the web clipper, automations | 🚧 2 of 11 |
 | 5. Enterprise, mobile and scale | Single sign-on, SCIM, audit logs, data policies, high availability, the Helm chart, mobile apps | ❌ |
 
 Each phase ends with a gate it must pass before the next one starts; the

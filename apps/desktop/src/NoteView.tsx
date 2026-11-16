@@ -361,6 +361,7 @@ export default function NoteView(props: {
                 document={state.document}
                 vault={vault}
                 graph={graph}
+                propertyTypes={plugins.propertyTypes}
               />
             ) : (
               <p className="notice" role="status">
@@ -393,6 +394,7 @@ export default function NoteView(props: {
               document={state.document}
               path={note.path}
               layouts={plugins.layouts}
+              propertyTypes={plugins.propertyTypes}
               onOpenNote={(row) => {
                 onOpenNote(row);
               }}

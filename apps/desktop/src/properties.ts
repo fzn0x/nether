@@ -1,7 +1,17 @@
 // A note's properties as the app shows and edits them: each one's type,
 // the vault's choice for its key or else what its value looks like, as
-// Obsidian reads them, and values carried over when a type changes.
-import { type JsonValue, type PropertyType, propertyTypes } from "@nether/core";
+// Obsidian reads them, and values carried over when a type changes. A
+// plugin's type for a key is kept with the app's type it stores as, which
+// is how it shows without the plugin (ADR 0057).
+import {
+  type JsonValue,
+  type PluginPropertyType,
+  type PropertyType,
+  type StoredType,
+  isPluginPropertyType,
+  propertyTypes,
+  storedTypes,
+} from "@nether/core";
 
 /** The types the app edits, in the order its menu lists them. */
 export const editableTypes: readonly PropertyType[] = [
@@ -17,8 +27,14 @@ export const editableTypes: readonly PropertyType[] = [
   "file",
 ];
 
+/** A plugin's type chosen for a key, with the app's type it stores as. */
+export interface PluginTypeChoice {
+  readonly type: PluginPropertyType;
+  readonly stores: StoredType;
+}
+
 /** The vault's chosen type for each property key, kept in `.nether/properties.json`. */
-export type PropertyTypes = Readonly<Record<string, PropertyType>>;
+export type PropertyTypes = Readonly<Record<string, PropertyType | PluginTypeChoice>>;
 
 const isoDate = /^\d{4}-\d{2}-\d{2}(?:[T ][\d:.]+(?:Z|[+-]\d{2}:?\d{2})?)?$/;
 
@@ -40,9 +56,20 @@ export function inferType(value: JsonValue): PropertyType {
   return "text";
 }
 
-/** A property's type: the vault's choice for its key, or else what its value looks like. */
+/**
+ * A property's type: the vault's choice for its key, or else what its value
+ * looks like. For a plugin's type, the app's type it stores as.
+ */
 export function typeOf(key: string, value: JsonValue, types: PropertyTypes): PropertyType {
-  return types[key] ?? inferType(value);
+  const chosen = types[key];
+  if (chosen === undefined) return inferType(value);
+  return typeof chosen === "string" ? chosen : chosen.stores;
+}
+
+/** The plugin's type the vault chose for a key, if it chose one. */
+export function pluginTypeOf(key: string, types: PropertyTypes): PluginTypeChoice | undefined {
+  const chosen = types[key];
+  return typeof chosen === "object" ? chosen : undefined;
 }
 
 function asText(value: JsonValue): string {
@@ -110,12 +137,30 @@ export function newPropertyKey(taken: readonly string[]): string {
   return `property ${String(n)}`;
 }
 
-/** The vault's chosen types, from `.nether/properties.json`, kept only where they are types. */
+/** A plugin's type as `.nether/properties.json` writes it, if it is one. */
+function readPluginChoice(value: unknown): PluginTypeChoice | undefined {
+  if (typeof value !== "object" || value === null) return undefined;
+  const { type, stores } = value as { readonly type?: unknown; readonly stores?: unknown };
+  return typeof type === "string" &&
+    isPluginPropertyType(type) &&
+    (storedTypes as readonly unknown[]).includes(stores)
+    ? { type, stores: stores as StoredType }
+    : undefined;
+}
+
+/**
+ * The vault's chosen types, from `.nether/properties.json`, kept only where
+ * they are the app's types, or a plugin's with the app's type it stores as.
+ */
 export function readPropertyTypes(data: unknown): PropertyTypes {
   if (typeof data !== "object" || data === null) return {};
   return Object.fromEntries(
-    Object.entries(data).filter((entry): entry is [string, PropertyType] =>
-      (propertyTypes as readonly unknown[]).includes(entry[1]),
-    ),
+    Object.entries(data).flatMap(([key, value]): [string, PropertyType | PluginTypeChoice][] => {
+      if ((propertyTypes as readonly unknown[]).includes(value)) {
+        return [[key, value as PropertyType]];
+      }
+      const plugin = readPluginChoice(value);
+      return plugin === undefined ? [] : [[key, plugin]];
+    }),
   );
 }

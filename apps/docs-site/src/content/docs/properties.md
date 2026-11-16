@@ -53,6 +53,12 @@ A name with no type chosen takes the type its value looks like: `true` is a
 checkbox, `2026-11-06` a date, `https://...` a URL, `[[Note]]` a relation,
 and a list a multi-select.
 
+Plugins can add types of their own, which the menu lists after the app's
+([Writing plugins](../plugins/)). Each keeps its values as one of the
+app's types, a rating as a number, so the frontmatter reads as it always
+does. On a device without the plugin, the menu names the plugin's type,
+and the value edits as what it stores as.
+
 ## Your frontmatter stays as you wrote it
 
 Nether writes only the properties you changed. The rest of the frontmatter
