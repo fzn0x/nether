@@ -29,7 +29,9 @@ Then `[[Plan` suggests the note, and the link written is
 
 A link to a heading, `[[Roadmap#Next steps]]`, opens the note at that
 heading. A link to a block, `[[Roadmap#^b1]]`, opens it at the block whose
-file writes `^b1` after it, as Obsidian writes block IDs.
+file writes `^b1` after it, as Obsidian writes block IDs. A link to a PDF's
+highlight opens the PDF at it instead, and a link to a page or a passage of
+a PDF opens the PDF there: see [PDFs](../pdfs/).
 
 To link to a block, type `#^` after the note's name, as in `[[Roadmap#^`,
 then words from the block: Nether lists the note's blocks that have them.

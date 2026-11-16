@@ -14,3 +14,7 @@ overrides:
   # Mermaid's ELK layout is under the EPL-2.0, which the AGPL does not allow:
   # a stand-in takes its place (ADR 0009).
   elkjs: link:./tools/stubs/elkjs
+
+# pdf.js draws in Node with this native canvas; the app draws in the page.
+ignoredOptionalDependencies:
+  - "@napi-rs/canvas"

@@ -22,7 +22,7 @@ export type TreeNode =
       readonly children: readonly TreeNode[];
     }
   | {
-      /** A file that opens in a tab, as a canvas. */
+      /** A file that opens in a tab, as a canvas or a PDF. */
       readonly kind: "file";
       readonly key: string;
       readonly path: string;
@@ -95,7 +95,7 @@ function folderChildren(folder: Building): TreeNode[] {
         kind: "file",
         key: fileKey(path),
         path,
-        name: path.slice(path.lastIndexOf("/") + 1).replace(/\.canvas$/i, ""),
+        name: path.slice(path.lastIndexOf("/") + 1).replace(/\.[^.]+$/, ""),
         children: [],
       })),
     )

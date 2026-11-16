@@ -106,7 +106,7 @@ import { useTemplateSettings } from "./useTemplateSettings.ts";
 import { useSync } from "./useSync.ts";
 import { usePeople, useNotifications } from "./useNotifications.ts";
 import { queueMention } from "./notify.ts";
-import { useCanvasFiles, useFolders, useNotes, useVault } from "./useVault.ts";
+import { useFolders, useNotes, useVault, useViewFiles } from "./useVault.ts";
 
 /** What the app's own commands do as the latest render has it. */
 interface CommandState {
@@ -286,6 +286,8 @@ const assignedPanel = "assigned:assigned";
 interface PaneAsks {
   readonly mode: NoteMode;
   readonly focus?: (NotePart & { readonly key: number }) | undefined;
+  /** Where in a file a link asked to go, as `page=3` in a PDF. */
+  readonly at?: { readonly part: string; readonly key: number } | undefined;
   readonly source: number;
   readonly rename: number;
   readonly comment: number;
@@ -311,7 +313,6 @@ export function VaultView(props: {
   const graph = state.status === "open" ? state.indexer.graph : undefined;
   const notes = useNotes(vault);
   const folders = useFolders(vault);
-  const canvases = useCanvasFiles(vault);
   const [sidebarWidth, setSidebarWidth] = useSidebarWidth();
   const bookmarks = useBookmarks(vault);
   // Where notes are open: tabs in one pane or two (ADR 0046). Commands
@@ -348,6 +349,11 @@ export function VaultView(props: {
       backend.settle();
     })();
   }, [indexer]);
+  /** Resolves once the links are loaded, starting them now if they have not started. */
+  const linksLoaded = useCallback(async () => {
+    loadLinks();
+    await indexer?.idle();
+  }, [loadLinks, indexer]);
   useEffect(() => {
     // Should the note never show.
     const timer = setTimeout(loadLinks, 3000);
@@ -415,6 +421,13 @@ export function VaultView(props: {
   const allViews = useViews(views);
   // Whether a plugin opens canvases, for New canvas.
   const canvasOpens = allViews.some((view) => view.extensions.includes("canvas"));
+  // The files that open in a tab, beside the notes: those plugins open, as
+  // PDFs, and canvases, which showed there before a plugin opened them.
+  const viewExtensions = useMemo(
+    () => [...new Set(["canvas", ...allViews.flatMap((view) => view.extensions)])].sort(),
+    [allViews],
+  );
+  const viewFiles = useViewFiles(vault, viewExtensions);
   const sidebarPanels = usePanels(panels, "sidebar");
   const commands = useSyncExternalStore(
     useCallback((listener: () => void) => registry.subscribe(listener), [registry]),
@@ -556,20 +569,36 @@ export function VaultView(props: {
     [changeLayout, ask],
   );
 
-  /** Opens a canvas, by its path, in the focused pane, a new tab or the pane to the right. */
+  /**
+   * Opens a file, as a canvas or a PDF, by its path, in the focused pane, a
+   * new tab or the pane to the right; at a place in it, as a link's `page=3`.
+   */
   const openFile = useCallback(
-    (path: string, where: "here" | "tab" | "right" = "here") => {
+    (path: string, where: "here" | "tab" | "right" = "here", part?: string) => {
       setPaneView(undefined);
       const tab = fileTab(path);
-      changeLayout((current) =>
+      const next = changeLayout((current) =>
         where === "tab"
           ? openInNewTab(current, tab)
           : where === "right"
             ? openToTheRight(current, tab)
             : openHere(current, tab),
       );
+      const key = next.panes[next.focused]?.key ?? 0;
+      const at = part === undefined ? undefined : { part, key: Date.now() };
+      ask(key, (current) => ({ ...current, at }));
     },
-    [changeLayout],
+    [changeLayout, ask],
+  );
+
+  /** Opens a file a link names, at the place the link names, when a plugin's view opens it. */
+  const openLinkedFile = useCallback(
+    (path: string, part?: string): boolean => {
+      if (views.forFile(path) === undefined) return false;
+      openFile(path, "here", part);
+      return true;
+    },
+    [views, openFile],
   );
 
   const showTag = useCallback((name: string) => {
@@ -1846,7 +1875,7 @@ export function VaultView(props: {
                     onNewIn={newNoteIn}
                     onMenu={openMenu}
                     folders={folders}
-                    files={canvases}
+                    files={viewFiles}
                     onOpenFile={(path, newTab) => {
                       openFile(path, newTab ? "tab" : "here");
                     }}
@@ -2299,6 +2328,8 @@ export function VaultView(props: {
                               graph: state.indexer.graph,
                               media: state.media,
                               path: file,
+                              at: paneAsks.at,
+                              linksLoaded,
                               openNote,
                               close: () => undefined,
                             }}
@@ -2318,6 +2349,7 @@ export function VaultView(props: {
                           titleId={index === 0 ? "note-title" : "note-title-right"}
                           focus={paneAsks.focus}
                           onOpenNote={openNote}
+                          onOpenFile={openLinkedFile}
                           onOpenTag={showTag}
                           mode={paneAsks.mode}
                           onMode={(next) => {

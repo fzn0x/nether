@@ -4,6 +4,7 @@
 // workspace, and its content security policy kept throughout.
 import AxeBuilder from "@axe-core/playwright";
 import { type BrowserContext, type Page, expect, test } from "@playwright/test";
+import { reading } from "../../desktop/e2e/pdfs.ts";
 
 const control = "http://127.0.0.1:4176";
 
@@ -344,5 +345,55 @@ test("a plugin's frame starts under the server's policies", async ({ page }) => 
   const problems = problemsOf(page);
   await page.goto("/");
   expect(await startFrame(page)).toContain('"hello"');
+  expect(problems).toEqual([]);
+});
+
+// PDFs (ADR 0061): a PDF kept in the browser opens through pdf.js and its
+// worker, under the server's policy, and a highlight goes in a note there.
+test("a PDF pasted into a note opens, and is highlighted, under the server's policies", async ({
+  page,
+}) => {
+  const problems = problemsOf(page);
+  const ada = await person("Reader");
+  await signIn(page, ada);
+  await openTeam(page);
+  await newNote(page, "Reading list", "To read: ");
+  await page.getByRole("textbox", { name: "Reading list, note text" }).evaluate((editor, text) => {
+    const data = new DataTransfer();
+    const bytes = Uint8Array.from(text, (char) => char.charCodeAt(0));
+    data.items.add(new File([bytes], "Reading.pdf", { type: "application/pdf" }));
+    editor.dispatchEvent(
+      new ClipboardEvent("paste", { clipboardData: data, bubbles: true, cancelable: true }),
+    );
+  }, reading);
+  await expect.poll(() => fileText(page, "attachments/Reading.pdf")).toContain("%PDF-1.4");
+
+  const tree = page.getByRole("tree", { name: "Notes" });
+  await tree.getByRole("treeitem", { name: "attachments" }).click();
+  await tree.getByRole("treeitem", { name: /^Reading\s*pdf$/ }).click();
+  await expect(
+    page.getByRole("group", { name: "Page 1 of 2" }).locator(".textLayer"),
+  ).toContainText("linkable blocks");
+  await page.getByRole("region", { name: "Reading: pages" }).focus();
+  await page.keyboard.press("Control+F");
+  await page.getByRole("searchbox", { name: "Words to find" }).fill("linkable blocks");
+  await page.keyboard.press("Enter");
+  await page.keyboard.press("Control+Shift+H");
+  await expect
+    .poll(() => fileText(page, "attachments/Reading highlights.md"))
+    .toContain("[[Reading.pdf#page=1&selection=2,18,2,33|Reading, page 1]]\n> linkable blocks\n");
+  expect(await violations(page)).toEqual([]);
+
+  // Offline, pdf.js, its worker and what it fetches come from the service worker.
+  await page.evaluate(async () => navigator.serviceWorker.ready);
+  await page.context().setOffline(true);
+  await page.reload();
+  await page.getByRole("button", { name: /^Team/ }).click();
+  // The PDF's tab is open again, as the vault was left.
+  await expect(page.getByRole("tab", { name: "Reading" })).toHaveAttribute("aria-selected", "true");
+  await expect(
+    page.getByRole("group", { name: "Page 1 of 2" }).locator(".pdf-mark-highlight").first(),
+  ).toBeVisible();
+  await page.context().setOffline(false);
   expect(problems).toEqual([]);
 });
