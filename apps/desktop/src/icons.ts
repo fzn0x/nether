@@ -93,6 +93,7 @@ export const commandIcons: Readonly<Record<CommandId, LucideIcon>> = {
   openGraph: Network,
   templateSettings: ScrollText,
   appearance: Palette,
+  plugins: Puzzle,
   servers: Server,
   sync: RefreshCw,
   members: Users,

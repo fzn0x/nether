@@ -13,7 +13,9 @@ Every command is also in the menus at the top of the sidebar: **File**
 bookmark, source, history, comment, trash), **View** (the palette, search,
 the graph, the sidebar's panels, tabs), **Sync** (servers, sync, members,
 spaces, sharing, notifications) and **Settings** (templates, appearance,
-shortcuts, updates). A plugin's commands come after a menu's own, or in a
+shortcuts, plugins, updates). Templates, appearance, shortcuts and plugins
+are tabs of one settings dialog: each opens it at its tab, and Up and Down
+move between the tabs. A plugin's commands come after a menu's own, or in a
 **Plugins** menu at the end ([Writing plugins](../plugins/)). Each item
 shows its shortcut; those about a note are
 greyed out until one is open.
@@ -56,8 +58,9 @@ caret is in, and Ctrl+Shift+↑ and Ctrl+Shift+↓ move it.
 
 ## Changing a shortcut
 
-Run **Keyboard shortcuts** from the command palette. Each command is
-listed with its shortcut:
+Run **Keyboard shortcuts** from the command palette, which opens the
+Keyboard shortcuts tab of the vault's settings. Each command is listed
+with its shortcut:
 
 - Click **Change**, then press the keys you want. Escape stops listening;
   Backspace leaves the command with no shortcut.

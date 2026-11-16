@@ -3,7 +3,8 @@
 // made blank or from a template, and today's, this week's and this month's
 // notes open, made the first time from theirs.
 import type { NoteId, Period } from "@nether/core";
-import type { NoteEntry } from "@nether/storage";
+import type { NoteEntry, Vault } from "@nether/storage";
+import { localize } from "@nether/plugin-api";
 import {
   type CSSProperties,
   Suspense,
@@ -45,6 +46,7 @@ import { CodeBlockRegistry } from "./plugins/codeBlocks.ts";
 import { PanelRegistry, usePanels } from "./plugins/panels.ts";
 import { SidebarPanel } from "./PanelOutput.tsx";
 import { PluginHost } from "./plugins/host.ts";
+import { isOn, readBuiltins, usePluginState } from "./plugins/state.ts";
 import { type Command, CommandRegistry } from "./plugins/registry.ts";
 import { ExportDialog } from "./ExportDialog.tsx";
 import { MergeNoteDialog } from "./MergeNoteDialog.tsx";
@@ -79,9 +81,12 @@ import {
   shownIn,
 } from "./tabs.ts";
 import { SearchPanel } from "./SearchPanel.tsx";
-import { ShortcutsDialog } from "./ShortcutsDialog.tsx";
+import { ShortcutsSettings } from "./ShortcutsSettings.tsx";
 import { ariaKeys, commandFor, eventKeys } from "./shortcuts.ts";
-import { TemplateSettingsDialog } from "./TemplateSettingsDialog.tsx";
+import { TemplateSettings } from "./TemplateSettings.tsx";
+import { SettingsDialog, type SettingsTab } from "./SettingsDialog.tsx";
+import { PluginsSettings } from "./PluginsSettings.tsx";
+import { PluginSettings } from "./PluginSettings.tsx";
 
 import { useAppearance } from "./useAppearance.ts";
 import { useBookmarks } from "./useBookmarks.ts";
@@ -178,8 +183,8 @@ const GraphView = lazy(() => import("./GraphView.tsx"));
 const ImportDialog = lazy(() =>
   import("./ImportDialog.tsx").then(({ ImportDialog: dialog }) => ({ default: dialog })),
 );
-const AppearanceDialog = lazy(() =>
-  import("./AppearanceDialog.tsx").then(({ AppearanceDialog: dialog }) => ({ default: dialog })),
+const AppearanceSettings = lazy(() =>
+  import("./AppearanceSettings.tsx").then(({ AppearanceSettings: tab }) => ({ default: tab })),
 );
 const ServersDialog = lazy(() =>
   import("./ServersDialog.tsx").then(({ ServersDialog: dialog }) => ({ default: dialog })),
@@ -257,6 +262,9 @@ function IndexStatus(props: { readonly indexer: Indexer }) {
     </p>
   );
 }
+
+/** The built-in plugins, their manifests read once. */
+const builtins = readBuiltins(builtinPlugins);
 
 /** The built-in plugins' panels that the app's commands Tags and Assigned show. */
 const tagsPanel = "tags:tags";
@@ -357,7 +365,6 @@ export function VaultView(props: {
   const [dialog, setDialog] = useState<
     | "newNote"
     | "settings"
-    | "appearance"
     | "servers"
     | "sync"
     | "members"
@@ -368,9 +375,10 @@ export function VaultView(props: {
     | "export"
     | "import"
     | "palette"
-    | "shortcuts"
     | undefined
   >();
+  // The settings' tab chosen, which each settings command opens at its own.
+  const [settingsTab, setSettingsTab] = useState("templates");
   // A note's menu, open at a point, and the dialog one of its items opened for a note.
   const [menu, setMenu] = useState<{ readonly id: NoteId; readonly at: MenuPoint } | undefined>();
   const [noteDialog, setNoteDialog] = useState<
@@ -435,24 +443,40 @@ export function VaultView(props: {
       }
     | undefined
   >();
-  // The built-in plugins, whose commands show at once and whose code loads
-  // when one is first chosen; what goes wrong with one shows as a notice.
-  useEffect(() => {
-    const host = new PluginHost(plugins, {
-      language,
-      direction: directionOf(language),
-      onError: (plugin, message) => {
-        setNotice({ text: t("pluginFailed", { plugin, message }) });
-      },
-    });
-    for (const builtin of builtinPlugins) {
-      const problems = host.add(builtin);
-      if (problems.length > 0) setNotice({ text: problems.join(" ") });
-    }
-    return () => {
+  // The built-in plugins, those the vault has on, whose contributions show
+  // at once and whose code loads when one is first used; what goes wrong
+  // with one shows as a notice.
+  const [host] = useState(
+    () =>
+      new PluginHost(plugins, {
+        language,
+        direction: directionOf(language),
+        onError: (plugin, message) => {
+          setNotice({ text: t("pluginFailed", { plugin, message }) });
+        },
+      }),
+  );
+  const pluginState = usePluginState(vault, builtins);
+  useEffect(
+    () => () => {
       host.close();
-    };
-  }, [plugins]);
+    },
+    [host],
+  );
+  useEffect(() => {
+    const { state: loaded } = pluginState;
+    if (loaded === undefined) return;
+    const added = new Set(host.ids());
+    for (const { plugin, manifest } of builtins) {
+      host.setSettings(manifest.id, loaded.settings[manifest.id]);
+      if (!isOn(loaded, manifest.id)) {
+        host.remove(manifest.id);
+      } else if (!added.has(manifest.id)) {
+        const problems = host.add(plugin);
+        if (problems.length > 0) setNotice({ text: problems.join(" ") });
+      }
+    }
+  }, [host, pluginState]);
   const { settings, save } = useTemplateSettings(vault);
   const version = useGraph(graph);
 
@@ -1044,6 +1068,10 @@ export function VaultView(props: {
       setTag(undefined);
       setPanel(name);
     };
+    const openSettings = (tab: string) => () => {
+      setSettingsTab(tab);
+      setDialog("settings");
+    };
     /** Shows a plugin's panel, when the plugin is there. */
     const showPanel = (id: string) =>
       open && sidebarPanels.some((each) => each.id === id) ? show(id) : undefined;
@@ -1206,16 +1234,8 @@ export function VaultView(props: {
             setGraphShown(true);
           }
         : undefined,
-      templateSettings: open
-        ? () => {
-            setDialog("settings");
-          }
-        : undefined,
-      appearance: open
-        ? () => {
-            setDialog("appearance");
-          }
-        : undefined,
+      templateSettings: open ? openSettings("templates") : undefined,
+      appearance: open ? openSettings("appearance") : undefined,
       servers: () => {
         setDialog("servers");
       },
@@ -1249,11 +1269,8 @@ export function VaultView(props: {
               setDialog("notifications");
             }
           : undefined,
-      shortcuts: open
-        ? () => {
-            setDialog("shortcuts");
-          }
-        : undefined,
+      shortcuts: open ? openSettings("shortcuts") : undefined,
+      plugins: open ? openSettings("plugins") : undefined,
       checkUpdates: updates.available
         ? () => {
             void backend.checkForUpdates();
@@ -1289,6 +1306,86 @@ export function VaultView(props: {
     openNote,
     sidebarPanels,
   ]);
+
+  const closeDialog = () => {
+    setDialog(undefined);
+  };
+  /** The settings' tabs: the app's own, Plugins, then each plugin's on that has settings. */
+  const settingsTabs = (open: Vault): SettingsTab[] => [
+    {
+      id: "templates",
+      name: t("templates"),
+      render: () => (
+        <TemplateSettings
+          settings={settings}
+          templates={templateChoices(notes, settings.folder, "").map((note) =>
+            note.path.replace(/\.md$/i, ""),
+          )}
+          onSave={save}
+          onClose={closeDialog}
+        />
+      ),
+    },
+    {
+      id: "appearance",
+      name: t("appearance"),
+      render: () => (
+        <Suspense fallback={null}>
+          <AppearanceSettings vault={open} state={appearance} onClose={closeDialog} />
+        </Suspense>
+      ),
+    },
+    {
+      id: "shortcuts",
+      name: t("shortcuts"),
+      render: () => (
+        <ShortcutsSettings
+          commands={commands.map((command) => ({ id: command.id, name: command.name() }))}
+          defaults={registry.defaults()}
+          chosen={chosenHotkeys}
+          onListening={setListening}
+          onSave={saveHotkeys}
+          onClose={closeDialog}
+        />
+      ),
+    },
+    ...(pluginState.state === undefined
+      ? []
+      : (() => {
+          const loaded = pluginState.state;
+          return [
+            {
+              id: "plugins",
+              name: t("pluginsTab"),
+              render: () => (
+                <PluginsSettings
+                  plugins={builtins.map((each) => each.manifest)}
+                  on={(id) => isOn(loaded, id)}
+                  onSave={pluginState.saveOn}
+                  onClose={closeDialog}
+                />
+              ),
+            },
+            ...builtins
+              .filter(
+                ({ manifest }) =>
+                  manifest.contributes.settings.length > 0 && isOn(loaded, manifest.id),
+              )
+              .map(({ manifest }) => ({
+                id: `plugin:${manifest.id}`,
+                name: localize(manifest.name, language),
+                render: () => (
+                  <PluginSettings
+                    manifest={manifest}
+                    stored={loaded.settings[manifest.id]}
+                    onSave={(values) => pluginState.saveSettings(manifest.id, values)}
+                    onClose={closeDialog}
+                  />
+                ),
+              })),
+          ];
+        })()),
+  ];
 
   // The plugin's panel the sidebar shows, if it shows one.
   const shownPanel = sidebarPanels.find((each) => each.id === panel);
@@ -1774,17 +1871,6 @@ export function VaultView(props: {
           />
         </Suspense>
       ) : null}
-      {dialog === "appearance" && state.status === "open" ? (
-        <Suspense fallback={null}>
-          <AppearanceDialog
-            vault={state.vault}
-            state={appearance}
-            onClose={() => {
-              setDialog(undefined);
-            }}
-          />
-        </Suspense>
-      ) : null}
       {dialog === "sync" && state.status === "open" ? (
         <Suspense fallback={null}>
           <SyncDialog
@@ -1883,15 +1969,11 @@ export function VaultView(props: {
         </Suspense>
       ) : null}
       {dialog === "settings" && state.status === "open" ? (
-        <TemplateSettingsDialog
-          settings={settings}
-          templates={templateChoices(notes, settings.folder, "").map((note) =>
-            note.path.replace(/\.md$/i, ""),
-          )}
-          onSave={save}
-          onClose={() => {
-            setDialog(undefined);
-          }}
+        <SettingsDialog
+          tabs={settingsTabs(state.vault)}
+          tab={settingsTab}
+          onTab={setSettingsTab}
+          onClose={closeDialog}
         />
       ) : null}
       {fileMenu === undefined || state.status !== "open" ? null : (
@@ -2057,18 +2139,6 @@ export function VaultView(props: {
           onRun={(id) => {
             registry.get(id)?.run();
           }}
-          onClose={() => {
-            setDialog(undefined);
-          }}
-        />
-      ) : null}
-      {dialog === "shortcuts" ? (
-        <ShortcutsDialog
-          commands={commands.map((command) => ({ id: command.id, name: command.name() }))}
-          defaults={registry.defaults()}
-          chosen={chosenHotkeys}
-          onListening={setListening}
-          onSave={saveHotkeys}
           onClose={() => {
             setDialog(undefined);
           }}

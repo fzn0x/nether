@@ -6,7 +6,13 @@ import { apiVersion } from "../src/version.ts";
 
 /** The app's end, answering as the app would, and recording what it was told. */
 function fakeApp(
-  hello: Json = { id: "word-count", api: apiVersion, language: "fr", direction: "ltr" },
+  hello: Json = {
+    id: "word-count",
+    api: apiVersion,
+    language: "fr",
+    direction: "ltr",
+    settings: { goal: 500 },
+  },
 ) {
   const [appSide, pluginSide] = pagePair();
   const app = new Endpoint(appSide);
@@ -258,6 +264,34 @@ describe("startPlugin", () => {
     app.close();
   });
 
+  it("starts with the settings the app gives, and hears when they change", async () => {
+    const { app, pluginSide } = fakeApp();
+    const heard: unknown[] = [];
+    let settings: { values(): unknown } | undefined;
+    let stop: (() => Promise<void>) | undefined;
+    const endpoint = await startPlugin(
+      definePlugin({
+        activate(context) {
+          settings = context.settings;
+          const first = context.settings.onChange((values) => heard.push(values));
+          stop = () => first.dispose();
+          context.settings.onChange((values) => heard.push(`again ${JSON.stringify(values)}`));
+        },
+      }),
+      pluginSide,
+    );
+    expect(settings?.values()).toEqual({ goal: 500 });
+    await app.call("settings.changed", { goal: 750 });
+    expect(settings?.values()).toEqual({ goal: 750 });
+    expect(heard).toEqual([{ goal: 750 }, 'again {"goal":750}']);
+    await stop?.();
+    await app.call("settings.changed", { goal: 1000 });
+    expect(heard).toEqual([{ goal: 750 }, 'again {"goal":750}', 'again {"goal":1000}']);
+    await expect(app.call("settings.changed", [1])).rejects.toThrow("Settings are a JSON object.");
+    endpoint.close();
+    app.close();
+  });
+
   it("passes on the app's refusal of a command its manifest does not declare", async () => {
     const { app, pluginSide } = fakeApp();
     await expect(
@@ -274,12 +308,24 @@ describe("startPlugin", () => {
   });
 
   it("stops when the app speaks another version of the API, or gives no answer it can read", async () => {
-    const other = fakeApp({ id: "a", api: "9.0.0", language: "en", direction: "ltr" });
+    const other = fakeApp({
+      id: "a",
+      api: "9.0.0",
+      language: "en",
+      direction: "ltr",
+      settings: {},
+    });
     await expect(
       startPlugin(definePlugin({ activate: () => undefined }), other.pluginSide),
     ).rejects.toThrow(`The plugin was built for API ${apiVersion}, and the app speaks 9.0.0.`);
     other.app.close();
-    const garbled = fakeApp({ id: "a", api: apiVersion, language: "en", direction: "up" });
+    const garbled = fakeApp({
+      id: "a",
+      api: apiVersion,
+      language: "en",
+      direction: "up",
+      settings: {},
+    });
     await expect(
       startPlugin(definePlugin({ activate: () => undefined }), garbled.pluginSide),
     ).rejects.toThrow("The app did not say who the plugin is.");

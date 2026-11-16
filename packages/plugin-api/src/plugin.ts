@@ -2,7 +2,7 @@
 // (ADR 0055). Every call crosses to the app as a message, so each is
 // async, each value is JSON, and a function the app will call is sent as
 // a number.
-import type { Json, JsonObject } from "./json.ts";
+import { type Json, type JsonObject, isJsonObject } from "./json.ts";
 import { Endpoint, type Transport } from "./protocol.ts";
 import { apiVersion, satisfies } from "./version.ts";
 
@@ -121,6 +121,14 @@ export interface PluginSurface {
   element(slot: string): HTMLElement | undefined;
 }
 
+/** A plugin's settings, as its manifest's fields declare them and the app's settings change them. */
+export interface Settings {
+  /** Each field's value, by its ID: the same object until they change. */
+  values(): JsonObject;
+  /** Calls `listener` with the new values when they change in the app's settings. */
+  onChange(listener: (values: JsonObject) => void): Disposable;
+}
+
 /** What a plugin is given when it starts. */
 export interface PluginContext {
   /** The plugin's ID, from its manifest. */
@@ -135,6 +143,7 @@ export interface PluginContext {
   readonly codeBlocks: CodeBlocks;
   readonly blocks: Blocks;
   readonly panels: Panels;
+  readonly settings: Settings;
 }
 
 /** A plugin, as its module's default export is. */
@@ -163,6 +172,8 @@ export interface Hello {
   readonly api: string;
   readonly language: string;
   readonly direction: "ltr" | "rtl";
+  /** The plugin's settings when it starts. */
+  readonly settings: JsonObject;
 }
 
 function readHello(value: Json): Hello {
@@ -171,11 +182,18 @@ function readHello(value: Json): Hello {
     typeof hello?.id !== "string" ||
     typeof hello.api !== "string" ||
     typeof hello.language !== "string" ||
-    (hello.direction !== "ltr" && hello.direction !== "rtl")
+    (hello.direction !== "ltr" && hello.direction !== "rtl") ||
+    !isJsonObject(hello.settings)
   ) {
     throw new Error("The app did not say who the plugin is.");
   }
-  return { id: hello.id, api: hello.api, language: hello.language, direction: hello.direction };
+  return {
+    id: hello.id,
+    api: hello.api,
+    language: hello.language,
+    direction: hello.direction,
+    settings: hello.settings,
+  };
 }
 
 /**
@@ -253,8 +271,35 @@ export async function startPlugin(
         }
       });
   }
+  let settings = hello.settings;
+  const settingsListeners = new Set<(values: JsonObject) => void>();
+  endpoint.handle("settings.changed", (values) => {
+    if (!isJsonObject(values)) throw new Error("Settings are a JSON object.");
+    settings = values;
+    for (const listener of settingsListeners) listener(values);
+    return null;
+  });
   const context: PluginContext = {
-    ...hello,
+    id: hello.id,
+    api: hello.api,
+    language: hello.language,
+    direction: hello.direction,
+    settings: {
+      values: () => settings,
+      onChange(listener) {
+        // A new function each time, so that each registration has its own disposal.
+        const each = (values: JsonObject) => {
+          listener(values);
+        };
+        settingsListeners.add(each);
+        return {
+          dispose() {
+            settingsListeners.delete(each);
+            return Promise.resolve();
+          },
+        };
+      },
+    },
     commands: {
       register: (id, run) =>
         attach("commands", id, async () => {

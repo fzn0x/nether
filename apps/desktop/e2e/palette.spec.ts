@@ -60,7 +60,7 @@ test("a command's shortcut changes, and the vault keeps it", async ({ page }) =>
   await page.keyboard.press("Control+p");
   await page.getByRole("combobox", { name: "Command" }).fill("keyboard");
   await page.keyboard.press("Enter");
-  const dialog = page.getByRole("dialog", { name: "Keyboard shortcuts" });
+  const dialog = page.getByRole("tabpanel", { name: "Keyboard shortcuts" });
 
   // A key alone would run while typing, so it is refused.
   const change = dialog.getByRole("button", { name: "Change the shortcut of Search the vault" });

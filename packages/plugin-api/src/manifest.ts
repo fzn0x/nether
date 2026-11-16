@@ -71,12 +71,39 @@ export interface PanelContribution {
   readonly folded: boolean;
 }
 
+/** The kinds of settings field the app draws for a plugin. */
+export const settingTypes = ["text", "number", "toggle", "choice"] as const;
+export type SettingType = (typeof settingTypes)[number];
+
+/** One of a choice field's options. */
+export interface SettingChoice {
+  readonly value: string;
+  readonly name: Localized;
+}
+
+/**
+ * A field of a plugin's settings, which the app draws in the plugin's tab
+ * of its settings, themed, translated and accessible like its own.
+ */
+export interface SettingField {
+  /** Unique in the plugin, and the key of its value. */
+  readonly id: string;
+  readonly name: Localized;
+  readonly description?: Localized;
+  readonly type: SettingType;
+  /** Its value until it is changed: a string, a number, true or false, or a choice's value. */
+  readonly default: string | number | boolean;
+  /** A choice field's options. */
+  readonly choices?: readonly SettingChoice[];
+}
+
 /** What a plugin adds. */
 export interface Contributions {
   readonly commands: readonly CommandContribution[];
   readonly codeBlocks: readonly CodeBlockContribution[];
   readonly blocks: readonly BlockContribution[];
   readonly panels: readonly PanelContribution[];
+  readonly settings: readonly SettingField[];
 }
 
 export interface Manifest {
@@ -259,6 +286,109 @@ function readPanels(value: unknown, problems: string[]): PanelContribution[] {
   });
 }
 
+/** A field's value when it is not set, by its type. */
+function defaultOf(
+  type: SettingType,
+  choices: readonly SettingChoice[],
+): string | number | boolean {
+  switch (type) {
+    case "text":
+      return "";
+    case "number":
+      return 0;
+    case "toggle":
+      return false;
+    case "choice":
+      return choices[0]?.value ?? "";
+  }
+}
+
+/** Whether a value suits a field: of its type, and one of its choices. */
+function suits(field: Pick<SettingField, "type" | "choices">, value: unknown): boolean {
+  switch (field.type) {
+    case "text":
+      return typeof value === "string";
+    case "number":
+      return typeof value === "number" && Number.isFinite(value);
+    case "toggle":
+      return typeof value === "boolean";
+    case "choice":
+      return (field.choices ?? []).some((choice) => choice.value === value);
+  }
+}
+
+function readChoices(value: unknown, where: string, problems: string[]): SettingChoice[] {
+  if (!Array.isArray(value) || value.length === 0) {
+    problems.push(`${where}.choices is not a list of choices.`);
+    return [];
+  }
+  const choices: SettingChoice[] = [];
+  for (const [at, item] of (value as unknown[]).entries()) {
+    const choice = isObject(item) ? item : {};
+    if (typeof choice.value !== "string" || !isLocalized(choice.name)) {
+      problems.push(`${where}.choices[${String(at)}] is not a value with a name.`);
+      continue;
+    }
+    choices.push({ value: choice.value, name: choice.name });
+  }
+  return choices;
+}
+
+function readSettings(value: unknown, problems: string[]): SettingField[] {
+  const seen = new Set<string>();
+  return readList(value, "settings", problems, (item, where) => {
+    const { id, name, description, type } = item;
+    if (typeof id !== "string" || !commandIdPattern.test(id)) {
+      problems.push(`${where}.id is not letters, digits, hyphens and underscores.`);
+      return undefined;
+    }
+    if (seen.has(id)) problems.push(`${where}.id "${id}" is there twice.`);
+    seen.add(id);
+    if (!isLocalized(name)) problems.push(`${where}.name is not a name.`);
+    if (description !== undefined && !isLocalized(description)) {
+      problems.push(`${where}.description is not text.`);
+    }
+    if (!settingTypes.includes(type as SettingType)) {
+      problems.push(`${where}.type is not one of ${settingTypes.join(", ")}.`);
+      return undefined;
+    }
+    const kind = type as SettingType;
+    const choices = kind === "choice" ? readChoices(item.choices, where, problems) : [];
+    const field = { type: kind, choices };
+    if (item.default !== undefined && !suits(field, item.default)) {
+      problems.push(`${where}.default does not suit a ${kind} field.`);
+    }
+    return {
+      id,
+      name: isLocalized(name) ? name : id,
+      ...(isLocalized(description) ? { description } : {}),
+      type: kind,
+      default: suits(field, item.default)
+        ? (item.default as string | number | boolean)
+        : defaultOf(kind, choices),
+      ...(kind === "choice" ? { choices } : {}),
+    };
+  });
+}
+
+/**
+ * A plugin's settings as its fields read them: each stored value that
+ * suits its field, and the field's default for the rest. What is stored
+ * for no field is left out.
+ */
+export function settingValues(
+  fields: readonly SettingField[],
+  stored: unknown,
+): Readonly<Record<string, string | number | boolean>> {
+  const values: Record<string, string | number | boolean> = {};
+  const from = isObject(stored) ? stored : {};
+  for (const field of fields) {
+    const value: unknown = from[field.id];
+    values[field.id] = suits(field, value) ? (value as string | number | boolean) : field.default;
+  }
+  return values;
+}
+
 /** Reads a manifest as parsed from its JSON, or says everything wrong with it. */
 export function readManifest(value: unknown): ManifestResult {
   if (!isObject(value)) return { problems: ["The manifest is not an object."] };
@@ -291,6 +421,7 @@ export function readManifest(value: unknown): ManifestResult {
   );
   const blocks = readBlocks(isObject(contributes) ? contributes.blocks : undefined, problems);
   const panels = readPanels(isObject(contributes) ? contributes.panels : undefined, problems);
+  const settings = readSettings(isObject(contributes) ? contributes.settings : undefined, problems);
   // A plugin block's type starts with its plugin's ID, which must then start with a letter.
   if (blocks.length > 0 && typeof id === "string" && !/^[a-z]/.test(id)) {
     problems.push("id starts with a digit, which a plugin that adds blocks cannot.");
@@ -305,7 +436,7 @@ export function readManifest(value: unknown): ManifestResult {
       ...(description === undefined ? {} : { description: description as Localized }),
       ...(author === undefined ? {} : { author: author as string }),
       ...(authorUrl === undefined ? {} : { authorUrl: authorUrl as string }),
-      contributes: { commands, codeBlocks, blocks, panels },
+      contributes: { commands, codeBlocks, blocks, panels, settings },
     },
   };
 }

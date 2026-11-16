@@ -5,7 +5,8 @@ description: How to show a vault light or dark, give it a theme, and adjust Neth
 
 Each vault keeps its own appearance: light, dark or as your system is, a
 theme, and any CSS snippets. Run **Appearance** from the command palette
-(Ctrl+P, or Cmd+P on macOS). A change shows at once and is kept in the
+(Ctrl+P, or Cmd+P on macOS), which opens the Appearance tab of the vault's
+settings. A change shows at once and is kept in the
 vault's `.nether/appearance.json`, so the vault looks the same wherever you
 open it. Without a vault open, Nether follows your system.
 

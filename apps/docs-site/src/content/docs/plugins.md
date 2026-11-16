@@ -1,6 +1,6 @@
 ---
 title: Writing plugins
-description: How a Nether plugin is made, a preview of the plugin API at version 0.1. A plugin's folder, its manifest, its code, and the commands, code blocks, blocks and panels it adds.
+description: How a Nether plugin is made, a preview of the plugin API at version 0.1. A plugin's folder, its manifest, its code, the commands, code blocks, blocks and panels it adds, and its settings.
 ---
 
 :::caution[A preview]
@@ -57,7 +57,7 @@ reach your computer.
 | `api` | The versions of the plugin API it works with, as `^0.1` |
 | `description` | What it does, optional, a string or strings by language |
 | `author`, `authorUrl` | Who made it, optional |
-| `contributes` | What it adds: for now, `commands`, `codeBlocks`, `blocks` and `panels` |
+| `contributes` | What it adds: for now, `commands`, `codeBlocks`, `blocks`, `panels` and `settings` |
 
 The app reads the manifest before the plugin's code runs. Its commands
 show in the menus and the palette at once, and its slash menu entries in
@@ -94,6 +94,7 @@ export default definePlugin({
 | `context.codeBlocks` | `register(language, render)`, which draws code blocks in a language the manifest declares |
 | `context.blocks` | `register(type, view)`, which shows blocks of a type the manifest declares |
 | `context.panels` | `register(id, view)`, which fills a panel the manifest declares |
+| `context.settings` | `values()`, the plugin's settings, and `onChange(listener)` |
 
 Every call to the app is async, and takes and returns plain JSON values,
 since a plugin will run apart from the app and reach it only by messages.
@@ -271,6 +272,61 @@ opens beside the panel.
 
 The sidebar's Tags and Assigned, and the Outline, Linked from and
 Unlinked mentions beside a note, are built-in plugins' panels.
+
+## Settings
+
+A plugin's settings are fields its manifest declares. The app draws them
+in the plugin's own tab of the vault's settings, as it draws its own:
+
+```json
+"contributes": {
+  "settings": [
+    { "id": "goal", "name": "Daily goal", "type": "number", "default": 500 },
+    {
+      "id": "unit",
+      "name": "Count",
+      "type": "choice",
+      "choices": [
+        { "value": "words", "name": "Words" },
+        { "value": "chars", "name": "Characters" }
+      ]
+    }
+  ]
+}
+```
+
+- **`type`** is `text`, `number`, `toggle` or `choice`, drawn as a text
+  field, a number field, a check box or a list.
+- **`default`** is its value until it is changed: a string, a number,
+  true or false, or one of the choices' values. Without it, a field
+  starts empty, at 0, off, or at its first choice.
+- **`name`** and **`description`**, which shows under the field, are
+  strings or strings by language.
+
+The plugin reads them as they are now, and hears when they change:
+
+```js
+let { goal } = context.settings.values();
+context.settings.onChange((values) => {
+  goal = values.goal;
+});
+```
+
+Each value is one its field takes: a value stored that does not suit
+its field reads as the field's default. The vault keeps a plugin's
+settings in `.nether/plugins/<id>/data.json`.
+
+## Turning plugins on and off
+
+The **Plugins** tab of the vault's settings lists the plugins that come
+with Nether, each with what it does, and turns each on or off. A plugin
+turned off takes away what it adds, in that vault, until it is turned on
+again. The vault keeps which are on in `.nether/plugins.json`, which maps
+a plugin's ID to whether it is on; a built-in plugin it does not name is
+on. Neither file syncs.
+
+The Backlinks plugin has a setting of its own, whether each note that
+links here shows the text around its links.
 
 ## Versions
 

@@ -119,7 +119,7 @@ for (const colorScheme of ["light", "dark"] as const) {
         ["Open a note", () => page.keyboard.press("Control+o")],
         ["New note", () => page.getByRole("button", { name: "New note" }).click()],
         [
-          "Templates and periodic notes",
+          "Settings",
           async () => {
             await page.getByRole("menuitem", { name: "Settings" }).click();
             await page.getByRole("menuitem", { name: /^Templates and periodic notes/ }).click();
@@ -137,7 +137,7 @@ for (const colorScheme of ["light", "dark"] as const) {
       await page.keyboard.press("Control+p");
       await page.keyboard.type("keyboard shortcuts");
       await page.keyboard.press("Enter");
-      await expect(page.getByRole("dialog", { name: "Keyboard shortcuts" })).toBeVisible();
+      await expect(page.getByRole("tabpanel", { name: "Keyboard shortcuts" })).toBeVisible();
       expect(await violations(page), "Keyboard shortcuts").toEqual([]);
     });
   });

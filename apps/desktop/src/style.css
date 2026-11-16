@@ -2240,6 +2240,92 @@ button {
   max-height: 80vh;
 }
 
+/* Settings: a tab for each part down the start side, its form beside them. */
+.settings-window {
+  width: min(52rem, calc(100vw - 2rem));
+}
+
+.settings-layout {
+  display: flex;
+  flex: 1;
+  gap: 1rem;
+  min-height: 0;
+}
+
+.settings-tabs {
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  gap: 0.125rem;
+  min-width: 9rem;
+  padding-inline-end: 0.75rem;
+  border-inline-end: 1px solid var(--rule);
+  overflow-y: auto;
+}
+
+.settings-tabs [role="tab"] {
+  padding: 0.35rem 0.6rem;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.875rem;
+  text-align: start;
+  cursor: pointer;
+}
+
+.settings-tabs [role="tab"]:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+
+.settings-tabs [role="tab"][aria-selected="true"] {
+  background: var(--rule);
+  color: var(--text);
+}
+
+.settings-panel,
+.settings-form {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 0.75rem;
+  min-width: 0;
+  min-height: 0;
+}
+
+.settings-form h3 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.plugin-list {
+  display: grid;
+  gap: 0.75rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.plugin-list .hint {
+  margin: 0.15rem 0 0;
+}
+
+@media (max-width: 40rem) {
+  .settings-layout {
+    flex-direction: column;
+  }
+
+  .settings-tabs {
+    flex-direction: row;
+    flex-wrap: wrap;
+    padding: 0 0 0.5rem;
+    border-inline-end: 0;
+    border-block-end: 1px solid var(--rule);
+  }
+}
+
 .dialog-actions {
   display: flex;
   justify-content: flex-end;

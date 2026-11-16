@@ -21,6 +21,7 @@ import {
   pagePair,
   readManifest,
   satisfies,
+  settingValues,
   startPlugin,
 } from "@nether/plugin-api";
 import { canBeShortcut } from "../shortcuts.ts";
@@ -147,6 +148,8 @@ export class PluginHost {
   readonly #plugins = new Map<string, Added>();
   readonly #slots = new Map<string, Slot>();
   #nextSlot = 0;
+  /** Each plugin's settings as the vault keeps them, read through its fields when it starts. */
+  readonly #stored = new Map<string, unknown>();
 
   constructor(registries: Registries, options: HostOptions) {
     this.#registries = registries;
@@ -240,6 +243,22 @@ export class PluginHost {
       );
     }
     return [];
+  }
+
+  /**
+   * A plugin's settings, as the vault keeps them: a plugin that starts
+   * later starts with them, and one running is told of them.
+   */
+  setSettings(id: string, stored: unknown): void {
+    this.#stored.set(id, stored);
+    const plugin = this.#plugins.get(id);
+    if (plugin?.running === undefined) return;
+    const values = settingValues(plugin.manifest.contributes.settings, stored);
+    plugin.running
+      .then(([app]) => app.call("settings.changed", values))
+      .catch((error: unknown) => {
+        this.#options.onError?.(id, errorText(error));
+      });
   }
 
   /** The plugins added, by ID. */
@@ -416,6 +435,7 @@ export class PluginHost {
       api: apiVersion,
       language: this.#options.language,
       direction: this.#options.direction,
+      settings: settingValues(contributes.settings, this.#stored.get(id)),
     }));
     attachable("commands", commands, "command", plugin.attached);
     attachable("codeBlocks", languages, "code block", plugin.drawers);

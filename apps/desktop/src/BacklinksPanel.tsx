@@ -1,6 +1,6 @@
 // A note's backlinks, beside it: the notes that link to it, each with the
-// text around its links, read from the link index, so they follow as notes
-// change.
+// text around its links unless that is turned off, read from the link
+// index, so they follow as notes change.
 import type { NoteId } from "@nether/core";
 import type { Backlink, LinkGraph, NoteIndex } from "@nether/graph";
 import type { Vault } from "@nether/storage";
@@ -11,6 +11,8 @@ import { useGraph } from "./useGraph.ts";
 
 /** How many linking notes' text the backlinks panel reads, the rest shown by name. */
 const contextLimit = 100;
+
+const none: readonly Backlink[] = [];
 
 /**
  * The text around the links from each note that links to one, read from
@@ -57,12 +59,14 @@ export function BacklinksPanel(props: {
   readonly vault: Vault;
   readonly graph: LinkGraph;
   readonly id: NoteId;
+  /** Whether each shows the text around its links, which reads the linking notes' indexes. */
+  readonly withContext: boolean;
   readonly onOpenNote: (id: NoteId) => void;
 }) {
-  const { vault, graph, id, onOpenNote } = props;
+  const { vault, graph, id, withContext, onOpenNote } = props;
   const version = useGraph(graph);
   const backlinks = useMemo(() => graph.backlinks(id), [graph, id, version]);
-  const contextsOf = useBacklinkContexts(vault, graph, id, backlinks);
+  const contextsOf = useBacklinkContexts(vault, graph, id, withContext ? backlinks : none);
   if (backlinks.length === 0) return <p className="placeholder">{t("noBacklinks")}</p>;
   return (
     <ul className="backlinks">

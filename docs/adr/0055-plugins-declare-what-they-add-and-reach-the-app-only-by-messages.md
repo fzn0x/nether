@@ -68,7 +68,9 @@ What any design must live with:
 - `styles.css`, when it has styles;
 - `data.json`, its settings, read and written through the API.
 
-`.nether/plugins.json` lists the plugins turned on. Like the rest of
+`.nether/plugins.json` lists the plugins turned on: it maps each
+plugin's ID to whether it is on, and a built-in plugin it does not name is
+on (as built in step 5, below). Like the rest of
 `.nether`, plugins never sync: each device installs its own. The manifest
 uses Obsidian's field names where they mean the same (`id`, `name`,
 `version`, `description`, `author`, `authorUrl`), and command IDs are
