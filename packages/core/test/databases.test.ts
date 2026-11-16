@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { checkRow, noteFromJson, readDatabaseSchema } from "../src/index.ts";
+import { checkRow, isPluginLayout, noteFromJson, readDatabaseSchema } from "../src/index.ts";
 import { at, databaseNote, edit, ids } from "./fixtures.ts";
 
 type Json = Record<string, unknown>;
@@ -143,6 +143,32 @@ describe("database schemas", () => {
       "schema",
     );
     expect(schema.views[0]?.date).toBe("$updated");
+  });
+
+  it("read a plugin's layout, with its options, and refuse options on the app's own", () => {
+    const schema = readDatabaseSchema(
+      {
+        properties: [],
+        views: [
+          {
+            id: ids.view,
+            name: "Map",
+            layout: "maps/pins",
+            visible: ["$title"],
+            options: { zoom: 4, centre: [51.5, -0.1] },
+          },
+        ],
+      },
+      "schema",
+    );
+    expect(schema.views[0]?.layout).toBe("maps/pins");
+    expect(schema.views[0]?.options).toEqual({ zoom: 4, centre: [51.5, -0.1] });
+    rejects(withView({ layout: "table", options: {} }), "is only for a plugin's layout");
+    rejects(withView({ layout: "Maps/pins" }), "layout");
+    rejects(withView({ layout: "maps/pins", options: [] }), "options");
+    expect(
+      ["maps/pins", "my-plugin/board2", "table", "a/", "/b", "a/b/c"].map(isPluginLayout),
+    ).toEqual([true, true, false, false, false, false]);
   });
 });
 
