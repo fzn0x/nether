@@ -1,0 +1,11 @@
+{
+  "id": "pdf",
+  "name": "PDF",
+  "version": "1.0.0",
+  "api": "^0.1",
+  "description": "Opens PDFs, to read, highlight and comment on. Highlights are callouts in a note, linking to their passage as Obsidian links to one.",
+  "author": "Nether contributors",
+  "contributes": {
+    "views": [{ "id": "pdf", "name": "PDF", "extensions": ["pdf"] }]
+  }
+}

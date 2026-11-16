@@ -285,6 +285,8 @@ const assignedPanel = "assigned:assigned";
 interface PaneAsks {
   readonly mode: NoteMode;
   readonly focus?: (NotePart & { readonly key: number }) | undefined;
+  /** Where in a file a link asked to go, as `page=3` in a PDF. */
+  readonly at?: { readonly part: string; readonly key: number } | undefined;
   readonly source: number;
   readonly rename: number;
   readonly comment: number;
@@ -346,6 +348,11 @@ export function VaultView(props: {
       backend.settle();
     })();
   }, [indexer]);
+  /** Resolves once the links are loaded, starting them now if they have not started. */
+  const linksLoaded = useCallback(async () => {
+    loadLinks();
+    await indexer?.idle();
+  }, [loadLinks, indexer]);
   useEffect(() => {
     // Should the note never show.
     const timer = setTimeout(loadLinks, 3000);
@@ -548,20 +555,26 @@ export function VaultView(props: {
     [changeLayout, ask],
   );
 
-  /** Opens a canvas, by its path, in the focused pane, a new tab or the pane to the right. */
+  /**
+   * Opens a file, as a canvas or a PDF, by its path, in the focused pane, a
+   * new tab or the pane to the right; at a place in it, as a link's `page=3`.
+   */
   const openFile = useCallback(
-    (path: string, where: "here" | "tab" | "right" = "here") => {
+    (path: string, where: "here" | "tab" | "right" = "here", part?: string) => {
       setPaneView(undefined);
       const tab = fileTab(path);
-      changeLayout((current) =>
+      const next = changeLayout((current) =>
         where === "tab"
           ? openInNewTab(current, tab)
           : where === "right"
             ? openToTheRight(current, tab)
             : openHere(current, tab),
       );
+      const key = next.panes[next.focused]?.key ?? 0;
+      const at = part === undefined ? undefined : { part, key: Date.now() };
+      ask(key, (current) => ({ ...current, at }));
     },
-    [changeLayout],
+    [changeLayout, ask],
   );
 
   const showTag = useCallback((name: string) => {
@@ -2291,6 +2304,8 @@ export function VaultView(props: {
                               graph: state.indexer.graph,
                               media: state.media,
                               path: file,
+                              at: paneAsks.at,
+                              linksLoaded,
                               openNote,
                               close: () => undefined,
                             }}
