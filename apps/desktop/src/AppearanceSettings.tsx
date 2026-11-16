@@ -2,9 +2,12 @@
 // system, its theme, and its
 // CSS snippets, each change shown and kept at once. Themes and snippets are
 // the CSS files of the vault's `.nether/themes` and `.nether/snippets`
-// folders, read again with Reload after they change.
+// folders, read again with Reload after they change. The directory installs
+// themes into that folder (ADR 0065).
 import type { Vault } from "@nether/storage";
-import { type KeyboardEvent, useEffect, useState } from "react";
+import { type KeyboardEvent, useCallback, useEffect, useState } from "react";
+import { DirectoryList } from "./DirectoryList.tsx";
+import { type DirectoryEntry, installTheme, themeState } from "./directory.ts";
 import {
   type Appearance,
   type Mode,
@@ -47,6 +50,8 @@ export function AppearanceSettings(props: {
       current = false;
     };
   }, [vault, round]);
+
+  const installedOf = useCallback((entry: DirectoryEntry) => themeState(vault, entry), [vault]);
 
   const change = (next: Appearance) => {
     setError(undefined);
@@ -152,6 +157,14 @@ export function AppearanceSettings(props: {
           )}
         </fieldset>
         <p className="hint">{t("stylesWhere")}</p>
+        <DirectoryList
+          kind="themes"
+          installedOf={installedOf}
+          install={(entry) => installTheme(vault, entry)}
+          onInstalled={() => {
+            setRound((count) => count + 1);
+          }}
+        />
       </div>
       {missing.length === 0 ? null : (
         <p role="alert">{t("stylesMissing", { names: missing.join(", ") })}</p>

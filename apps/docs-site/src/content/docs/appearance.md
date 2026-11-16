@@ -38,6 +38,13 @@ the theme **Ocean**. Put the file there, open **Appearance**, click
 **Reload**, and choose it under **Theme**; **Nether's own** goes back to
 Nether's look. One theme applies at a time.
 
+Themes from Nether's directory install in one click: **Browse the
+directory** at the bottom of **Appearance** lists them, and **Install**
+puts one in `.nether/themes`, to choose under **Theme**. A theme there
+loads nothing from the web: its fonts and images are inside its file, and
+Nether refuses one that would load anything else. To add yours, follow
+[`registry/README.md`](https://github.com/fzn0x/nether/blob/main/registry/README.md).
+
 A theme sets Nether's design tokens, CSS custom properties on `:root`. A
 rule for `:root` sets them for light and dark alike;
 `:root[data-mode="dark"]` and `:root[data-mode="light"]` set them for one:
