@@ -92,6 +92,9 @@ importers:
       '@nether/vault-generator':
         specifier: workspace:*
         version: link:../../tools/vault-generator
+      '@remote-dom/polyfill':
+        specifier: ^1.7.0
+        version: 1.7.0
       '@sqlite.org/sqlite-wasm':
         specifier: 3.54.1-build1
         version: 3.54.1-build1
@@ -187,6 +190,15 @@ importers:
       '@hocuspocus/server':
         specifier: ~4.7.1
         version: 4.7.1(y-protocols@1.0.7(yjs@13.6.33))(yjs@13.6.33)
+      '@nether/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@nether/editor':
+        specifier: workspace:*
+        version: link:../../packages/editor
+      '@nether/markdown':
+        specifier: workspace:*
+        version: link:../../packages/markdown
       '@nether/search':
         specifier: workspace:*
         version: link:../../packages/search
@@ -1498,6 +1510,10 @@ packages:
     resolution: {integrity: sha512-IaYGml/nSOiZWROfPtuIL7neuu9qDOZ3TNvNljUIrhDMxiGTgPjzj/g9p9RxpS2tSepPDRY+UwAaEeiKtUvIAg==}
     engines: {node: '>=20'}
     hasBin: true
+
+  '@remote-dom/polyfill@1.7.0':
+    resolution: {integrity: sha512-Ei18AW6IFLp+eOIshrOBO+ZO6ttnOHnG7U0gghz4MdOqoSFu1kDc3iVMFUK2+vfkrgUiBxK7WED+q4C728zQxw==}
+    engines: {node: '>=14.0.0'}
 
   '@replit/codemirror-vim-core@0.1.0':
     resolution: {integrity: sha512-1i6EBKpcNfDKvTmTh6N6g9lL6udD5t+uFNh4JCqozRnVlvUGOps7h/QzS2ne4zcvPUjvApKpmcP7Grc3fNbZiQ==}
@@ -5481,6 +5497,8 @@ snapshots:
   '@playwright/test@1.64.1':
     dependencies:
       playwright: 1.64.1
+
+  '@remote-dom/polyfill@1.7.0': {}
 
   '@replit/codemirror-vim-core@0.1.0': {}
 

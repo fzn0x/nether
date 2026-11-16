@@ -77,6 +77,19 @@ describe("noteContent", () => {
     expect(read.properties).toEqual({ tags: ["Plans", "plans"] });
   });
 
+  it("reads the tags the editor keeps as nodes of their own", () => {
+    const document = new Y.Doc();
+    const paragraph = new Y.XmlElement("paragraph");
+    const tag = new Y.XmlElement("tag");
+    tag.setAttribute("name", "area/launch");
+    const empty = new Y.XmlElement("tag");
+    paragraph.insert(0, [new Y.XmlText("Ship it "), tag, new Y.XmlText(" soon"), empty]);
+    document.getXmlFragment("content").push([paragraph]);
+    const read = noteContent(Y.encodeStateAsUpdate(document));
+    expect(read.body).toBe("Ship it #area/launch soon");
+    expect(read.tags).toEqual(["area/launch"]);
+  });
+
   it("reads a snippet's marked matches as ranges", () => {
     expect(readSnippet("a \u{E000}big\u{E001} plan, \u{E000}big\u{E001}")).toEqual({
       text: "a big plan, big",

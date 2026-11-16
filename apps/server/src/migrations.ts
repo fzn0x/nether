@@ -356,6 +356,33 @@ export const migrations: readonly Migration[] = [
       INSERT INTO backup_state (only_row) VALUES (true);
     `,
   },
+  {
+    version: 14,
+    name: "the public API: tokens, and notes listed by path",
+    sql: `
+      -- A token for the public API (ADR 0059), acting as its account, read
+      -- only or read and write, for one workspace or all of the account's.
+      -- Kept as its SHA-256, with its last characters for its owner to tell
+      -- it from the others.
+      CREATE TABLE api_tokens (
+        id uuid PRIMARY KEY,
+        user_id uuid NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+        name text NOT NULL,
+        token_hash text NOT NULL UNIQUE,
+        hint text NOT NULL,
+        access text NOT NULL CHECK (access IN ('read', 'write')),
+        workspace_id uuid REFERENCES workspaces (id) ON DELETE CASCADE,
+        expires_at timestamptz,
+        created_at timestamptz NOT NULL DEFAULT now(),
+        used_at timestamptz
+      );
+
+      CREATE INDEX api_tokens_by_user ON api_tokens (user_id, created_at);
+
+      -- The API lists a workspace's notes by path, a page at a time.
+      CREATE INDEX note_search_by_path ON note_search (workspace_id, path COLLATE "C", note);
+    `,
+  },
 ];
 
 /** The schema version this server writes and reads. */

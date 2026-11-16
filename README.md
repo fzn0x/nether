@@ -31,10 +31,12 @@ Notion exports. Self-hosting is available for enterprise.
 > server's image, `ghcr.io/fzn0x/nether-server`
 > ([how to run it](https://fzn0x.github.io/nether/self-hosting/)). Phase 4,
 > the platform, is under way: the plugin API is done, with Nether's own
-> diagrams, panels, canvas, graph and database layouts built on it; PDFs
-> open to be highlighted and commented on, each highlight Markdown that
-> Obsidian reads; and the [roadmap](docs/roadmap.md#phase-4-platform)
-> ticks off the rest as it lands.
+> diagrams, panels, canvas, graph and database layouts built on it; the
+> server's [REST API](https://fzn0x.github.io/nether/api/) reads notes,
+> databases and search with personal access tokens; PDFs open to be
+> highlighted and commented on, each highlight Markdown that Obsidian
+> reads; and the [roadmap](docs/roadmap.md#phase-4-platform) ticks off the
+> rest as it lands.
 
 [Documentation](https://fzn0x.github.io/nether/) ·
 [Roadmap](docs/roadmap.md) · [Requirements](docs/requirements.md) ·

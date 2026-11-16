@@ -60,8 +60,24 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   or why it cannot run; turning one on approves its code on this device,
   and one whose code changes stays off until approved again. What they
   draw is cleaned of scripts, handlers, styles and, without the network,
-  addresses outside the page. For now they add commands, code blocks and
-  settings. In the web app they start while the server answers.
+  addresses outside the page. In the web app they start while the server
+  answers.
+- Plugins from a vault add blocks, panels, views, database layouts and
+  property types too. Their views draw in a DOM of their worker's own,
+  which the app copies into each view's box, cleaned of what could load
+  from elsewhere or leave the box, and the events they listen for go back
+  to them
+  ([ADR 0063](docs/adr/0063-a-vault-plugins-views-draw-in-its-worker-and-the-page-shows-them-cleaned.md)).
+- The server's REST API, first part: personal access tokens, read or
+  write, for one workspace or all, with an expiry, made with the
+  account's password, shown once, kept as hashes and revoked with a
+  session; and `/api/v1`, which reads the workspaces a token reaches,
+  their notes as the Markdown a vault has, their databases and rows, and
+  search, by the permissions sync uses
+  ([ADR 0059](docs/adr/0059-the-public-api-takes-tokens-that-act-as-their-account-and-gives-notes-as-markdown.md)).
+  Encrypted workspaces' notes are not served. The guide has an API
+  reference. Server search now also finds the tags typed in a note's
+  text in the app.
 - PDFs open in a tab, drawn by pdf.js in a built-in plugin's view, and
   show in the sidebar beside notes
   ([ADR 0061](docs/adr/0061-pdfs-show-through-pdf-js-and-a-highlight-is-a-callout-that-links-to-its-passage.md)).

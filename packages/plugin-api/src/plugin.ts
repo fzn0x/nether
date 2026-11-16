@@ -245,6 +245,8 @@ export interface PropertyTypes {
  */
 export interface PluginSurface {
   element(slot: string): HTMLElement | undefined;
+  /** Lets go of the element of a slot whose view has unmounted. */
+  release?(slot: string): void;
 }
 
 /** A plugin's settings, as its manifest's fields declare them and the app's settings change them. */
@@ -385,15 +387,24 @@ export async function startPlugin(
           case "mount": {
             const element = surface?.element(slot);
             if (element === undefined) throw new Error("The app gave the view no element.");
-            views.set(slot, mount(element, viewProps, slot) ?? {});
+            try {
+              views.set(slot, mount(element, viewProps, slot) ?? {});
+            } catch (error) {
+              surface?.release?.(slot);
+              throw error;
+            }
             return null;
           }
           case "update":
             views.get(slot)?.update?.(viewProps);
             return null;
           case "unmount":
-            views.get(slot)?.unmount?.();
-            views.delete(slot);
+            try {
+              views.get(slot)?.unmount?.();
+            } finally {
+              views.delete(slot);
+              surface?.release?.(slot);
+            }
             return null;
           default:
             throw new Error(`A view cannot ${JSON.stringify(action)}.`);
