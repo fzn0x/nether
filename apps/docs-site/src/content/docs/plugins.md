@@ -5,11 +5,10 @@ description: How a Nether plugin is made, a preview of the plugin API at version
 
 :::caution[A preview]
 Plugins from a vault's folder run in a sandbox, apart from the app, once
-you approve them. For now they may add commands, code blocks and
-settings. Their blocks, panels, views, layouts and property types come
-with the sandbox's next part, and reading and changing the vault with its
-last. Nether's own built-in plugins use all of the API this page
-describes. The API is at version 0.1, and may change before 1.0.
+you approve them, and may add all this page describes. Reading and
+changing the vault comes with the sandbox's last part. Nether's own
+built-in plugins use the same API. The API is at version 0.1, and may
+change before 1.0.
 :::
 
 ## A plugin's folder
@@ -460,9 +459,8 @@ on. Neither file syncs.
 Below them, **From this vault** lists the plugins in the vault's
 `.nether/plugins` folder, each with its version and what it asks for. One
 that cannot run says why, as a manifest that does not read, a folder not
-named for its ID, or what it adds that a plugin from a vault cannot add
-yet. Turning one on approves it on this device; a plugin from a vault is
-off until it is turned on.
+named for its ID, or no `main.js`. Turning one on approves it on this
+device; a plugin from a vault is off until it is turned on.
 
 The Backlinks plugin has a setting of its own, whether each note that
 links here shows the text around its links.
@@ -480,6 +478,58 @@ in an exported page: no scripts, event handlers, styles, forms or frames,
 and no address outside the page, which would carry what it knows out.
 Fragments, as `#part`, and images as `data:` stay; with the `network`
 permission, `https:` addresses stay too.
+
+### Views from a vault
+
+A plugin from a vault draws its blocks, panels, views, layouts and
+property types in its worker, in a DOM of the worker's own: `document`,
+elements, text, attributes, `innerHTML` and events, as on a page, with
+`value`, `checked`, `style`, `focus()` and `blur()`. A framework that
+renders to the DOM works there. The app copies what it draws into the
+view's box, in a shadow root, so the plugin's styles stay in it, and the
+app's theme reaches in through its CSS custom properties.
+
+```js
+await context.panels.register("count", {
+  mount(element) {
+    const button = document.createElement("button");
+    let clicks = 0;
+    button.textContent = "Clicked 0";
+    button.addEventListener("click", () => {
+      clicks++;
+      button.textContent = `Clicked ${clicks}`;
+    });
+    element.append(button);
+  },
+});
+```
+
+The app shows only what it allows, and nothing for the rest:
+
+- **Elements**: text, lists, tables, form controls without a form,
+  `details`, images, SVG shapes and `style`. Never scripts, frames,
+  forms, `dialog`, or SVG's `use`, animations and `foreignObject`.
+- **Attributes**: the usual ones of those elements, `aria-*` and
+  `data-*`. Never an `on…` handler, `autofocus`, `contenteditable`,
+  `accesskey` or `popover`. A link has no address. An image's `src` is a
+  `data:` image, or an `https:` address with the network.
+- **Styles**: a `style` element keeps its style, `@media`, `@supports`,
+  `@container` and `@keyframes` rules. A rule, or a `style` attribute,
+  that would load from an address is left out whole; with the network,
+  `url(https:…)` stays.
+- **Size**: at most 10,000 nodes in a view.
+
+The plugin hears the events it listens for: clicks, keys, pointer and
+mouse events, `input` and `change`, focus, `wheel`, `scroll` and
+`toggle`. Moves, wheels and scrolls come at most once a frame. An input's
+value and a box's checked state come with its events. The event has
+already happened in the app, so `preventDefault()` changes nothing; text
+boxes and checkboxes behave as they always do.
+
+The worker cannot measure what it draws. A view that listens for
+`resize` on the element it mounts in is told its width and height, as
+the event's `width` and `height`, and as the element's `clientWidth` and
+`clientHeight`. A `canvas` does not draw yet.
 
 A plugin asks for what it needs in its manifest's `permissions`:
 

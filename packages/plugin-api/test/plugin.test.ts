@@ -376,6 +376,44 @@ describe("startPlugin", () => {
     app.close();
   });
 
+  it("lets the surface go of a view's element once it unmounts, or fails to mount", async () => {
+    const { app, pluginSide, registered } = fakeApp();
+    const released: string[] = [];
+    const endpoint = await startPlugin(
+      definePlugin({
+        async activate(context) {
+          await context.blocks.register("tally", {
+            mount: (_element, props) => {
+              if (props.attrs.fail === true) throw new Error("It cannot draw that.");
+              return {
+                unmount() {
+                  throw new Error("It cannot let go.");
+                },
+              };
+            },
+          });
+        },
+      }),
+      pluginSide,
+      {
+        element: () => ({ textContent: "" }) as HTMLElement,
+        release: (slot) => {
+          released.push(slot);
+        },
+      },
+    );
+    const tally = registered.get("view tally") ?? 0;
+    const props = { attrs: {}, editable: true, theme: "light" };
+    await app.call("callback", tally, "mount", "s1", props);
+    await expect(app.call("callback", tally, "unmount", "s1")).rejects.toThrow("It cannot let go.");
+    await expect(
+      app.call("callback", tally, "mount", "s2", { ...props, attrs: { fail: true } }),
+    ).rejects.toThrow("It cannot draw that.");
+    expect(released).toEqual(["s1", "s2"]);
+    endpoint.close();
+    app.close();
+  });
+
   it("has no element for a view when the app gives it no surface", async () => {
     const { app, pluginSide, registered } = fakeApp();
     const endpoint = await startPlugin(

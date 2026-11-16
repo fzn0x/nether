@@ -254,6 +254,97 @@ const echoCode = `export default {
 };
 `;
 
+const tallyManifest = JSON.stringify({
+  id: "tally",
+  name: "Tally",
+  version: "1.0.0",
+  api: "^0.1",
+  contributes: { panels: [{ id: "count", name: "Count", place: "note" }] },
+});
+
+// A panel drawn in the plugin's worker, with what the page must leave out.
+const tallyCode = `export default {
+  async activate(context) {
+    await context.panels.register("count", {
+      mount(element) {
+        const style = document.createElement("style");
+        style.textContent = ".n { color: rgb(1, 2, 3) } .bad { background: url(https://example.com/x.png) }";
+        const button = document.createElement("button");
+        button.className = "n bad";
+        let clicks = 0;
+        button.textContent = "Clicked 0";
+        button.addEventListener("click", () => {
+          clicks++;
+          button.textContent = "Clicked " + clicks;
+        });
+        const input = document.createElement("input");
+        input.setAttribute("aria-label", "Say");
+        const said = document.createElement("output");
+        input.addEventListener("input", (event) => {
+          said.textContent = event.target.value.toUpperCase();
+        });
+        const image = document.createElement("img");
+        image.setAttribute("src", "https://example.com/a.png");
+        image.setAttribute("alt", "");
+        image.setAttribute("onerror", "document.title = 42");
+        const script = document.createElement("script");
+        script.textContent = "document.title = 42";
+        element.append(style, button, input, said, image, script);
+      },
+    });
+  },
+};
+`;
+
+test("a plugin from the vault draws its panel apart, and the page shows it cleaned", async ({
+  page,
+}) => {
+  const errors = errorsOf(page);
+  const asked: string[] = [];
+  page.on("request", (request) => {
+    if (request.url().includes("example.com")) asked.push(request.url());
+  });
+  const notes = await openSample(page);
+  await editFiles(page, {
+    ".nether/plugins/tally/manifest.json": tallyManifest,
+    ".nether/plugins/tally/main.js": tallyCode,
+    "Tallied.md": "Counted here.\n",
+  });
+  const settings = await openSettings(page, /^Plugins/);
+  const plugins = settings.getByRole("tabpanel", { name: "Plugins" });
+  await plugins.getByRole("checkbox", { name: "Tally" }).check();
+  await plugins.getByRole("button", { name: "Save" }).click();
+  await expect(settings).toBeHidden();
+
+  await notes.getByRole("button", { name: /^Tallied/ }).click();
+  const panel = page.getByRole("region", { name: "Count" });
+  const button = panel.getByRole("button", { name: "Clicked 0" });
+  await expect(button).toBeVisible();
+  // Its own style shows, and the rule that would load from elsewhere does not.
+  await expect(button).toHaveCSS("color", "rgb(1, 2, 3)");
+  const sheets = await panel.evaluate((section) =>
+    [...section.querySelectorAll("*")]
+      .flatMap((element) => [...(element.shadowRoot?.querySelectorAll("style") ?? [])])
+      .map((style) => style.textContent)
+      .join("\n"),
+  );
+  expect(sheets).toContain("rgb(1, 2, 3)");
+  expect(sheets).not.toContain("example.com");
+
+  await button.click();
+  await expect(panel.getByRole("button", { name: "Clicked 1" })).toBeVisible();
+  await panel.getByRole("textbox", { name: "Say" }).fill("loud");
+  await expect(panel.locator("output")).toHaveText("LOUD");
+  const image = panel.locator("img");
+  await expect(image).toHaveCount(1);
+  expect(await image.evaluate((element) => element.getAttributeNames())).toEqual(["alt"]);
+  await expect(panel.locator("script")).toHaveCount(0);
+  expect(await page.title()).not.toBe("42");
+  expect(asked).toEqual([]);
+  expect(await violations(page)).toEqual([]);
+  expect(errors).toEqual([]);
+});
+
 test("a plugin from the vault runs once approved, apart, and is off again when its code changes", async ({
   page,
 }) => {

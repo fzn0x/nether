@@ -3,7 +3,8 @@
 // a command chosen, a code block drawn, a block or a panel shown. A
 // built-in plugin's module runs in the page; a plugin from a folder of the
 // vault runs in a sandboxed frame (ADR 0058), and sends the same messages
-// through a port.
+// through a port. Its views draw in its worker, and the page shows them
+// cleaned (ADR 0063).
 import {
   type BlockViewProps,
   type CodeBlockOutput,
@@ -43,6 +44,7 @@ import type { PaneViewDrawing, PaneViewHost, ViewRegistry } from "./views.ts";
 import type { LayoutActions, LayoutDrawing, LayoutHost, LayoutRegistry } from "./layouts.ts";
 import type { PropertyTypeDrawing, PropertyTypeRegistry } from "./propertyTypes.ts";
 import type { CommandRegistry } from "./registry.ts";
+import type { ViewRenderer } from "./render.ts";
 
 /**
  * What only built-in plugins get, as `context.host`: what cannot cross to a
@@ -99,24 +101,6 @@ export interface FolderPlugin {
   readonly manifest: unknown;
   /** Its main.js, as approved. */
   readonly code: string;
-}
-
-/**
- * What a plugin from a folder adds that it cannot yet: what shows in the
- * page, until its views run in frames of their own (ADR 0058).
- */
-export function folderProblems(manifest: Manifest): readonly string[] {
-  const { blocks, panels, views, layouts, propertyTypes } = manifest.contributes;
-  const added = [
-    ...(blocks.length > 0 ? ["blocks"] : []),
-    ...(panels.length > 0 ? ["panels"] : []),
-    ...(views.length > 0 ? ["views"] : []),
-    ...(layouts.length > 0 ? ["layouts"] : []),
-    ...(propertyTypes.length > 0 ? ["property types"] : []),
-  ];
-  return added.length === 0
-    ? []
-    : [`It adds ${added.join(", ")}, which a plugin from a vault cannot add yet.`];
 }
 
 /** The registries plugins add to. */
@@ -196,6 +180,8 @@ interface Slot {
   readonly layout?: LayoutActions;
   /** Told what a property type's view sets its value to. */
   readonly setValue?: (value: Json) => void;
+  /** For a plugin from a folder, what shows what its worker draws. */
+  renderer?: ViewRenderer;
 }
 
 /** A property type's view's props as they cross to a plugin. */
@@ -296,8 +282,6 @@ export class PluginHost {
   addFolder(folder: FolderPlugin): readonly string[] {
     const { manifest, problems } = readManifest(folder.manifest);
     if (manifest === undefined) return problems;
-    const notYet = folderProblems(manifest);
-    if (notYet.length > 0) return notYet;
     const network = manifest.permissions.includes("network");
     return this.#add(manifest, { kind: "frame", code: folder.code, network }, false);
   }
@@ -600,11 +584,25 @@ export class PluginHost {
   ): Promise<{ update(props: P): Promise<void>; unmount(): void }> {
     const id = plugin.manifest.id;
     const slot = `${id}:${String(++this.#nextSlot)}`;
-    this.#slots.set(slot, { plugin: id, element, ...told });
+    const at: Slot = { plugin: id, element, ...told };
+    this.#slots.set(slot, at);
+    const { source } = plugin;
     try {
+      if (source.kind === "frame") {
+        // What its worker draws, the page shows cleaned (ADR 0063).
+        const { renderView } = await import("./render.ts");
+        at.renderer = renderView(element, {
+          network: source.network,
+          send: (event) => {
+            app.call("views.event", slot, event).catch(() => undefined);
+          },
+          onRefused: (message) => this.#options.onError?.(id, message),
+        });
+      }
       await app.call("callback", callback, "mount", slot, toJson(props));
     } catch (error) {
       this.#slots.delete(slot);
+      at.renderer?.dispose();
       throw error;
     }
     return {
@@ -614,6 +612,7 @@ export class PluginHost {
       },
       unmount: () => {
         if (!this.#slots.delete(slot)) return;
+        at.renderer?.dispose();
         // A plugin already stopped has nothing to unmount.
         app.call("callback", callback, "unmount", slot).catch(() => undefined);
       },
@@ -812,6 +811,15 @@ export class PluginHost {
     app.handle("layouts.options", (slot, options) => {
       if (!isJsonObject(options)) throw new Error("A layout's options are a JSON object.");
       laidOut(slot).setOptions(options);
+      return null;
+    });
+    app.handle("views.draw", (slot, changes) => {
+      const at = typeof slot === "string" ? this.#slots.get(slot) : undefined;
+      // A plugin draws only in its own views, and only one from a folder draws this way.
+      if (at?.plugin !== id || at.renderer === undefined) {
+        throw new Error("The plugin shows no such view.");
+      }
+      at.renderer.apply(changes);
       return null;
     });
     app.handle("views.open", (view) => {

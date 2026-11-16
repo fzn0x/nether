@@ -68,3 +68,4 @@ record supersedes it and says so. Start a new one from
 | [0058](0058-a-plugin-from-a-vault-runs-in-a-sandboxed-frame-with-what-this-device-approved.md) | A plugin from a vault runs in a sandboxed frame, with what this device approved | Accepted |
 | [0059](0059-the-public-api-takes-tokens-that-act-as-their-account-and-gives-notes-as-markdown.md) | The public API takes tokens that act as their account, and gives notes as Markdown | Accepted |
 | [0060](0060-webhooks-tell-of-notes-made-changed-and-removed-signed-and-sent-to-public-addresses.md) | Webhooks tell of notes made, changed and removed, signed, and sent to public addresses | Accepted |
+| [0063](0063-a-vault-plugins-views-draw-in-its-worker-and-the-page-shows-them-cleaned.md) | A vault plugin's views draw in its worker, and the page shows them cleaned | Accepted |

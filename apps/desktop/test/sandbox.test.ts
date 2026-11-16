@@ -117,10 +117,7 @@ describe("a vault's plugin folders", () => {
       ["echo", []],
       ["empty", ["It has no manifest.json.", "It has no main.js."]],
       ["moved", ["Its manifest's id is echo, and its folder moved."]],
-      [
-        "panes",
-        ["It adds panels, which a plugin from a vault cannot add yet.", "It has no main.js."],
-      ],
+      ["panes", ["It has no main.js."]],
       ["tags", ["A plugin that comes with the app is tags."]],
     ]);
     const entry = folders.find((each) => each.folder === "echo");
@@ -299,23 +296,6 @@ describe("PluginHost, a plugin from a folder", () => {
       ).toEqual({ html });
       host.close();
     }
-  });
-
-  it("keeps out one that adds what shows in the page", () => {
-    const { host } = make(frames().open);
-    expect(
-      host.addFolder({
-        manifest: {
-          ...echo,
-          contributes: {
-            panels: [{ id: "p", name: "P", place: "note" }],
-            views: [{ id: "v", name: "V" }],
-          },
-        },
-        code: "",
-      }),
-    ).toEqual(["It adds panels, views, which a plugin from a vault cannot add yet."]);
-    expect(host.ids()).toEqual([]);
   });
 
   it("stops it when its frame fails before it starts, and tries again when next used", async () => {
