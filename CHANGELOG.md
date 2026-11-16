@@ -62,6 +62,16 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   draw is cleaned of scripts, handlers, styles and, without the network,
   addresses outside the page. For now they add commands, code blocks and
   settings. In the web app they start while the server answers.
+- The server's REST API, first part: personal access tokens, read or
+  write, for one workspace or all, with an expiry, made with the
+  account's password, shown once, kept as hashes and revoked with a
+  session; and `/api/v1`, which reads the workspaces a token reaches,
+  their notes as the Markdown a vault has, their databases and rows, and
+  search, by the permissions sync uses
+  ([ADR 0059](docs/adr/0059-the-public-api-takes-tokens-that-act-as-their-account-and-gives-notes-as-markdown.md)).
+  Encrypted workspaces' notes are not served. The guide has an API
+  reference. Server search now also finds the tags typed in a note's
+  text in the app.
 
 ### Changed
 

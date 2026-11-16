@@ -139,6 +139,12 @@ function headersOf(raw: Record<string, string | string[] | undefined>): Headers 
 export interface SyncControl extends VaultEditor {
   /** Closes an account's connections, so its apps connect again and are checked anew. */
   disconnect(userId: string): void;
+  /**
+   * A document's state as it is now: Hocuspocus's copy while it is open,
+   * with the edits not stored yet, or else as last stored; none for one
+   * never stored.
+   */
+  state(workspaceId: string, document: string): Promise<Uint8Array | undefined>;
 }
 
 /** Whether a path is under a folder, `folder` ending with a slash, in any case. */
@@ -377,6 +383,16 @@ export async function registerSync(app: FastifyInstance, db: Database): Promise<
           if (context?.userId === userId) connection.webSocket.close(4403, "Access changed");
         }
       }
+    },
+
+    async state(workspaceId, document) {
+      const open = hocuspocus.documents.get(`${workspaceId}/${document}`);
+      if (open !== undefined) return Y.encodeStateAsUpdate(open);
+      const { rows } = await db.query(
+        "SELECT state FROM documents WHERE workspace_id = $1 AND name = $2",
+        [workspaceId, document],
+      );
+      return rows.length === 0 ? undefined : readBytes(rows[0], "state");
     },
   };
 }

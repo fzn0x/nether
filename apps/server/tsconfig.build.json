@@ -8,6 +8,10 @@
     // Workspace packages, as @nether/search, are dependencies, not this
     // server's source: their TypeScript runs as Node strips its types.
     "preserveSymlinks": true,
+    // Seen through their links, the packages' own dependencies, as the
+    // editor's ProseMirror, do not resolve for the type checker; the
+    // typecheck script checks everything, and the build only emits.
+    "noCheck": true,
     "outDir": "dist",
     "sourceMap": true
   },

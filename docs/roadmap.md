@@ -138,7 +138,7 @@ One feature per pull request, in this order:
 - [ ] The plugin and theme directory, a GitHub-backed index browsable in the app
 - [ ] Share links with view, comment or edit access, an expiry and a password
 - [ ] Publishing a note or a folder as a site the server serves, on a custom domain
-- [ ] The public REST API with tokens, and webhooks
+- [ ] The public REST API with tokens, and webhooks. Personal access tokens, read or write, for one workspace or all, and `/api/v1`, which reads notes as Markdown, databases and their rows, and search, by the permissions sync uses ([ADR 0059](adr/0059-the-public-api-takes-tokens-that-act-as-their-account-and-gives-notes-as-markdown.md)); writing notes through their documents, webhooks ([ADR 0060](adr/0060-webhooks-tell-of-notes-made-changed-and-removed-signed-and-sent-to-public-addresses.md)), and tokens and webhooks in the app come next.
 - [ ] AI, bring your own: provider settings, the off switch, writing assist, asking your notes, building with AI, and semantic search
 - [ ] Buttons and automations
 - [ ] PDF annotation, with highlights as linkable blocks
