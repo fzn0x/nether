@@ -3,7 +3,9 @@
 // its highlights marked on the pages and listed beside them, each a
 // callout in a note that links to its passage. Words are highlighted from
 // a selection, or from Find, so the keyboard alone can highlight; a
-// highlight's comment is written in its callout.
+// highlight's comment is written in its callout. Every other note's link
+// to a passage shows too, highlights and links in PDF++'s colors, and the
+// PDF's own outline and links go to their places (ADR 0062).
 import type { NoteId } from "@nether/core";
 import type { LinkGraph } from "@nether/graph";
 import {
