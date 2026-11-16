@@ -141,5 +141,5 @@ One feature per pull request, in this order:
 - [ ] The public REST API with tokens, and webhooks
 - [ ] AI, bring your own: provider settings, the off switch, writing assist, asking your notes, building with AI, and semantic search
 - [ ] Buttons and automations
-- [ ] PDF annotation, with highlights as linkable blocks
+- [ ] PDF annotation, with highlights as linkable blocks. PDFs open in a view of pdf.js, a built-in plugin's, where words selected or found are highlighted and commented on, each highlight a callout in a note that links to its passage as Obsidian links to one, and links to a page, a passage or a highlight open the PDF there ([ADR 0061](adr/0061-pdfs-show-through-pdf-js-and-a-highlight-is-a-callout-that-links-to-its-passage.md)); highlights from any note's links, and PDFs drawn by pdf.js in embeds, come next.
 - [ ] The web clipper, for Chrome and Firefox
