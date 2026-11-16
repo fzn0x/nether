@@ -8,40 +8,45 @@ import type { JsonValue } from "@nether/core";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import { type Database, type Queryable, type Row, readText, readTime } from "./db.ts";
 import { fail, limitBy, uuidField } from "./http.ts";
-import type { ReadNote } from "./markdown.ts";
+import type * as Markdown from "./markdown.ts";
 import { maxResults, noteContent, search } from "./search.ts";
 import type { SyncControl } from "./sync.ts";
 import { type ApiCaller, apiCaller, callerOf } from "./tokens.ts";
-import { accessible, general } from "./units.ts";
+import { type Level, type Unit, accessible, general } from "./units.ts";
 import { membership } from "./workspaces.ts";
 
 /** How many notes a page lists unless asked, and the most it lists. */
 const pageSize = 100;
 const maxPageSize = 1000;
 
-const noWorkspace = "This account, or this token, reaches no such workspace.";
+export const noWorkspace = "This account, or this token, reaches no such workspace.";
 export const encryptedWorkspace =
   "This workspace is end-to-end encrypted: the server cannot read its notes, so the API cannot give them.";
-const noNote = "This workspace has no such note, or none this account may open.";
-const noDatabase = "This workspace has no such database, or none this account may open.";
+export const noNote = "This workspace has no such note, or none this account may open.";
+export const noDatabase = "This workspace has no such database, or none this account may open.";
 const badCursor = "This `after` is not one the API gave.";
 
-let reader: Promise<{ readNote: (state: Uint8Array | undefined) => ReadNote }> | undefined;
+let reader: Promise<typeof Markdown> | undefined;
 
-/** The Markdown writer, with the editor's schema, loaded when the API first reads a note. */
-function markdownReader() {
+/** The Markdown reader and writer, with the editor's schema, loaded when the API first needs it. */
+export function markdownReader(): Promise<typeof Markdown> {
   reader ??= import("./markdown.ts");
   return reader;
 }
 
 /** A workspace a caller reaches, and the units its account opens there. */
-interface Reached {
+export interface Reached {
   readonly workspace: string;
+  /** The units the account opens, General's key among them. */
   readonly opens: readonly string[];
+  /** The level at which it opens each. */
+  readonly levels: ReadonlyMap<string, Level>;
+  /** Every unit of the workspace, whether the account opens it or not. */
+  readonly units: ReadonlyMap<string, Unit>;
 }
 
 /** The workspace a caller asks for, if it reaches it and the server can read it; else why not. */
-async function reach(
+export async function reach(
   db: Queryable,
   caller: ApiCaller,
   id: string,
@@ -51,8 +56,8 @@ async function reach(
   const member = await membership(db, caller.userId, workspace);
   if (member === undefined) return [404, noWorkspace];
   if (member.encryption !== "none") return [409, encryptedWorkspace];
-  const { levels } = await accessible(db, caller.userId, workspace);
-  return { workspace, opens: [...levels.keys()] };
+  const { levels, units } = await accessible(db, caller.userId, workspace);
+  return { workspace, opens: [...levels.keys()], levels, units };
 }
 
 /** Where a page of notes ends: the last one's path and ID, as an opaque text. */
@@ -155,8 +160,15 @@ async function pageOfNotes(
   return { rows: page, next };
 }
 
-/** A note a workspace lists, in a unit the account opens: its path, title and when last stored. */
-async function listedNote(db: Queryable, reached: Reached, note: string): Promise<Row | undefined> {
+/**
+ * A note a workspace lists, in a unit the account opens: its path, title,
+ * unit and when last stored.
+ */
+export async function listedNote(
+  db: Queryable,
+  reached: Reached,
+  note: string,
+): Promise<Row | undefined> {
   const { rows } = await db.query(
     `SELECT s.note, s.path, s.title, d.updated_at, COALESCE(u.unit_id::text, $3) AS unit
        FROM note_search s
@@ -171,15 +183,15 @@ async function listedNote(db: Queryable, reached: Reached, note: string): Promis
 }
 
 /** The folder a database's rows are in: its note's path without `.md`, and a slash. */
-function rowsFolder(path: string): string {
+export function rowsFolder(path: string): string {
   return `${path.replace(/\.md$/i, "")}/`;
 }
 
-interface WorkspaceParams {
+export interface WorkspaceParams {
   readonly workspace: string;
 }
 
-interface NoteParams extends WorkspaceParams {
+export interface NoteParams extends WorkspaceParams {
   readonly note: string;
 }
 
@@ -198,13 +210,13 @@ interface SearchQuery {
   readonly limit?: number;
 }
 
-const workspaceParams = {
+export const workspaceParams = {
   type: "object",
   required: ["workspace"],
   properties: { workspace: uuidField },
 } as const;
 
-const noteParams = {
+export const noteParams = {
   type: "object",
   required: ["workspace", "note"],
   properties: { workspace: uuidField, note: uuidField },
@@ -239,12 +251,52 @@ const searchQuery = {
 } as const;
 
 /** Whether a request asks for a note's Markdown alone, rather than JSON. */
-function wantsMarkdown(request: FastifyRequest): boolean {
+export function wantsMarkdown(request: FastifyRequest): boolean {
   return /\btext\/markdown\b/i.test(request.headers.accept ?? "");
 }
 
-/** The public API's routes, reading. */
-export function registerApi(app: FastifyInstance, db: Database, sync: SyncControl): void {
+/** A note as the API gives it, from the row `listedNote` found, with its entity tag. */
+export async function noteAnswer(sync: SyncControl, reached: Reached, row: Row) {
+  const id = readText(row, "note");
+  const state = await sync.state(reached.workspace, id);
+  const note = (await markdownReader()).readNote(state);
+  return {
+    tag: note.tag,
+    markdown: note.markdown,
+    body: {
+      id,
+      workspace: reached.workspace,
+      path: readText(row, "path"),
+      title: readText(row, "title"),
+      tags: state === undefined ? [] : noteContent(state).tags,
+      properties: note.properties,
+      markdown: note.markdown,
+      updatedAt: readUpdated(row),
+    },
+  };
+}
+
+/** A database the account opens, with its schema as it is now; undefined for none. */
+export async function findDatabase(
+  db: Queryable,
+  sync: SyncControl,
+  reached: Reached,
+  note: string,
+) {
+  const row = await listedNote(db, reached, note);
+  if (row === undefined) return undefined;
+  const id = readText(row, "note");
+  const state = await sync.state(reached.workspace, id);
+  const schema = state === undefined ? undefined : noteContent(state).properties.database;
+  if (typeof schema !== "object" || schema === null || Array.isArray(schema)) return undefined;
+  return { row, id, schema };
+}
+
+/**
+ * The public API's routes, reading. It gives the checks every route of the
+ * API runs, its caller's and its limit, for the routes that write.
+ */
+export function registerApi(app: FastifyInstance, db: Database, sync: SyncControl) {
   const caller = apiCaller(db);
   // Per account, its tokens and sessions together, so more tokens are not more requests.
   const limit = limitBy(app, "api", 300, "1 minute", (request) => callerOf(request).limitKey);
@@ -321,22 +373,13 @@ export function registerApi(app: FastifyInstance, db: Database, sync: SyncContro
       if (!("workspace" in reached)) return fail(reply, reached[0], reached[1]);
       const row = await listedNote(db, reached, request.params.note);
       if (row === undefined) return fail(reply, 404, noNote);
-      const id = readText(row, "note");
-      const state = await sync.state(reached.workspace, id);
-      const note = (await markdownReader()).readNote(state);
+      const note = await noteAnswer(sync, reached, row);
+      // What `If-Match` sends back to change the note only as it was read.
+      reply.header("etag", note.tag);
       if (wantsMarkdown(request)) {
         return reply.type("text/markdown; charset=utf-8").send(note.markdown);
       }
-      return {
-        id,
-        workspace: reached.workspace,
-        path: readText(row, "path"),
-        title: readText(row, "title"),
-        tags: state === undefined ? [] : noteContent(state).tags,
-        properties: note.properties,
-        markdown: note.markdown,
-        updatedAt: readUpdated(row),
-      };
+      return note.body;
     },
   );
 
@@ -368,24 +411,13 @@ export function registerApi(app: FastifyInstance, db: Database, sync: SyncContro
     },
   );
 
-  /** A database the account opens, with its schema as it is now; undefined for none. */
-  async function database(reached: Reached, note: string) {
-    const row = await listedNote(db, reached, note);
-    if (row === undefined) return undefined;
-    const id = readText(row, "note");
-    const state = await sync.state(reached.workspace, id);
-    const schema = state === undefined ? undefined : noteContent(state).properties.database;
-    if (typeof schema !== "object" || schema === null || Array.isArray(schema)) return undefined;
-    return { row, id, schema };
-  }
-
   app.get<{ Params: NoteParams }>(
     "/api/v1/workspaces/:workspace/databases/:note",
     { schema: { params: noteParams }, preHandler: checks },
     async (request, reply) => {
       const reached = await reach(db, callerOf(request), request.params.workspace);
       if (!("workspace" in reached)) return fail(reply, reached[0], reached[1]);
-      const found = await database(reached, request.params.note);
+      const found = await findDatabase(db, sync, reached, request.params.note);
       if (found === undefined) return fail(reply, 404, noDatabase);
       return {
         id: found.id,
@@ -404,7 +436,7 @@ export function registerApi(app: FastifyInstance, db: Database, sync: SyncContro
     async (request, reply) => {
       const reached = await reach(db, callerOf(request), request.params.workspace);
       if (!("workspace" in reached)) return fail(reply, reached[0], reached[1]);
-      const found = await database(reached, request.params.note);
+      const found = await findDatabase(db, sync, reached, request.params.note);
       if (found === undefined) return fail(reply, 404, noDatabase);
       const after = request.query.after === undefined ? undefined : readCursor(request.query.after);
       if (request.query.after !== undefined && after === undefined) {
@@ -447,4 +479,6 @@ export function registerApi(app: FastifyInstance, db: Database, sync: SyncContro
       return search(db, me.userId, request.query.q, request.query.limit, only);
     },
   );
+
+  return { caller, limit };
 }
