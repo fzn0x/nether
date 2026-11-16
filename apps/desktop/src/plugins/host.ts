@@ -9,6 +9,7 @@ import {
   Endpoint,
   type Json,
   type JsonObject,
+  type LayoutProps,
   type Localized,
   type Manifest,
   type PaneViewProps,
@@ -35,6 +36,7 @@ import type {
 } from "./codeBlocks.ts";
 import type { PanelDrawing, PanelHostView, PanelRegistry } from "./panels.ts";
 import type { PaneViewDrawing, PaneViewHost, ViewRegistry } from "./views.ts";
+import type { LayoutActions, LayoutDrawing, LayoutHost, LayoutRegistry } from "./layouts.ts";
 import type { CommandRegistry } from "./registry.ts";
 
 /**
@@ -55,6 +57,10 @@ export interface AppHost {
     /** Fills a pane with `view`, for a view the manifest declares. */
     view(id: string, view: PaneViewHost): void;
   };
+  readonly layouts: {
+    /** Shows a database's rows with `view`, for a layout the manifest declares. */
+    view(id: string, view: LayoutHost): void;
+  };
 }
 
 /** A built-in plugin's context: the SDK's, and the host's. */
@@ -72,6 +78,11 @@ export interface BuiltinPlugin {
   /** As its manifest.json would hold it. */
   readonly manifest: unknown;
   readonly load: () => Promise<{ readonly default: BuiltinModule }>;
+  /**
+   * Whether its layouts keep the app's own names, as `board`, not
+   * `plugin-id/board`: the built-in layouts' plugin (ADR 0056).
+   */
+  readonly appLayouts?: boolean;
 }
 
 /** The registries plugins add to. */
@@ -81,6 +92,7 @@ export interface Registries {
   readonly blocks: BlockRegistry;
   readonly panels: PanelRegistry;
   readonly views: ViewRegistry;
+  readonly layouts: LayoutRegistry;
 }
 
 export interface HostOptions {
@@ -112,6 +124,8 @@ interface Added {
   readonly panelViews: Map<string, number | PanelHostView>;
   /** The views of panes its code attached, by ID: a callback, or a live view through the host. */
   readonly paneViews: Map<string, number | PaneViewHost>;
+  /** The layouts its code attached views to, by ID: a callback, or a live view through the host. */
+  readonly layoutViews: Map<string, number | LayoutHost>;
   /** Its connection, once its code has been asked for. */
   running?: Promise<readonly [Endpoint, Endpoint]> | undefined;
 }
@@ -126,6 +140,26 @@ interface Slot {
   readonly element: HTMLElement;
   /** Told what a block's view changes the block to. */
   readonly onChange?: (attrs: JsonObject) => void;
+  /** What a layout's view changes in its database. */
+  readonly layout?: LayoutActions;
+}
+
+/** A layout's props as they cross to a plugin. */
+function layoutProps(props: LayoutProps): Json {
+  return {
+    view: { name: props.view.name, options: props.view.options },
+    rows: props.rows.map((row) => ({ id: row.id, title: row.title, values: row.values })),
+    ...(props.groups === undefined
+      ? {}
+      : { groups: props.groups.map((group) => ({ value: group.value, rows: [...group.rows] })) }),
+    properties: props.properties.map((property) => ({
+      key: property.key,
+      name: property.name,
+      type: property.type,
+    })),
+    editable: props.editable,
+    theme: props.theme,
+  };
 }
 
 /** A block view's props as they cross to a plugin. */
@@ -217,6 +251,7 @@ export class PluginHost {
       blockViews: new Map(),
       panelViews: new Map(),
       paneViews: new Map(),
+      layoutViews: new Map(),
     };
     this.#plugins.set(manifest.id, plugin);
     for (const block of manifest.contributes.codeBlocks) {
@@ -263,6 +298,16 @@ export class PluginHost {
           extensions: view.extensions,
           name: () => localize(view.name, language),
           load: () => this.#paneDrawing(plugin, view.id),
+        }),
+      );
+    }
+    for (const layout of manifest.contributes.layouts) {
+      plugin.removers.push(
+        this.#registries.layouts.add({
+          layout: builtin.appLayouts === true ? layout.id : `${manifest.id}/${layout.id}`,
+          plugin: manifest.id,
+          name: () => localize(layout.name, language),
+          load: () => this.#layoutDrawing(plugin, layout.id),
         }),
       );
     }
@@ -367,7 +412,7 @@ export class PluginHost {
         // Looked up for each block, so that the plugin can take it away again.
         const callback = plugin.blockViews.get(type);
         if (callback === undefined) return Promise.reject(missing());
-        return this.#mount(app, plugin, callback, element, blockProps, props, onChange);
+        return this.#mount(app, plugin, callback, element, blockProps, props, { onChange });
       },
     };
   }
@@ -404,6 +449,24 @@ export class PluginHost {
     };
   }
 
+  /** Starts a plugin for a database's view of its layout, and gives what shows it. */
+  async #layoutDrawing(plugin: Added, id: string): Promise<LayoutDrawing> {
+    const [app] = await this.#start(plugin);
+    const missing = () => new Error(`Its code did not attach the ${id} layout.`);
+    const view = plugin.layoutViews.get(id);
+    if (view === undefined) throw missing();
+    if (typeof view !== "number") return { view };
+    return {
+      mount: (element, props, actions) => {
+        const callback = plugin.layoutViews.get(id);
+        if (typeof callback !== "number") return Promise.reject(missing());
+        return this.#mount(app, plugin, callback, element, layoutProps, props, {
+          layout: actions,
+        });
+      },
+    };
+  }
+
   /**
    * Mounts a plugin's view in `element`, through a slot named for it, and
    * gives what updates and unmounts it.
@@ -415,11 +478,11 @@ export class PluginHost {
     element: HTMLElement,
     toJson: (props: P) => Json,
     props: P,
-    onChange?: (attrs: JsonObject) => void,
+    told: Pick<Slot, "onChange" | "layout"> = {},
   ): Promise<{ update(props: P): Promise<void>; unmount(): void }> {
     const id = plugin.manifest.id;
     const slot = `${id}:${String(++this.#nextSlot)}`;
-    this.#slots.set(slot, { plugin: id, element, ...(onChange === undefined ? {} : { onChange }) });
+    this.#slots.set(slot, { plugin: id, element, ...told });
     try {
       await app.call("callback", callback, "mount", slot, toJson(props));
     } catch (error) {
@@ -464,6 +527,7 @@ export class PluginHost {
     const types = new Set(contributes.blocks.map((block) => block.type));
     const panels = new Set(contributes.panels.map((panel) => panel.id));
     const views = new Set(contributes.views.map((view) => view.id));
+    const layouts = new Set(contributes.layouts.map((layout) => layout.id));
     // Those of their own, with no extensions, which a plugin may open.
     const ownViews = new Set(
       contributes.views.filter((view) => view.extensions.length === 0).map((view) => view.id),
@@ -477,7 +541,7 @@ export class PluginHost {
       kind: string,
       ids: ReadonlySet<string>,
       what: string,
-      attached: Map<string, number | PanelHostView | PaneViewHost>,
+      attached: Map<string, number | PanelHostView | PaneViewHost | LayoutHost>,
     ) => {
       app.handle(`${kind}.register`, (value, callback) => {
         const at = declared(ids, what, value);
@@ -502,6 +566,32 @@ export class PluginHost {
     attachable("blocks", types, "block", plugin.blockViews);
     attachable("panels", panels, "panel", plugin.panelViews);
     attachable("views", views, "view", plugin.paneViews);
+    attachable("layouts", layouts, "layout", plugin.layoutViews);
+    /** The database a slot's layout shows, for this plugin only. */
+    const laidOut = (slot: unknown): LayoutActions => {
+      const at = typeof slot === "string" ? this.#slots.get(slot) : undefined;
+      if (at?.plugin !== id || at.layout === undefined) {
+        throw new Error("The plugin shows no such layout.");
+      }
+      return at.layout;
+    };
+    app.handle("layouts.open", (slot, row) => {
+      if (typeof row !== "string") throw new Error("A row is its note's ID.");
+      laidOut(slot).openRow(row);
+      return null;
+    });
+    app.handle("layouts.set", (slot, row, key, value) => {
+      if (typeof row !== "string" || typeof key !== "string") {
+        throw new Error("A row's value needs its row and its key.");
+      }
+      laidOut(slot).setValue(row, key, value ?? null);
+      return null;
+    });
+    app.handle("layouts.options", (slot, options) => {
+      if (!isJsonObject(options)) throw new Error("A layout's options are a JSON object.");
+      laidOut(slot).setOptions(options);
+      return null;
+    });
     app.handle("views.open", (view) => {
       const at = declared(ownViews, "view of its own", view);
       this.#options.onOpenView?.(`${id}:${at}`);
@@ -535,6 +625,11 @@ export class PluginHost {
       views: {
         view: (pane, view) => {
           plugin.paneViews.set(declared(views, "view", pane), view);
+        },
+      },
+      layouts: {
+        view: (layout, view) => {
+          plugin.layoutViews.set(declared(layouts, "layout", layout), view);
         },
       },
     };

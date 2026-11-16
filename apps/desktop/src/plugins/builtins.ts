@@ -8,6 +8,7 @@ import assigned from "./assigned/manifest.json";
 import backlinks from "./backlinks/manifest.json";
 import canvas from "./canvas/manifest.json";
 import graph from "./graph/manifest.json";
+import layouts from "./layouts/manifest.json";
 import type { BuiltinPlugin } from "./host.ts";
 import mermaid from "./mermaid/manifest.json";
 import outline from "./outline/manifest.json";
@@ -23,4 +24,6 @@ export const builtinPlugins: readonly BuiltinPlugin[] = [
   { manifest: backlinks, load: () => import("./backlinks/plugin.tsx") },
   { manifest: canvas, load: () => import("./canvas/plugin.tsx") },
   { manifest: graph, load: () => import("./graph/plugin.tsx") },
+  // Its board, gallery, list, calendar and timeline keep their names in a database's schema.
+  { manifest: layouts, load: () => import("./layouts/plugin.tsx"), appLayouts: true },
 ];

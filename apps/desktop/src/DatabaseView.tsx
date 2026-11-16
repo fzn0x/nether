@@ -46,16 +46,9 @@ import {
 } from "react";
 import { myName, peopleNames, subscribeMyName } from "./people.ts";
 import type * as Y from "yjs";
-import {
-  BoardLayout,
-  CalendarLayout,
-  GalleryLayout,
-  ListLayout,
-  TimelineLayout,
-  boardTypes,
-  groupLabel,
-  valueText,
-} from "./DatabaseLayouts.tsx";
+import { boardTypes, groupLabel, valueText } from "./DatabaseLayouts.tsx";
+import { LayoutOutput } from "./LayoutOutput.tsx";
+import { type LayoutRegistry, useLayouts } from "./plugins/layouts.ts";
 import { useDocumentProperties } from "./DatabaseSlot.tsx";
 import { ListEditor } from "./PropertiesPanel.tsx";
 import type { Exporter, VaultMedia } from "./backend.ts";
@@ -673,6 +666,8 @@ export interface DatabaseProps {
   readonly document: Y.Doc;
   readonly path: string;
   readonly onOpenNote: (id: NoteId) => void;
+  /** The layouts plugins add, beside the table (ADR 0056). */
+  readonly layouts: LayoutRegistry;
 }
 
 /**
@@ -686,7 +681,8 @@ export function DatabaseView(props: DatabaseProps) {
 }
 
 function Database(props: DatabaseProps & { readonly entries: readonly PropertyEntry[] }) {
-  const { vault, media, exporter, graph, document, path, onOpenNote, entries } = props;
+  const { vault, media, exporter, graph, document, path, onOpenNote, layouts, entries } = props;
+  const available = useLayouts(layouts);
   const version = useGraph(graph);
   const me = useSyncExternalStore(subscribeMyName, myName);
   const notes = useNotes(vault);
@@ -1002,6 +998,9 @@ function Database(props: DatabaseProps & { readonly entries: readonly PropertyEn
       setExported({ failed: problem instanceof Error ? problem.message : String(problem) });
     });
   };
+  // The plugin's layout the view is in, when a plugin here shows it.
+  const shownLayout =
+    view === undefined ? undefined : available.find((layout) => layout.layout === view.layout);
   const visible = (view?.visible ?? [])
     .map((key) => schema.properties.find((property) => property.key === key))
     .filter((property): property is PropertyDefinition => property !== undefined);
@@ -1116,12 +1115,15 @@ function Database(props: DatabaseProps & { readonly entries: readonly PropertyEn
                   changeLayout(view, event.target.value as View["layout"]);
                 }}
               >
-                {(["table", "board", "gallery", "list", "calendar", "timeline"] as const).map(
-                  (layout) => (
-                    <option key={layout} value={layout}>
-                      {t(`layout_${layout}`)}
-                    </option>
-                  ),
+                <option value="table">{t("layout_table")}</option>
+                {available.map((layout) => (
+                  <option key={layout.layout} value={layout.layout}>
+                    {layout.name()}
+                  </option>
+                ))}
+                {view.layout === "table" || shownLayout !== undefined ? null : (
+                  // A layout no plugin here shows, named as the schema has it.
+                  <option value={view.layout}>{view.layout}</option>
                 )}
               </select>
             </label>
@@ -1383,86 +1385,68 @@ function Database(props: DatabaseProps & { readonly entries: readonly PropertyEn
             </div>
           ) : null}
           {error === undefined ? null : <p role="alert">{t("cellFailed", { error })}</p>}
-          {view.layout === "board" ? (
-            <BoardLayout
-              {...{
+          {view.layout !== "table" && shownLayout !== undefined ? (
+            <LayoutOutput
+              key={shownLayout.layout}
+              processor={shownLayout}
+              hostProps={{
                 view,
                 rows: result.rows,
                 ...(result.groups === undefined ? {} : { groups: result.groups }),
                 visible,
                 onOpen: onOpenNote,
+                onMove: move,
+                onCreate: createIn,
+                ...(view.date === undefined || view.date.startsWith("$")
+                  ? {}
+                  : { onCreateOn: createOn }),
+                coverOf,
               }}
-              onMove={move}
-              onCreate={createIn}
-            />
-          ) : view.layout === "gallery" ? (
-            <GalleryLayout
-              {...{
-                view,
-                rows: result.rows,
-                ...(result.groups === undefined ? {} : { groups: result.groups }),
-                visible,
-                onOpen: onOpenNote,
-              }}
-              coverOf={coverOf}
-            />
-          ) : view.layout === "calendar" ? (
-            <CalendarLayout
-              view={view}
-              rows={result.rows}
-              visible={visible}
-              onOpen={onOpenNote}
-              dateKey={view.date ?? "$updated"}
-              {...(view.date === undefined || view.date.startsWith("$")
-                ? {}
-                : { onCreate: createOn })}
-            />
-          ) : view.layout === "timeline" ? (
-            <TimelineLayout
-              view={view}
-              rows={result.rows}
-              visible={visible}
-              onOpen={onOpenNote}
-              dateKey={view.date ?? "$updated"}
-              {...(view.end === undefined ? {} : { endKey: view.end })}
-            />
-          ) : view.layout === "list" ? (
-            <ListLayout
-              {...{
-                view,
-                rows: result.rows,
-                ...(result.groups === undefined ? {} : { groups: result.groups }),
-                visible,
-                onOpen: onOpenNote,
+              actions={{
+                openRow: (row) => {
+                  onOpenNote(row as NoteId);
+                },
+                setValue: (row, key, value) => {
+                  write(row as NoteId, key, value);
+                },
+                setOptions: (options) => {
+                  saveView({ ...view, options });
+                },
               }}
             />
           ) : (
-            <table className="database-table">
-              <caption className="visually-hidden">{view.name}</caption>
-              <thead>
-                <tr>
-                  {header("$title")}
-                  {visible.map((property) => header(property.key))}
-                </tr>
-              </thead>
-              {result.groups === undefined ? (
-                <tbody>{rowLines(result.rows)}</tbody>
-              ) : (
-                result.groups.map((group) => {
-                  const label = groupLabel(group.value);
-                  return (
-                    <tbody key={label} aria-label={label}>
-                      <tr className="database-group">
-                        <th scope="rowgroup" colSpan={visible.length + 1}>
-                          {label} <span className="count">{group.rows.length}</span>
-                        </th>
-                      </tr>
-                      {rowLines(group.rows)}
-                    </tbody>
-                  );
-                })
+            <>
+              {view.layout === "table" ? null : (
+                // Without the plugin that draws its layout, a view shows as a table, as it is.
+                <p className="placeholder">{t("layoutMissing", { layout: view.layout })}</p>
               )}
-            </table>
+              <table className="database-table">
+                <caption className="visually-hidden">{view.name}</caption>
+                <thead>
+                  <tr>
+                    {header("$title")}
+                    {visible.map((property) => header(property.key))}
+                  </tr>
+                </thead>
+                {result.groups === undefined ? (
+                  <tbody>{rowLines(result.rows)}</tbody>
+                ) : (
+                  result.groups.map((group) => {
+                    const label = groupLabel(group.value);
+                    return (
+                      <tbody key={label} aria-label={label}>
+                        <tr className="database-group">
+                          <th scope="rowgroup" colSpan={visible.length + 1}>
+                            {label} <span className="count">{group.rows.length}</span>
+                          </th>
+                        </tr>
+                        {rowLines(group.rows)}
+                      </tbody>
+                    );
+                  })
+                )}
+              </table>
+            </>
           )}
           <button
             type="button"

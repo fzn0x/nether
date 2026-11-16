@@ -1,0 +1,17 @@
+{
+  "id": "layouts",
+  "name": "Database layouts",
+  "version": "1.0.0",
+  "api": "^0.1",
+  "description": "Shows a database's rows on a board, in a gallery or a list, on a calendar or a timeline. Off, its views show as tables.",
+  "author": "Nether contributors",
+  "contributes": {
+    "layouts": [
+      { "id": "board", "name": "Board" },
+      { "id": "gallery", "name": "Gallery" },
+      { "id": "list", "name": "List" },
+      { "id": "calendar", "name": "Calendar" },
+      { "id": "timeline", "name": "Timeline" }
+    ]
+  }
+}
