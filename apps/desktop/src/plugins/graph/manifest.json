@@ -1,0 +1,11 @@
+{
+  "id": "graph",
+  "name": "Graph",
+  "version": "1.0.0",
+  "api": "^0.1",
+  "description": "Draws the vault's notes and the links between them, all of them or those around a note, in the pane.",
+  "author": "Nether contributors",
+  "contributes": {
+    "views": [{ "id": "graph", "name": "Graph" }]
+  }
+}

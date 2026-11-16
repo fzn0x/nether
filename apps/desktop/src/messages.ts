@@ -358,6 +358,7 @@ export const messages = {
   pluginVersion: "Version {version}.",
   notANumber: "{name} needs a number.",
   pluginBlockMissing: "No plugin here shows this block:",
+  noViewFor: "No plugin here opens .{extension} files.",
   templateSettings: "Templates and periodic notes",
   templates: "Templates",
   templatesFolder: "Templates folder",

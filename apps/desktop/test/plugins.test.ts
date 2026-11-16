@@ -14,6 +14,7 @@ import { describe, expect, it } from "vitest";
 import { coreMenus, commandIds } from "../src/commands.ts";
 import { BlockRegistry, slashEntries } from "../src/plugins/blocks.ts";
 import { PanelRegistry } from "../src/plugins/panels.ts";
+import { ViewRegistry, extensionOf } from "../src/plugins/views.ts";
 import { isOn, readBuiltins, readOn } from "../src/plugins/state.ts";
 import { builtinPlugins } from "../src/plugins/builtins.ts";
 import { CodeBlockRegistry, type CodeBlockView } from "../src/plugins/codeBlocks.ts";
@@ -307,15 +308,20 @@ for (const [name, connect] of Object.entries(connections)) {
       codeBlocks = new CodeBlockRegistry(),
       blocks = new BlockRegistry(),
       panels = new PanelRegistry(),
+      views = new ViewRegistry(),
+      opened: string[] = [],
     ) =>
       new PluginHost(
-        { commands: registry, codeBlocks, blocks, panels },
+        { commands: registry, codeBlocks, blocks, panels, views },
         {
           language: "fr",
           direction: "ltr",
           ...(connect === undefined ? {} : { connect }),
           onError: (plugin, message) => {
             errors.push(`${plugin}: ${message}`);
+          },
+          onOpenView: (id) => {
+            opened.push(id);
           },
         },
       );
@@ -649,6 +655,73 @@ for (const [name, connect] of Object.entries(connections)) {
       plugins.close();
     });
 
+    it("opens a plugin's files by their extension, and its views of their own when it asks", async () => {
+      const views = new ViewRegistry();
+      const opened: string[] = [];
+      const plugins = host(
+        new CommandRegistry(),
+        [],
+        new CodeBlockRegistry(),
+        new BlockRegistry(),
+        new PanelRegistry(),
+        views,
+        opened,
+      );
+      const stats = () => null;
+      let open: ((id: string) => Promise<void>) | undefined;
+      const sheets = {
+        id: "sheets",
+        name: "Sheets",
+        version: "1.0.0",
+        api: "^0.1",
+        contributes: {
+          views: [
+            { id: "sheet", name: { en: "Sheet", fr: "Feuille" }, extensions: ["csv", "tsv"] },
+            { id: "stats", name: "Statistics" },
+          ],
+        },
+      };
+      plugins.add({
+        manifest: sheets,
+        load: () =>
+          Promise.resolve({
+            default: {
+              async activate(context: BuiltinContext) {
+                await context.views.register("sheet", {
+                  mount(element, props) {
+                    element.textContent = props.file?.path ?? "";
+                    return undefined;
+                  },
+                });
+                context.host.views.view("stats", stats);
+                open = (id) => context.views.open(id);
+              },
+            },
+          }),
+      });
+      const sheet = views.forFile("Data/Prices.CSV");
+      expect([sheet?.id, sheet?.name()]).toEqual(["sheets:sheet", "Feuille"]);
+      expect(views.forFile("Notes/a.md")).toBeUndefined();
+      expect(views.forFile("README")).toBeUndefined();
+      const element = { textContent: "" } as HTMLElement;
+      const drawing = await sheet?.load();
+      const view = await drawing?.mount?.(element, {
+        theme: "light",
+        file: { path: "Data/Prices.CSV" },
+      });
+      expect(element.textContent).toBe("Data/Prices.CSV");
+      view?.unmount();
+      expect((await views.get("sheets:stats")?.load())?.view).toBe(stats);
+      await open?.("stats");
+      expect(opened).toEqual(["sheets:stats"]);
+      // A view of files opens with its files, not by itself.
+      await expect(open?.("sheet")).rejects.toThrow(
+        'The manifest declares no view of its own "sheet".',
+      );
+      plugins.close();
+      expect(views.all()).toEqual([]);
+    });
+
     it("refuses a view of a panel its manifest does not declare", async () => {
       const panels = new PanelRegistry();
       const plugins = host(
@@ -733,8 +806,12 @@ describe("PluginHost, adding", () => {
     commands = new CommandRegistry(),
     blocks = new BlockRegistry(),
     panels = new PanelRegistry(),
+    views = new ViewRegistry(),
   ) =>
-    new PluginHost({ commands, codeBlocks, blocks, panels }, { language: "en", direction: "ltr" });
+    new PluginHost(
+      { commands, codeBlocks, blocks, panels, views },
+      { language: "en", direction: "ltr" },
+    );
   const load = fixture().load;
 
   it("keeps out a plugin whose manifest is wrong, or which needs another API", () => {
@@ -792,6 +869,37 @@ describe("PluginHost, adding", () => {
       ["outline:outline", "note", "Outline", false],
       ["backlinks:linked", "note", "Linked from", false],
       ["backlinks:unlinked", "note", "Unlinked mentions", true],
+    ]);
+  });
+
+  it("keeps out a plugin that opens files another plugin opens", () => {
+    const views = new ViewRegistry();
+    const host = plugins(
+      new CodeBlockRegistry(),
+      new CommandRegistry(),
+      new BlockRegistry(),
+      new PanelRegistry(),
+      views,
+    );
+    for (const builtin of builtinPlugins) host.add(builtin);
+    expect(views.forFile("Boards/Plan.canvas")?.id).toBe("canvas:canvas");
+    expect(views.get("graph:graph")?.extensions).toEqual([]);
+    const other = {
+      ...manifest,
+      contributes: { views: [{ id: "whiteboard", name: "Whiteboard", extensions: ["canvas"] }] },
+    };
+    expect(host.add({ manifest: other, load })).toEqual([
+      "The plugin canvas opens .canvas files already.",
+    ]);
+  });
+
+  it("reads a file's extension, lowercase and without the dot", () => {
+    expect(["a/b.Canvas", "a.b/c", ".hidden", "x.tar.gz", "plain"].map(extensionOf)).toEqual([
+      "canvas",
+      "",
+      "",
+      "gz",
+      "",
     ]);
   });
 
@@ -877,6 +985,7 @@ describe("PluginHost, adding", () => {
         codeBlocks: new CodeBlockRegistry(),
         blocks: new BlockRegistry(),
         panels: new PanelRegistry(),
+        views: new ViewRegistry(),
       },
       {
         language: "en",

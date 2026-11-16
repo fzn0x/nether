@@ -1,5 +1,5 @@
 import { type Page, expect, test } from "@playwright/test";
-import { errorsOf, openSample, violations } from "./helpers.ts";
+import { errorsOf, openSample, openSampleTree, violations } from "./helpers.ts";
 
 /** A file of the sample vault, as the app last wrote it. */
 async function fileText(page: Page, path: string): Promise<string | undefined> {
@@ -52,6 +52,8 @@ test("the settings turn a built-in plugin off and on again, and the vault keeps 
       assigned: true,
       outline: true,
       backlinks: true,
+      canvas: true,
+      graph: true,
     });
 
   await openSettings(page, /^Plugins/);
@@ -104,5 +106,41 @@ test("a plugin's settings change what it shows, and the vault keeps them", async
   await expect
     .poll(() => fileText(page, ".nether/plugins/backlinks/data.json"))
     .toBe('{\n  "context": false\n}\n');
+  expect(errors).toEqual([]);
+});
+
+test("with the canvas plugin off, a canvas says no plugin opens it, and New canvas waits", async ({
+  page,
+}) => {
+  const errors = errorsOf(page);
+  const tree = await openSampleTree(page);
+  await page.evaluate(() => {
+    (
+      globalThis as unknown as {
+        netherPreview: { files: { edit(path: string, text: string | undefined): void } };
+      }
+    ).netherPreview.files.edit("Projects/Board.canvas", '{"nodes":[],"edges":[]}');
+  });
+  const settings = await openSettings(page, /^Plugins/);
+  const plugins = settings.getByRole("tabpanel", { name: "Plugins" });
+  await plugins.getByRole("checkbox", { name: "Canvas" }).uncheck();
+  await plugins.getByRole("button", { name: "Save" }).click();
+
+  await tree.getByRole("treeitem", { name: "Projects" }).click();
+  await tree.getByRole("treeitem", { name: /^Board/ }).click();
+  await expect(page.getByRole("tab", { name: "Board" })).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByText("No plugin here opens .canvas files.")).toBeVisible();
+  await page.getByRole("menuitem", { name: "File" }).click();
+  await expect(page.getByRole("menuitem", { name: /^New canvas/ })).toHaveAttribute(
+    "aria-disabled",
+    "true",
+  );
+  await page.keyboard.press("Escape");
+
+  // On again, the canvas opens.
+  await openSettings(page, /^Plugins/);
+  await plugins.getByRole("checkbox", { name: "Canvas" }).check();
+  await plugins.getByRole("button", { name: "Save" }).click();
+  await expect(page.getByRole("heading", { name: "Board", level: 1 })).toBeVisible();
   expect(errors).toEqual([]);
 });

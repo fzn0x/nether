@@ -3582,7 +3582,7 @@ kbd {
 }
 
 /* A canvas in its pane (ADR 0051): the board fills it, and moves and scales within. */
-.pane-body.canvas-body {
+.pane-body.view-body {
   padding: 0;
   overflow: hidden;
 }

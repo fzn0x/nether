@@ -44,6 +44,8 @@ import { builtinPlugins } from "./plugins/builtins.ts";
 import { BlockRegistry } from "./plugins/blocks.ts";
 import { CodeBlockRegistry } from "./plugins/codeBlocks.ts";
 import { PanelRegistry, usePanels } from "./plugins/panels.ts";
+import { ViewRegistry, extensionOf, useViews } from "./plugins/views.ts";
+import { PaneViewOutput } from "./PaneViewOutput.tsx";
 import { SidebarPanel } from "./PanelOutput.tsx";
 import { PluginHost } from "./plugins/host.ts";
 import { isOn, readBuiltins, usePluginState } from "./plugins/state.ts";
@@ -177,8 +179,6 @@ const loadMergeNote = () => import("./mergeNote.ts");
 const loadDatabases = () => import("./databases.ts");
 // The graph, with Sigma and its layout, loads the first time it opens.
 const ThemeEffect = lazy(() => import("./ThemeEffect.tsx"));
-const CanvasView = lazy(() => import("./CanvasView.tsx"));
-const GraphView = lazy(() => import("./GraphView.tsx"));
 // The import, appearance and servers dialogs, with the importers, load when they open.
 const ImportDialog = lazy(() =>
   import("./ImportDialog.tsx").then(({ ImportDialog: dialog }) => ({ default: dialog })),
@@ -266,6 +266,9 @@ function IndexStatus(props: { readonly indexer: Indexer }) {
 /** The built-in plugins, their manifests read once. */
 const builtins = readBuiltins(builtinPlugins);
 
+/** The built-in graph plugin's view, which the app's Graph command opens. */
+const graphView = "graph:graph";
+
 /** The built-in plugins' panels that the app's commands Tags and Assigned show. */
 const tagsPanel = "tags:tags";
 const assignedPanel = "assigned:assigned";
@@ -319,7 +322,8 @@ export function VaultView(props: {
   }, []);
   const selected = activeNote(layout);
   // Whether the graph shows in place of the note.
-  const [graphShown, setGraphShown] = useState(false);
+  // A plugin's view of its own filling the pane over the notes open, as the graph does.
+  const [paneView, setPaneView] = useState<string | undefined>();
   const lastNoteKey = `nether.lastNote.${info.id}`;
   const tabsKey = `nether.tabs.${info.id}`;
 
@@ -394,10 +398,15 @@ export function VaultView(props: {
   const [blocks] = useState(() => new BlockRegistry());
   // And their panels, in the sidebar and beside a note.
   const [panels] = useState(() => new PanelRegistry());
+  // And their views, of files by extension and of their own.
+  const [views] = useState(() => new ViewRegistry());
   const plugins = useMemo(
-    () => ({ commands: registry, codeBlocks, blocks, panels }),
-    [registry, codeBlocks, blocks, panels],
+    () => ({ commands: registry, codeBlocks, blocks, panels, views }),
+    [registry, codeBlocks, blocks, panels, views],
   );
+  const allViews = useViews(views);
+  // Whether a plugin opens canvases, for New canvas.
+  const canvasOpens = allViews.some((view) => view.extensions.includes("canvas"));
   const sidebarPanels = usePanels(panels, "sidebar");
   const commands = useSyncExternalStore(
     useCallback((listener: () => void) => registry.subscribe(listener), [registry]),
@@ -454,6 +463,7 @@ export function VaultView(props: {
         onError: (plugin, message) => {
           setNotice({ text: t("pluginFailed", { plugin, message }) });
         },
+        onOpenView: setPaneView,
       }),
   );
   const pluginState = usePluginState(vault, builtins);
@@ -485,7 +495,7 @@ export function VaultView(props: {
   /** Opens a note in the focused pane's tab, in a new tab, or in the pane to the right; returns that pane's key. */
   const openNote = useCallback(
     (id: NoteId, part?: NotePart, where: "here" | "tab" | "right" = "here"): number => {
-      setGraphShown(false);
+      setPaneView(undefined);
       const next = changeLayout((current) =>
         where === "tab"
           ? openInNewTab(current, id)
@@ -507,7 +517,7 @@ export function VaultView(props: {
   /** Opens a canvas, by its path, in the focused pane, a new tab or the pane to the right. */
   const openFile = useCallback(
     (path: string, where: "here" | "tab" | "right" = "here") => {
-      setGraphShown(false);
+      setPaneView(undefined);
       const tab = fileTab(path);
       changeLayout((current) =>
         where === "tab"
@@ -850,13 +860,17 @@ export function VaultView(props: {
           setNewFolderIn(path);
         },
       },
-      {
-        label: t("newCanvasHere"),
-        icon: commandIcons.newCanvas,
-        run: () => {
-          void newCanvas(path);
-        },
-      },
+      ...(canvasOpens
+        ? [
+            {
+              label: t("newCanvasHere"),
+              icon: commandIcons.newCanvas,
+              run: () => {
+                void newCanvas(path);
+              },
+            },
+          ]
+        : []),
       "separator",
       {
         label: empty ? t("deleteFolder") : t("deleteFolderAsk"),
@@ -1102,17 +1116,18 @@ export function VaultView(props: {
             setNewFolderIn("");
           }
         : undefined,
-      newCanvas: open
-        ? () => {
-            const folder =
-              selectedPath?.includes("/") === true
-                ? selectedPath.slice(0, selectedPath.lastIndexOf("/"))
-                : "";
-            void newCanvas(folder).catch((error: unknown) => {
-              setNotice({ text: error instanceof Error ? error.message : String(error) });
-            });
-          }
-        : undefined,
+      newCanvas:
+        open && canvasOpens
+          ? () => {
+              const folder =
+                selectedPath?.includes("/") === true
+                  ? selectedPath.slice(0, selectedPath.lastIndexOf("/"))
+                  : "";
+              void newCanvas(folder).catch((error: unknown) => {
+                setNotice({ text: error instanceof Error ? error.message : String(error) });
+              });
+            }
+          : undefined,
       newDatabase: open
         ? () => {
             const vault = state.vault;
@@ -1229,11 +1244,12 @@ export function VaultView(props: {
       myName: () => {
         setNamingMe(true);
       },
-      openGraph: open
-        ? () => {
-            setGraphShown(true);
-          }
-        : undefined,
+      openGraph:
+        open && allViews.some((view) => view.id === graphView)
+          ? () => {
+              setPaneView(graphView);
+            }
+          : undefined,
       templateSettings: open ? openSettings("templates") : undefined,
       appearance: open ? openSettings("appearance") : undefined,
       servers: () => {
@@ -1305,6 +1321,8 @@ export function VaultView(props: {
     changeLayout,
     openNote,
     sidebarPanels,
+    allViews,
+    canvasOpens,
   ]);
 
   const closeDialog = () => {
@@ -1386,6 +1404,9 @@ export function VaultView(props: {
           ];
         })()),
   ];
+
+  // The plugin's view of its own filling the pane, if one does.
+  const shownView = paneView === undefined ? undefined : views.get(paneView);
 
   // The plugin's panel the sidebar shows, if it shows one.
   const shownPanel = sidebarPanels.find((each) => each.id === panel);
@@ -2145,25 +2166,31 @@ export function VaultView(props: {
         />
       ) : null}
       <main className="pane">
-        {state.status === "open" && graphShown ? (
-          <Suspense fallback={<p className="placeholder">{t("loadingGraph")}</p>}>
-            <GraphView
-              vault={state.vault}
-              graph={state.indexer.graph}
-              note={selected}
-              onOpenNote={openNote}
-              onClose={() => {
-                setGraphShown(false);
-              }}
-            />
-          </Suspense>
+        {state.status === "open" && shownView !== undefined ? (
+          <PaneViewOutput
+            processor={shownView}
+            loading={
+              <p className="placeholder">{shownView.id === graphView ? t("loadingGraph") : null}</p>
+            }
+            viewProps={{
+              vault: state.vault,
+              graph: state.indexer.graph,
+              media: state.media,
+              ...(selected === undefined ? {} : { note: selected }),
+              openNote,
+              close: () => {
+                setPaneView(undefined);
+              },
+            }}
+          />
         ) : state.status === "open" && layout.panes.some((pane) => pane.tabs.length > 0) ? (
           noteView === undefined ? null : (
             <div className={`panes${layout.panes.length > 1 ? " split" : ""}`}>
               {layout.panes.map((pane, index) => {
                 const shown = shownIn(pane);
                 const id = noteOf(shown);
-                const canvas = filePathOf(shown);
+                const file = filePathOf(shown);
+                const fileView = file === undefined ? undefined : views.forFile(file);
                 const paneAsks = asks[pane.key] ?? noAsks;
                 const split = layout.panes.length > 1;
                 const side = index === 0 ? "Left" : "Right";
@@ -2189,7 +2216,7 @@ export function VaultView(props: {
                         const file = filePathOf(tab);
                         return file === undefined
                           ? (state.vault.note(tab as NoteId)?.title ?? "")
-                          : file.slice(file.lastIndexOf("/") + 1).replace(/\.canvas$/i, "");
+                          : file.slice(file.lastIndexOf("/") + 1).replace(/\.[^.]+$/, "");
                       }}
                       onChoose={(tab) => {
                         changeLayout((current) => chooseTab(current, index, tab));
@@ -2204,25 +2231,30 @@ export function VaultView(props: {
                       }}
                     />
                     <div
-                      className={`pane-body${canvas === undefined ? "" : " canvas-body"}`}
+                      className={`pane-body${file === undefined ? "" : " view-body"}`}
                       role="tabpanel"
                       id={panelId}
                       aria-labelledby={tabId(pane.active)}
                     >
-                      {canvas !== undefined ? (
-                        <Suspense fallback={null}>
-                          <CanvasView
-                            key={canvas}
-                            vault={state.vault}
-                            graph={state.indexer.graph}
-                            media={state.media}
-                            path={canvas}
-                            // A note opened from a canvas opens beside it, keeping the canvas open.
-                            onOpenNote={(note) => {
-                              openNote(note, undefined, "tab");
+                      {file !== undefined ? (
+                        fileView === undefined ? (
+                          <p className="placeholder">
+                            {t("noViewFor", { extension: extensionOf(file) })}
+                          </p>
+                        ) : (
+                          <PaneViewOutput
+                            key={file}
+                            processor={fileView}
+                            viewProps={{
+                              vault: state.vault,
+                              graph: state.indexer.graph,
+                              media: state.media,
+                              path: file,
+                              openNote,
+                              close: () => undefined,
                             }}
                           />
-                        </Suspense>
+                        )
                       ) : id === undefined ? (
                         <p className="placeholder">{t("selectNote")}</p>
                       ) : (
