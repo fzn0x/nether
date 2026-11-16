@@ -34,6 +34,7 @@ export {
   withComment,
   withoutHighlight,
 } from "./highlights.ts";
+export { type PassageLink, readPassageLinks } from "./passages.ts";
 export {
   type HighlightColor,
   colorValue,
