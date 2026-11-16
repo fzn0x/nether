@@ -4,7 +4,10 @@
 // without a file's extension, as /invite and /sign-in, where the app reads
 // what it was opened at. Every answer carries its content security policy:
 // the page's own scripts, workers and WebAssembly, connections to this
-// server only, images and media from it, blob: and data:, no frames.
+// server only, images and media from it, blob: and data:, and frames of its
+// own only, which plugins from a vault run in (ADR 0058). A plugin frame's
+// page has its own policy, the one its build wrote in it, and may be
+// framed by the app's page alone.
 import { readFile, stat } from "node:fs/promises";
 import { extname, join, relative, sep } from "node:path";
 import type { FastifyInstance, FastifyReply } from "fastify";
@@ -20,7 +23,7 @@ export const contentSecurityPolicy = [
   "media-src 'self' blob: data:",
   "font-src 'self' data:",
   "connect-src 'self'",
-  "frame-src 'none'",
+  "frame-src 'self'",
   "frame-ancestors 'none'",
   "object-src 'none'",
   "base-uri 'none'",
@@ -52,6 +55,19 @@ function guard(reply: FastifyReply): FastifyReply {
     .header("referrer-policy", "no-referrer")
     .header("cross-origin-opener-policy", "same-origin")
     .header("x-frame-options", "DENY");
+}
+
+/** The pages plugins from a vault run in (ADR 0058). */
+const pluginFrames = new Set(["/plugin-frame.html", "/plugin-frame-network.html"]);
+
+/**
+ * A plugin frame's policy: the one its page has, which the build wrote, and
+ * the app's page as the only one that may frame it. Without one, nothing
+ * runs in it.
+ */
+export function pluginFramePolicy(html: string): string {
+  const meta = /<meta\s+http-equiv="Content-Security-Policy"\s+content="([^"]*)"/i.exec(html);
+  return `${meta?.[1] ?? "default-src 'none'"}; frame-ancestors 'self'`;
 }
 
 /** A file of the build, by the path asked for; undefined when it is not one, or climbs out. */
@@ -120,6 +136,16 @@ export async function registerWebApp(
       if (extname(pathname) !== "")
         return guard(reply).code(404).type("text/plain").send("Not found");
       return page(reply);
+    }
+    if (pluginFrames.has(pathname)) {
+      const html = await readFile(file, "utf8");
+      return reply
+        .header("content-security-policy", pluginFramePolicy(html))
+        .header("x-content-type-options", "nosniff")
+        .header("referrer-policy", "no-referrer")
+        .type("text/html; charset=utf-8")
+        .header("cache-control", "no-cache")
+        .send(html);
     }
     const hashed = pathname.startsWith("/assets/");
     return guard(reply)

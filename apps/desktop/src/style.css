@@ -2300,6 +2300,16 @@ button {
   font-size: 1rem;
 }
 
+.settings-form h4 {
+  margin: 0.5rem 0 0;
+  font-size: 0.9rem;
+}
+
+/* A plugin from a vault's frame, which shows nothing (ADR 0058). */
+.plugin-frame {
+  display: none;
+}
+
 .plugin-list {
   display: grid;
   gap: 0.75rem;

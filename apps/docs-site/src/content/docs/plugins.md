@@ -1,25 +1,26 @@
 ---
 title: Writing plugins
-description: How a Nether plugin is made, a preview of the plugin API at version 0.1. A plugin's folder, its manifest, its code, the commands, code blocks, blocks and panels it adds, and its settings.
+description: How a Nether plugin is made, a preview of the plugin API at version 0.1. A plugin's folder, its manifest, its code, the commands, code blocks, blocks and panels it adds, its settings, and the sandbox it runs in.
 ---
 
 :::caution[A preview]
-Plugins from a vault's folder do not run yet. They will once the sandbox,
-the next part of Phase 4, runs each one apart from the app, with the
-permissions you approve. Until then only Nether's own built-in plugins
-run, through the API this page describes. The API is at version 0.1, and
-may change before 1.0.
+Plugins from a vault's folder run in a sandbox, apart from the app, once
+you approve them. For now they may add commands, code blocks and
+settings. Their blocks, panels, views, layouts and property types come
+with the sandbox's next part, and reading and changing the vault with its
+last. Nether's own built-in plugins use all of the API this page
+describes. The API is at version 0.1, and may change before 1.0.
 :::
 
 ## A plugin's folder
 
-A plugin is a folder in the vault, `.nether/plugins/<id>/`:
+A plugin is a folder in the vault, `.nether/plugins/<id>/`, named for its
+ID:
 
 | File            | What it holds                                                |
 | --------------- | ------------------------------------------------------------ |
-| `manifest.json` | Who the plugin is, the API versions it needs, and what it adds |
-| `main.js`       | Its code: an ES module whose default export is the plugin    |
-| `styles.css`    | Its styles, if it has any                                    |
+| `manifest.json` | Who the plugin is, the API versions it needs, what it adds and what it asks for |
+| `main.js`       | Its code: one ES module, with what it imports bundled in, whose default export is the plugin |
 
 Plugins never sync with a workspace. Like everything in `.nether`, they
 stay on the device they were installed on, so nobody else's plugin can
@@ -36,6 +37,7 @@ reach your computer.
   "description": "Counts the words of the open note.",
   "author": "Ada",
   "authorUrl": "https://example.org",
+  "permissions": [],
   "contributes": {
     "commands": [
       {
@@ -57,6 +59,7 @@ reach your computer.
 | `api` | The versions of the plugin API it works with, as `^0.1` |
 | `description` | What it does, optional, a string or strings by language |
 | `author`, `authorUrl` | Who made it, optional |
+| `permissions` | What it asks for beyond running, optional: any of `network`, `vault:read` and `vault:write` ([the sandbox](#the-sandbox)) |
 | `contributes` | What it adds: `commands`, `codeBlocks`, `blocks`, `panels`, `views`, `layouts`, `propertyTypes` and `settings` |
 
 The app reads the manifest before the plugin's code runs. Its commands
@@ -100,7 +103,7 @@ export default definePlugin({
 | `context.settings` | `values()`, the plugin's settings, and `onChange(listener)` |
 
 Every call to the app is async, and takes and returns plain JSON values,
-since a plugin will run apart from the app and reach it only by messages.
+since a plugin runs apart from the app and reaches it only by messages.
 Each `register` returns something whose `dispose()` takes what it
 attached away again. When a plugin is turned off, the app takes away everything it
 added.
@@ -454,8 +457,50 @@ again. The vault keeps which are on in `.nether/plugins.json`, which maps
 a plugin's ID to whether it is on; a built-in plugin it does not name is
 on. Neither file syncs.
 
+Below them, **From this vault** lists the plugins in the vault's
+`.nether/plugins` folder, each with its version and what it asks for. One
+that cannot run says why, as a manifest that does not read, a folder not
+named for its ID, or what it adds that a plugin from a vault cannot add
+yet. Turning one on approves it on this device; a plugin from a vault is
+off until it is turned on.
+
 The Backlinks plugin has a setting of its own, whether each note that
 links here shows the text around its links.
+
+## The sandbox
+
+A plugin from a vault's folder runs apart from the app. Its code runs in
+a worker of its own, inside a hidden frame of the app's own page that has
+no origin of its own. It has no page to reach: not the app's, nor its
+storage, nor the server's cookie, nor the vault's files. It reaches the
+app only through the API.
+
+What it draws as HTML is cleaned before the app shows it, in a note and
+in an exported page: no scripts, event handlers, styles, forms or frames,
+and no address outside the page, which would carry what it knows out.
+Fragments, as `#part`, and images as `data:` stay; with the `network`
+permission, `https:` addresses stay too.
+
+A plugin asks for what it needs in its manifest's `permissions`:
+
+| Permission | What it lets the plugin do |
+| --- | --- |
+| `network` | Connect to `https:` and `wss:` addresses, and keep `https:` addresses in what it draws. Without it, every request it makes fails |
+| `vault:read` | List and read the vault's notes and files, with the sandbox's last part |
+| `vault:write` | Change them, with the sandbox's last part |
+
+**Approval is this device's.** Turning a plugin on in the Plugins tab
+approves it as it is now: its code, by the hash of its `main.js`, its
+version and what it asks for. The device keeps that approval, never the
+vault, so a vault copied from elsewhere brings no approval with it. When
+a plugin's code, version or permissions change, it stops, and the tab
+says the vault has it on but this device has not approved it; turning it
+on again approves the new code. A plugin runs with all it asks for, or
+not at all.
+
+In the web app, a plugin from a vault starts while the server answers:
+the browser loads its frame from the server. Once started, it keeps
+running offline. The desktop app starts them offline too.
 
 ## Versions
 

@@ -52,6 +52,16 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   blocks and slash entries, panels, settings, views, database layouts and
   property types, with Nether's own Mermaid diagrams, query blocks, tags,
   assigned tasks, outline, backlinks, canvas, graph and layouts built on it.
+- Plugins from a vault's `.nether/plugins` folder run, each in a worker
+  inside a sandboxed frame, apart from the app
+  ([ADR 0058](docs/adr/0058-a-plugin-from-a-vault-runs-in-a-sandboxed-frame-with-what-this-device-approved.md)).
+  A manifest asks for `network`, `vault:read` or `vault:write`. The
+  Plugins tab lists them under From this vault, with what each asks for
+  or why it cannot run; turning one on approves its code on this device,
+  and one whose code changes stays off until approved again. What they
+  draw is cleaned of scripts, handlers, styles and, without the network,
+  addresses outside the page. For now they add commands, code blocks and
+  settings. In the web app they start while the server answers.
 
 ### Changed
 
