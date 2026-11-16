@@ -387,6 +387,7 @@ export const messages = {
   moveToTrash: "Move to trash",
   moveToTrashHint: "Move this note to the vault's trash, where it can be restored",
   movedToTrash: "{name} is in the trash.",
+  pluginMovedToTrash: "The plugin {plugin} moved {name} to the trash.",
   restore: "Restore",
   restoreNamed: "Restore {name}",
   eraseNote: "Delete for good",

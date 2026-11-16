@@ -5,8 +5,7 @@ description: How a Nether plugin is made, a preview of the plugin API at version
 
 :::caution[A preview]
 Plugins from a vault's folder run in a sandbox, apart from the app, once
-you approve them, and may add all this page describes. Reading and
-changing the vault comes with the sandbox's last part. Nether's own
+you approve them, and may use all this page describes. Nether's own
 built-in plugins use the same API. The API is at version 0.1, and may
 change before 1.0.
 :::
@@ -100,6 +99,7 @@ export default definePlugin({
 | `context.layouts` | `register(id, view)`, which shows a database's rows in a layout the manifest declares |
 | `context.propertyTypes` | `register(id, view)`, which shows values of a property type the manifest declares |
 | `context.settings` | `values()`, the plugin's settings, and `onChange(listener)` |
+| `context.vault` | The vault's notes and files, as far as the manifest asks: see [The vault](#the-vault) |
 
 Every call to the app is async, and takes and returns plain JSON values,
 since a plugin runs apart from the app and reaches it only by messages.
@@ -536,8 +536,8 @@ A plugin asks for what it needs in its manifest's `permissions`:
 | Permission | What it lets the plugin do |
 | --- | --- |
 | `network` | Connect to `https:` and `wss:` addresses, and keep `https:` addresses in what it draws. Without it, every request it makes fails |
-| `vault:read` | List and read the vault's notes and files, with the sandbox's last part |
-| `vault:write` | Change them, with the sandbox's last part |
+| `vault:read` | List and read the vault's notes and files, and hear of the notes that change |
+| `vault:write` | Write notes, and move them to the trash |
 
 **Approval is this device's.** Turning a plugin on in the Plugins tab
 approves it as it is now: its code, by the hash of its `main.js`, its
@@ -551,6 +551,40 @@ not at all.
 In the web app, a plugin from a vault starts while the server answers:
 the browser loads its frame from the server. Once started, it keeps
 running offline. The desktop app starts them offline too.
+
+## The vault
+
+`context.vault` reads and changes the vault's notes, through the app,
+for a plugin whose manifest asks for it. A call the manifest did not ask
+for fails.
+
+| Call | Asks for | What it does |
+| --- | --- | --- |
+| `notes()` | `vault:read` | The notes, each with its `id`, `path` and `title` |
+| `read(path)` | `vault:read` | A note's Markdown, frontmatter and all, as it is now |
+| `files()` | `vault:read` | The paths of the files that are not notes, as images and PDFs |
+| `readFile(path)` | `vault:read` | A file's bytes, as a `Uint8Array`, up to 20 MB |
+| `onChange(listener)` | `vault:read` | Calls `listener` with the paths of notes as they change |
+| `write(path, text)` | `vault:write` | Makes a note with that Markdown, or changes one to it |
+| `remove(path)` | `vault:write` | Moves a note to the vault's trash |
+
+```js
+const notes = await context.vault.notes();
+await context.vault.write(
+  "Index.md",
+  notes.map((note) => `- [[${note.title}]]`).join("\n") + "\n",
+);
+```
+
+A path is a note's or a file's path in the vault, with `/` between
+folders, as `Projects/Plan.md`; a note's ends in `.md`. No path reaches
+a hidden folder, one whose name starts with a dot, as `.nether`, where
+the app keeps its own files, or `.obsidian`.
+
+A note a plugin writes changes as if typed in source mode: an editor
+showing it shows the change, sync sends it, and its history keeps what
+was there before. A note a plugin moves to the trash closes its tabs, and
+a notice says which plugin moved it there, with Restore.
 
 ## Versions
 
