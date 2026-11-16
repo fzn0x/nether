@@ -55,7 +55,10 @@ interface Received {
 }
 
 /** A receiver on the loopback address, answering each request with `status`. */
-async function receiver(status: () => number = () => 204) {
+async function receiver(
+  status: () => number = () => 204,
+  heard: (body: string) => void = () => undefined,
+) {
   const received: Received[] = [];
   const server = createServer((request, response: ServerResponse) => {
     let body = "";
@@ -63,6 +66,7 @@ async function receiver(status: () => number = () => 204) {
     request.on("end", () => {
       received.push({ headers: request.headers, body });
       response.writeHead(status()).end();
+      heard(body);
     });
   });
   servers.push(server);
@@ -530,5 +534,17 @@ describe("webhooks", () => {
     expect(received).toHaveLength(0);
     const { rows } = await test.db.query("SELECT error FROM webhook_deliveries");
     expect(readText(rows[0], "error")).toContain("not a public address");
+  });
+
+  it("are sent by the server's own worker, with the admin's setting", async () => {
+    running = await startServer({ env: { NETHER_WEBHOOK_PRIVATE: "127.0.0.1" } });
+    const test = { ...running, ...(await setUp(running)), mailer: new TestMailer() };
+    let arrived: (body: string) => void = () => undefined;
+    const body = new Promise<string>((resolve) => (arrived = resolve));
+    const { url } = await receiver(() => 200, arrived);
+    const made = await hook(test, url);
+    await call(test, "POST", `webhooks/${made.id}/test`);
+    // Its round comes every five seconds.
+    expect(JSON.parse(await body)).toMatchObject({ type: "webhook.test" });
   });
 });
