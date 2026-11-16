@@ -1,0 +1,11 @@
+{
+  "id": "assigned",
+  "name": "Assigned tasks",
+  "version": "1.0.0",
+  "api": "^0.1",
+  "description": "Lists in the sidebar the database rows and notes whose person properties name you.",
+  "author": "Nether contributors",
+  "contributes": {
+    "panels": [{ "id": "assigned", "name": "Assigned", "place": "sidebar" }]
+  }
+}

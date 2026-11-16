@@ -11,27 +11,26 @@ import {
   NoteEditor,
 } from "@nether/editor";
 import "@nether/editor/math.css";
-import type { Backlink, LinkGraph, NoteIndex } from "@nether/graph";
+import type { LinkGraph } from "@nether/graph";
 import type { Vault } from "@nether/storage";
 import { type ReactNode, Suspense, lazy, useEffect, useMemo, useRef, useState } from "react";
 import { type Exporter, type VaultMedia, backend } from "./backend.ts";
 import { CodeOutput } from "./CodeOutput.tsx";
 import { PluginBlockOutput } from "./PluginBlockOutput.tsx";
 import { CommentsPanel } from "./CommentsPanel.tsx";
-import { readIndexRow } from "./indexer.ts";
 import { t } from "./messages.ts";
 import { ariaKeys, formatKeys } from "./shortcuts.ts";
 import { linkPreviews } from "./linkPreviews.ts";
 import { noteFiles } from "./noteFiles.ts";
 import { DatabaseSlot } from "./DatabaseSlot.tsx";
 import { PropertiesPanel } from "./PropertiesPanel.tsx";
-import { UnlinkedMentions } from "./UnlinkedMentions.tsx";
 import { type NotePart, noteLinks } from "./noteLinks.ts";
-import { useGraph } from "./useGraph.ts";
 import { useComments } from "./useComments.ts";
 import { type GoLive, useLive } from "./useLive.ts";
 import { useNote } from "./useNote.ts";
 import { useSlashEntries } from "./plugins/blocks.ts";
+import { type PanelRegistry, usePanels } from "./plugins/panels.ts";
+import { NotePanelSection } from "./PanelOutput.tsx";
 import type { Registries } from "./plugins/host.ts";
 
 export type NoteMode = "blocks" | "source";
@@ -400,7 +399,14 @@ export default function NoteView(props: {
           </>
         )}
       </article>
-      <NotePanel vault={vault} graph={graph} id={id} onOpenNote={onOpenNote}>
+      <NotePanel
+        vault={vault}
+        graph={graph}
+        id={id}
+        panels={plugins.panels}
+        onOpenNote={onOpenNote}
+        onOpenTag={onOpenTag}
+      >
         {comments === undefined || me === undefined ? null : (
           <CommentsPanel
             comments={comments}
@@ -473,132 +479,32 @@ function NoteTitle(props: {
   );
 }
 
-/** How many linking notes' text the backlinks panel reads, the rest shown by name. */
-const contextLimit = 100;
-
 /**
- * The text around the links from each note that links to one, read from
- * the vault's index, which keeps it while the graph does not.
- */
-function useBacklinkContexts(
-  vault: Vault,
-  graph: LinkGraph,
-  id: NoteId,
-  backlinks: readonly Backlink[],
-): ReadonlyMap<NoteId, readonly string[]> {
-  const [contexts, setContexts] = useState<ReadonlyMap<NoteId, readonly string[]>>(new Map());
-  useEffect(() => {
-    let current = true;
-    const sources = backlinks.slice(0, contextLimit).map((backlink) => backlink.source);
-    void vault.indexes.noteIndexesOf(sources).then((rows) => {
-      if (!current) return;
-      const found = new Map<NoteId, readonly string[]>();
-      for (const row of rows) {
-        const path = graph.note(row.note)?.path;
-        if (path === undefined) continue;
-        let index: NoteIndex;
-        try {
-          index = readIndexRow(row);
-        } catch {
-          continue;
-        }
-        const texts = index.links
-          .filter((link) => link.target !== "" && graph.resolve(link.target, path) === id)
-          .map((link) => link.context)
-          .filter((context) => context !== "");
-        found.set(row.note, [...new Set(texts)]);
-      }
-      setContexts(found);
-    });
-    return () => {
-      current = false;
-    };
-  }, [vault, graph, id, backlinks]);
-  return contexts;
-}
-
-/**
- * Beside the note: its comments, given as children, its outline, the notes
- * that link to it with the text around each link, and the notes that
- * mention it without a link.
+ * Beside the note: its comments, given as children, then the panels
+ * plugins add there, as its outline, the notes that link to it and those
+ * that mention it without a link.
  */
 function NotePanel(props: {
   readonly vault: Vault;
   readonly graph: LinkGraph;
   readonly id: NoteId;
+  readonly panels: PanelRegistry;
   readonly onOpenNote: (id: NoteId, part?: NotePart) => void;
+  readonly onOpenTag: (name: string) => void;
   readonly children?: ReactNode;
 }) {
-  const { vault, graph, id, onOpenNote, children } = props;
-  const version = useGraph(graph);
-  const headings = useMemo(() => graph.note(id)?.index.headings ?? [], [graph, id, version]);
-  const backlinks = useMemo(() => graph.backlinks(id), [graph, id, version]);
-  const contextsOf = useBacklinkContexts(vault, graph, id, backlinks);
+  const { vault, graph, id, panels, onOpenNote, onOpenTag, children } = props;
+  const shown = usePanels(panels, "note");
+  const viewProps = useMemo(
+    () => ({ vault, graph, note: id, openNote: onOpenNote, openTag: onOpenTag }),
+    [vault, graph, id, onOpenNote, onOpenTag],
+  );
   return (
     <aside className="note-panel" aria-label={t("aboutNote")}>
       {children}
-      <section aria-labelledby="outline-title">
-        <h2 id="outline-title">{t("outline")}</h2>
-        {headings.length === 0 ? (
-          <p className="placeholder">{t("noHeadings")}</p>
-        ) : (
-          <ul className="outline">
-            {headings.map((heading, index) => (
-              <li
-                key={`${String(index)}-${heading.text}`}
-                style={{ paddingInlineStart: `${String(heading.level - 1)}rem` }}
-              >
-                <button
-                  type="button"
-                  onClick={() => {
-                    onOpenNote(id, { heading: heading.text });
-                  }}
-                >
-                  {heading.text}
-                </button>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
-      <section aria-labelledby="backlinks-title">
-        <h2 id="backlinks-title">{t("backlinks")}</h2>
-        {backlinks.length === 0 ? (
-          <p className="placeholder">{t("noBacklinks")}</p>
-        ) : (
-          <ul className="backlinks">
-            {backlinks.map((backlink) => {
-              const source = graph.note(backlink.source);
-              const contexts = contextsOf.get(backlink.source) ?? [];
-              return (
-                <li key={backlink.source}>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      onOpenNote(backlink.source);
-                    }}
-                  >
-                    {source?.title ?? ""}
-                  </button>
-                  {contexts.map((context) => (
-                    <p key={context} className="backlink-context">
-                      {context}
-                    </p>
-                  ))}
-                </li>
-              );
-            })}
-          </ul>
-        )}
-      </section>
-      <UnlinkedMentions
-        vault={vault}
-        graph={graph}
-        id={id}
-        onOpenNote={(note) => {
-          onOpenNote(note);
-        }}
-      />
+      {shown.map((panel) => (
+        <NotePanelSection key={panel.id} processor={panel} viewProps={viewProps} />
+      ))}
     </aside>
   );
 }

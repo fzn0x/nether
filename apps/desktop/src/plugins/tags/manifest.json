@@ -1,0 +1,11 @@
+{
+  "id": "tags",
+  "name": "Tags",
+  "version": "1.0.0",
+  "api": "^0.1",
+  "description": "Lists the vault's tags in the sidebar, nested ones under theirs, with how many notes have each.",
+  "author": "Nether contributors",
+  "contributes": {
+    "panels": [{ "id": "tags", "name": "Tags", "place": "sidebar" }]
+  }
+}

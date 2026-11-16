@@ -23,6 +23,9 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Plugins can add blocks of their own, `plugin-id/type`, which their view
   shows in a note and changes as an edit of it, and entries in the slash
   menu, for their blocks and for code blocks in their languages.
+- Plugins can add panels, as tabs in the sidebar and as sections beside a
+  note, which the app names and their view fills; a folded one mounts
+  only when opened.
 
 ### Changed
 
@@ -36,6 +39,9 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   plugins, after the built-in blocks.
 - A block from a plugin Nether does not have says "No plugin here shows
   this block", with its type, where its card said only `pluginBlock`.
+- The sidebar's Tags and Assigned, and the outline, backlinks and unlinked
+  mentions beside a note, are built-in plugins' panels. The sidebar's tabs
+  are now Notes, Search and Trash, then Tags and Assigned.
 
 - The desktop app keeps one copy of each link target, tag, heading and
   property value its notes' indexes repeat, as the vault's links load: on

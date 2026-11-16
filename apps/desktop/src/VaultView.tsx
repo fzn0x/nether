@@ -3,7 +3,6 @@
 // made blank or from a template, and today's, this week's and this month's
 // notes open, made the first time from theirs.
 import type { NoteId, Period } from "@nether/core";
-import type { LinkGraph } from "@nether/graph";
 import type { NoteEntry } from "@nether/storage";
 import {
   type CSSProperties,
@@ -27,7 +26,6 @@ import { type Menu, MenuBar } from "./MenuBar.tsx";
 import { IconButton } from "./IconButton.tsx";
 import { commandIcons, itemIcons, menuIcons } from "./icons.ts";
 import { NewFolderDialog } from "./NewFolderDialog.tsx";
-import { AssignedPanel } from "./AssignedPanel.tsx";
 import { TextPromptDialog } from "./TextPromptDialog.tsx";
 import { myName, setMyName } from "./people.ts";
 import { DeleteFolderDialog } from "./DeleteFolderDialog.tsx";
@@ -44,6 +42,8 @@ import {
 import { builtinPlugins } from "./plugins/builtins.ts";
 import { BlockRegistry } from "./plugins/blocks.ts";
 import { CodeBlockRegistry } from "./plugins/codeBlocks.ts";
+import { PanelRegistry, usePanels } from "./plugins/panels.ts";
+import { SidebarPanel } from "./PanelOutput.tsx";
 import { PluginHost } from "./plugins/host.ts";
 import { type Command, CommandRegistry } from "./plugins/registry.ts";
 import { ExportDialog } from "./ExportDialog.tsx";
@@ -258,35 +258,9 @@ function IndexStatus(props: { readonly indexer: Indexer }) {
   );
 }
 
-/** The vault's tags, nested ones under theirs, with how many notes have each. */
-function TagList(props: { readonly graph: LinkGraph; readonly onSelect: (tag: string) => void }) {
-  const { graph, onSelect } = props;
-  const version = useGraph(graph);
-  const tags = useMemo(() => graph.tags(), [graph, version]);
-  if (tags.length === 0) return <p className="placeholder">{t("noTags")}</p>;
-  return (
-    <ul className="tag-list" aria-label={t("tags")}>
-      {tags.map(({ tag, count }) => {
-        const depth = tag.split("/").length - 1;
-        return (
-          <li key={tag.toLowerCase()} style={{ paddingInlineStart: `${String(depth)}rem` }}>
-            <button
-              type="button"
-              onClick={() => {
-                onSelect(tag);
-              }}
-            >
-              <span className="tag-name">
-                #{depth === 0 ? tag : tag.slice(tag.lastIndexOf("/") + 1)}
-              </span>
-              <span className="tag-count">{numbers.format(count)}</span>
-            </button>
-          </li>
-        );
-      })}
-    </ul>
-  );
-}
+/** The built-in plugins' panels that the app's commands Tags and Assigned show. */
+const tagsPanel = "tags:tags";
+const assignedPanel = "assigned:assigned";
 
 /**
  * What a pane asks of the note it shows: blocks or source, kept from note
@@ -373,7 +347,8 @@ export function VaultView(props: {
   }, []);
   const focusedKey = layout.panes[layout.focused]?.key ?? 0;
   const mode = (asks[focusedKey] ?? noAsks).mode;
-  const [panel, setPanel] = useState<"notes" | "tags" | "search" | "trash" | "assigned">("notes");
+  // The sidebar's tab: the app's own, or a plugin's panel by its ID.
+  const [panel, setPanel] = useState<string>("notes");
   // Whether the dialog that asks for the name this device goes by is open.
   const [namingMe, setNamingMe] = useState(false);
   const [switcher, setSwitcher] = useState(false);
@@ -409,10 +384,13 @@ export function VaultView(props: {
   const [codeBlocks] = useState(() => new CodeBlockRegistry());
   // And the blocks they add, of types named `plugin-id/type`.
   const [blocks] = useState(() => new BlockRegistry());
+  // And their panels, in the sidebar and beside a note.
+  const [panels] = useState(() => new PanelRegistry());
   const plugins = useMemo(
-    () => ({ commands: registry, codeBlocks, blocks }),
-    [registry, codeBlocks, blocks],
+    () => ({ commands: registry, codeBlocks, blocks, panels }),
+    [registry, codeBlocks, blocks, panels],
   );
+  const sidebarPanels = usePanels(panels, "sidebar");
   const commands = useSyncExternalStore(
     useCallback((listener: () => void) => registry.subscribe(listener), [registry]),
     () => registry.all(),
@@ -1062,10 +1040,13 @@ export function VaultView(props: {
   const run = useMemo((): Readonly<Record<CommandId, (() => void) | undefined>> => {
     const open = state.status === "open";
     const note = open && selected !== undefined ? selected : undefined;
-    const show = (name: "notes" | "tags" | "search" | "trash" | "assigned") => () => {
+    const show = (name: string) => () => {
       setTag(undefined);
       setPanel(name);
     };
+    /** Shows a plugin's panel, when the plugin is there. */
+    const showPanel = (id: string) =>
+      open && sidebarPanels.some((each) => each.id === id) ? show(id) : undefined;
     const all: Record<CommandId, (() => void) | undefined> = {
       palette: () => {
         setDialog("palette");
@@ -1214,9 +1195,9 @@ export function VaultView(props: {
               trashNote(note);
             },
       showNotes: open ? show("notes") : undefined,
-      showTags: open ? show("tags") : undefined,
+      showTags: showPanel(tagsPanel),
       showTrash: open ? show("trash") : undefined,
-      showAssigned: open ? show("assigned") : undefined,
+      showAssigned: showPanel(assignedPanel),
       myName: () => {
         setNamingMe(true);
       },
@@ -1306,7 +1287,11 @@ export function VaultView(props: {
     layout,
     changeLayout,
     openNote,
+    sidebarPanels,
   ]);
+
+  // The plugin's panel the sidebar shows, if it shows one.
+  const shownPanel = sidebarPanels.find((each) => each.id === panel);
 
   // Shortcuts run their commands, before the editors, which have their own uses for keys.
   const latest = useRef(hotkeys);
@@ -1574,15 +1559,6 @@ export function VaultView(props: {
               </button>
               <button
                 type="button"
-                aria-pressed={panel === "tags"}
-                onClick={() => {
-                  setPanel("tags");
-                }}
-              >
-                {t("tags")}
-              </button>
-              <button
-                type="button"
                 aria-pressed={panel === "search"}
                 aria-keyshortcuts={ariaOf("search")}
                 onClick={() => {
@@ -1600,24 +1576,31 @@ export function VaultView(props: {
               >
                 {t("trash")}
               </button>
-              <button
-                type="button"
-                aria-pressed={panel === "assigned"}
-                onClick={() => {
-                  setPanel("assigned");
-                }}
-              >
-                {t("assigned")}
-              </button>
+              {sidebarPanels.map((each) => (
+                <button
+                  key={each.id}
+                  type="button"
+                  aria-pressed={panel === each.id}
+                  onClick={() => {
+                    setPanel(each.id);
+                  }}
+                >
+                  {each.name()}
+                </button>
+              ))}
             </div>
-            {panel === "assigned" ? (
-              <AssignedPanel
-                vault={state.vault}
-                graph={state.indexer.graph}
-                notes={notes}
-                onOpen={openNote}
-                onSetName={() => {
-                  setNamingMe(true);
+            {shownPanel !== undefined ? (
+              <SidebarPanel
+                key={shownPanel.id}
+                processor={shownPanel}
+                viewProps={{
+                  vault: state.vault,
+                  graph: state.indexer.graph,
+                  openNote,
+                  openTag: showTag,
+                  askMyName: () => {
+                    setNamingMe(true);
+                  },
                 }}
               />
             ) : panel === "trash" ? (
@@ -1629,8 +1612,6 @@ export function VaultView(props: {
                 onOpen={openNote}
                 input={searchInput}
               />
-            ) : panel === "tags" ? (
-              <TagList graph={state.indexer.graph} onSelect={showTag} />
             ) : notes.length === 0 && folders.length === 0 ? (
               <p className="placeholder">{t("noNotes")}</p>
             ) : (

@@ -1,7 +1,7 @@
 // A note's unlinked mentions, beside it under its backlinks: the other notes
-// that write its name or an alias without linking it, found when the list
-// is opened, as that reads their files, and found again for each note while
-// it stays open. One click makes a mention a link.
+// that write its name or an alias without linking it, found when its
+// folded panel is opened, as that reads their files, and found again for
+// each note while it stays open. One click makes a mention a link.
 import type { NoteId } from "@nether/core";
 import type { LinkGraph } from "@nether/graph";
 import type { Mention } from "@nether/markdown";
@@ -27,14 +27,12 @@ export function UnlinkedMentions(props: {
   readonly onOpenNote: (id: NoteId) => void;
 }) {
   const { vault, graph, id, onOpenNote } = props;
-  const [open, setOpen] = useState(false);
   const [found, setFound] = useState<readonly NoteMentions[] | undefined>();
   const [error, setError] = useState<string | undefined>();
   // Changes when a mention is linked, to find the rest again.
   const [round, setRound] = useState(0);
 
   useEffect(() => {
-    if (!open) return;
     let current = true;
     setFound(undefined);
     unlinkedMentions(vault, graph, id).then(
@@ -48,24 +46,11 @@ export function UnlinkedMentions(props: {
     return () => {
       current = false;
     };
-  }, [open, vault, graph, id, round]);
+  }, [vault, graph, id, round]);
 
   return (
-    <section aria-labelledby="mentions-title">
-      <h2 id="mentions-title">
-        <button
-          type="button"
-          className="panel-disclosure"
-          aria-expanded={open}
-          onClick={() => {
-            setOpen(!open);
-            setError(undefined);
-          }}
-        >
-          {t("unlinkedMentions")}
-        </button>
-      </h2>
-      {!open ? null : found === undefined ? (
+    <>
+      {found === undefined ? (
         <p className="placeholder" role="status">
           {t("findingMentions")}
         </p>
@@ -118,6 +103,6 @@ export function UnlinkedMentions(props: {
         </ul>
       )}
       {error === undefined ? null : <p role="alert">{t("mentionFailed", { error })}</p>}
-    </section>
+    </>
   );
 }

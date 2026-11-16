@@ -54,11 +54,29 @@ export interface BlockContribution {
   readonly attrs: JsonObject;
 }
 
+/** Where a panel shows: among the sidebar's tabs, or beside the note open. */
+export const panelPlaces = ["sidebar", "note"] as const;
+export type PanelPlace = (typeof panelPlaces)[number];
+
+/**
+ * A panel a plugin adds. The app gives it its place, its name as a tab or
+ * a heading, and its landmark; the plugin's view fills it.
+ */
+export interface PanelContribution {
+  /** Unique in the plugin; the app knows it as `plugin-id:id`. */
+  readonly id: string;
+  readonly name: Localized;
+  readonly place: PanelPlace;
+  /** Beside a note, whether it starts folded, to show only when opened. */
+  readonly folded: boolean;
+}
+
 /** What a plugin adds. */
 export interface Contributions {
   readonly commands: readonly CommandContribution[];
   readonly codeBlocks: readonly CodeBlockContribution[];
   readonly blocks: readonly BlockContribution[];
+  readonly panels: readonly PanelContribution[];
 }
 
 export interface Manifest {
@@ -215,6 +233,32 @@ function readBlocks(value: unknown, problems: string[]): BlockContribution[] {
   });
 }
 
+function readPanels(value: unknown, problems: string[]): PanelContribution[] {
+  const seen = new Set<string>();
+  return readList(value, "panels", problems, (item, where) => {
+    const { id, name, place, folded } = item;
+    if (typeof id !== "string" || !commandIdPattern.test(id)) {
+      problems.push(`${where}.id is not letters, digits, hyphens and underscores.`);
+      return undefined;
+    }
+    if (seen.has(id)) problems.push(`${where}.id "${id}" is there twice.`);
+    seen.add(id);
+    if (!isLocalized(name)) problems.push(`${where}.name is not a name.`);
+    if (!panelPlaces.includes(place as PanelPlace)) {
+      problems.push(`${where}.place is not one of ${panelPlaces.join(", ")}.`);
+    }
+    if (folded !== undefined && typeof folded !== "boolean") {
+      problems.push(`${where}.folded is not true or false.`);
+    }
+    return {
+      id,
+      name: isLocalized(name) ? name : id,
+      place: panelPlaces.includes(place as PanelPlace) ? (place as PanelPlace) : "sidebar",
+      folded: folded === true,
+    };
+  });
+}
+
 /** Reads a manifest as parsed from its JSON, or says everything wrong with it. */
 export function readManifest(value: unknown): ManifestResult {
   if (!isObject(value)) return { problems: ["The manifest is not an object."] };
@@ -246,6 +290,7 @@ export function readManifest(value: unknown): ManifestResult {
     problems,
   );
   const blocks = readBlocks(isObject(contributes) ? contributes.blocks : undefined, problems);
+  const panels = readPanels(isObject(contributes) ? contributes.panels : undefined, problems);
   // A plugin block's type starts with its plugin's ID, which must then start with a letter.
   if (blocks.length > 0 && typeof id === "string" && !/^[a-z]/.test(id)) {
     problems.push("id starts with a digit, which a plugin that adds blocks cannot.");
@@ -260,7 +305,7 @@ export function readManifest(value: unknown): ManifestResult {
       ...(description === undefined ? {} : { description: description as Localized }),
       ...(author === undefined ? {} : { author: author as string }),
       ...(authorUrl === undefined ? {} : { authorUrl: authorUrl as string }),
-      contributes: { commands, codeBlocks, blocks },
+      contributes: { commands, codeBlocks, blocks, panels },
     },
   };
 }

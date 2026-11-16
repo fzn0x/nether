@@ -1,6 +1,6 @@
 ---
 title: Writing plugins
-description: How a Nether plugin is made, a preview of the plugin API at version 0.1. A plugin's folder, its manifest, its code, and the commands, code blocks and blocks it adds.
+description: How a Nether plugin is made, a preview of the plugin API at version 0.1. A plugin's folder, its manifest, its code, and the commands, code blocks, blocks and panels it adds.
 ---
 
 :::caution[A preview]
@@ -57,12 +57,13 @@ reach your computer.
 | `api` | The versions of the plugin API it works with, as `^0.1` |
 | `description` | What it does, optional, a string or strings by language |
 | `author`, `authorUrl` | Who made it, optional |
-| `contributes` | What it adds: for now, `commands`, `codeBlocks` and `blocks` |
+| `contributes` | What it adds: for now, `commands`, `codeBlocks`, `blocks` and `panels` |
 
 The app reads the manifest before the plugin's code runs. Its commands
 show in the menus and the palette at once, and its slash menu entries in
-the slash menu. Its code loads only when it is first needed: a command
-chosen, or a code block or block of its own shown.
+the slash menu, and its panels' tabs and headings. Its code loads only
+when it is first needed: a command chosen, or a code block, a block or a
+panel of its own shown.
 
 A name by language picks the app's language, then its main language
 (`pt` for `pt-BR`), then English, then the first one there is.
@@ -92,6 +93,7 @@ export default definePlugin({
 | `context.commands` | `register(id, run)`, which attaches a command the manifest declares |
 | `context.codeBlocks` | `register(language, render)`, which draws code blocks in a language the manifest declares |
 | `context.blocks` | `register(type, view)`, which shows blocks of a type the manifest declares |
+| `context.panels` | `register(id, view)`, which fills a panel the manifest declares |
 
 Every call to the app is async, and takes and returns plain JSON values,
 since a plugin will run apart from the app and reach it only by messages.
@@ -225,6 +227,50 @@ A view mounts when its block shows. A view shows and changes only
 `attrs`; a block's text and the blocks inside it, if it has any, stay as
 they are. A block from a plugin the app does not have shows its type,
 and its note keeps it as it was.
+
+## Panels
+
+A plugin can add panels: tabs in the sidebar, after the app's own, and
+sections beside the note open, after its comments.
+
+```json
+"contributes": {
+  "panels": [
+    { "id": "words", "name": "Words", "place": "note", "folded": true }
+  ]
+}
+```
+
+- **`id`** is unique in the plugin, and the app knows the panel as
+  `plugin-id:id`.
+- **`name`** is its tab's name in the sidebar, or its heading beside a
+  note.
+- **`place`** is `sidebar` or `note`.
+- **`folded`**, beside a note, makes its heading a button that opens it.
+  The panel mounts only when it is open, so it costs nothing until then.
+
+The app gives each panel its name and landmark; the plugin's view fills
+it, as a block's view fills a block:
+
+```js
+await context.panels.register("words", {
+  mount(element, props) {
+    element.textContent = props.note?.title ?? "";
+    return {
+      update(next) {
+        element.textContent = next.note?.title ?? "";
+      },
+    };
+  },
+});
+```
+
+`props` holds the page's `theme` and, beside a note, the `note` open, as
+its `id`, `title` and `path`. The app calls `update` when another note
+opens beside the panel.
+
+The sidebar's Tags and Assigned, and the Outline, Linked from and
+Unlinked mentions beside a note, are built-in plugins' panels.
 
 ## Versions
 

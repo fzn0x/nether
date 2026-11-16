@@ -87,6 +87,31 @@ export interface Blocks {
   register(type: string, view: BlockView): Promise<Disposable>;
 }
 
+/** What a panel's view is given when it mounts, and again as it changes. */
+export interface PanelProps {
+  /** Whether the page it shows on is light or dark. */
+  readonly theme: "light" | "dark";
+  /** Beside a note, the note open, as the vault names it. */
+  readonly note?: { readonly id: string; readonly title: string; readonly path: string };
+}
+
+/** A mounted panel, which the app updates and unmounts. */
+export interface MountedPanel {
+  update?(props: PanelProps): void;
+  unmount?(): void;
+}
+
+/** Fills a panel the manifest declares, drawing into an element of its own. */
+export interface PanelView {
+  mount(element: HTMLElement, props: PanelProps): MountedPanel | undefined;
+}
+
+/** The panels a plugin's manifest declares, attached to their views. */
+export interface Panels {
+  /** Fills the panel the manifest declares as `id` with `view`. */
+  register(id: string, view: PanelView): Promise<Disposable>;
+}
+
 /**
  * Where a plugin's views mount: the element made for each, by the slot
  * the app names for it. A built-in plugin is given the page's, and a
@@ -109,6 +134,7 @@ export interface PluginContext {
   readonly commands: Commands;
   readonly codeBlocks: CodeBlocks;
   readonly blocks: Blocks;
+  readonly panels: Panels;
 }
 
 /** A plugin, as its module's default export is. */
@@ -124,6 +150,12 @@ export function definePlugin(plugin: Plugin): Plugin {
 
 /** What the app calls back: a command to run, a block to draw, a view to mount. */
 type Callback = (...args: Json[]) => Promise<Json>;
+
+/** A mounted view of a block or a panel, as the plugin's end keeps it. */
+interface Mounted {
+  update?(props: never): void;
+  unmount?(): void;
+}
 
 /** What the app answers a plugin's `hello` with. */
 export interface Hello {
@@ -160,7 +192,7 @@ export async function startPlugin(
   const endpoint = new Endpoint(transport);
   const callbacks = new Map<number, Callback>();
   /** The views mounted, by the slot the app named for each. */
-  const views = new Map<string, MountedView>();
+  const views = new Map<string, Mounted>();
   let next = 0;
   endpoint.handle("callback", async (id, ...args) => {
     const run = typeof id === "number" ? callbacks.get(id) : undefined;
@@ -189,6 +221,38 @@ export async function startPlugin(
       },
     };
   }
+  /**
+   * What the app calls to mount a view in the element of a slot it names,
+   * to update the view and to unmount it.
+   */
+  function viewCallback(
+    mount: (element: HTMLElement, props: never, slot: string) => Mounted | undefined,
+  ): Callback {
+    return (action, slot, props) =>
+      // What a view throws, the app is told of.
+      Promise.resolve().then(() => {
+        if (typeof slot !== "string") throw new Error("The app named no view.");
+        // As the app sends them: a block's or a panel's props.
+        const viewProps = props as never;
+        switch (action) {
+          case "mount": {
+            const element = surface?.element(slot);
+            if (element === undefined) throw new Error("The app gave the view no element.");
+            views.set(slot, mount(element, viewProps, slot) ?? {});
+            return null;
+          }
+          case "update":
+            views.get(slot)?.update?.(viewProps);
+            return null;
+          case "unmount":
+            views.get(slot)?.unmount?.();
+            views.delete(slot);
+            return null;
+          default:
+            throw new Error(`A view cannot ${JSON.stringify(action)}.`);
+        }
+      });
+  }
   const context: PluginContext = {
     ...hello,
     commands: {
@@ -210,34 +274,24 @@ export async function startPlugin(
     },
     blocks: {
       register: (type, view) =>
-        attach("blocks", type, (action, slot, props) =>
-          // What a view throws, the app is told of.
-          Promise.resolve().then(() => {
-            if (typeof slot !== "string") throw new Error("The app named no view.");
-            const viewProps = props as unknown as BlockViewProps;
-            switch (action) {
-              case "mount": {
-                const element = surface?.element(slot);
-                if (element === undefined) throw new Error("The app gave the view no element.");
-                const block: ViewedBlock = {
-                  async setAttrs(attrs) {
-                    await endpoint.call("blocks.change", slot, attrs);
-                  },
-                };
-                views.set(slot, view.mount(element, viewProps, block) ?? {});
-                return null;
-              }
-              case "update":
-                views.get(slot)?.update?.(viewProps);
-                return null;
-              case "unmount":
-                views.get(slot)?.unmount?.();
-                views.delete(slot);
-                return null;
-              default:
-                throw new Error(`A view cannot ${JSON.stringify(action)}.`);
-            }
-          }),
+        attach(
+          "blocks",
+          type,
+          viewCallback((element, props: BlockViewProps, slot) =>
+            view.mount(element, props, {
+              async setAttrs(attrs) {
+                await endpoint.call("blocks.change", slot, attrs);
+              },
+            }),
+          ),
+        ),
+    },
+    panels: {
+      register: (id, view) =>
+        attach(
+          "panels",
+          id,
+          viewCallback((element, props: PanelProps) => view.mount(element, props)),
         ),
     },
   };

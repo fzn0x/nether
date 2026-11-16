@@ -53,7 +53,12 @@ describe("readManifest", () => {
 
   it("reads one that adds nothing", () => {
     const { manifest } = readManifest({ id: "a", name: "A", version: "0.0.1", api: "0.1.0" });
-    expect(manifest?.contributes).toEqual({ commands: [], codeBlocks: [], blocks: [] });
+    expect(manifest?.contributes).toEqual({
+      commands: [],
+      codeBlocks: [],
+      blocks: [],
+      panels: [],
+    });
     expect(manifest).not.toHaveProperty("description");
   });
 
@@ -171,6 +176,42 @@ describe("readManifest", () => {
         .problems,
     ).toEqual(["id starts with a digit, which a plugin that adds blocks cannot."]);
     expect(readManifest({ ...good, id: "3d", contributes: {} }).problems).toBeUndefined();
+  });
+
+  it("reads panels, each in its place, folded only when it says so", () => {
+    const { manifest } = readManifest({
+      ...good,
+      contributes: {
+        panels: [
+          { id: "stats", name: "Statistics", place: "sidebar" },
+          { id: "words", name: { en: "Words" }, place: "note", folded: true },
+        ],
+      },
+    });
+    expect(manifest?.contributes.panels).toEqual([
+      { id: "stats", name: "Statistics", place: "sidebar", folded: false },
+      { id: "words", name: { en: "Words" }, place: "note", folded: true },
+    ]);
+  });
+
+  it("says what is wrong with its panels", () => {
+    const { problems } = readManifest({
+      ...good,
+      contributes: {
+        panels: [
+          { id: "a b", name: "A", place: "note" },
+          { id: "a", place: "toolbar", folded: "yes" },
+          { id: "a", name: "A", place: "note" },
+        ],
+      },
+    });
+    expect(problems).toEqual([
+      "contributes.panels[0].id is not letters, digits, hyphens and underscores.",
+      "contributes.panels[1].name is not a name.",
+      "contributes.panels[1].place is not one of sidebar, note.",
+      "contributes.panels[1].folded is not true or false.",
+      'contributes.panels[2].id "a" is there twice.',
+    ]);
   });
 
   it("refuses what is not an object", () => {

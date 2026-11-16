@@ -3,10 +3,11 @@
 // again as that changes. What the view changes the block to is an edit of
 // the note. A plugin's code loads with the first of its blocks shown.
 import type { BlockViewProps, JsonObject } from "@nether/plugin-api";
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
-import { Failed, errorText, shownDark } from "./CodeOutput.tsx";
+import { useCallback, useEffect, useMemo, useRef, useSyncExternalStore } from "react";
+import { shownDark } from "./CodeOutput.tsx";
 import { t } from "./messages.ts";
-import type { BlockProcessor, BlockRegistry, MountedBlock } from "./plugins/blocks.ts";
+import { PluginMount } from "./PluginMount.tsx";
+import type { BlockProcessor, BlockRegistry } from "./plugins/blocks.ts";
 
 interface Props {
   readonly blocks: BlockRegistry;
@@ -36,9 +37,6 @@ export function PluginBlockOutput(props: Props) {
 
 function Mounted(props: Props & { readonly processor: BlockProcessor }) {
   const { processor, attrs, editable, onChange } = props;
-  const element = useRef<HTMLDivElement>(null);
-  const mounted = useRef<MountedBlock | undefined>(undefined);
-  const [failure, setFailure] = useState<string | undefined>();
   // What the view shows: a new object only when what the block holds changes.
   const held = JSON.stringify(attrs);
   const viewProps = useMemo(
@@ -49,56 +47,25 @@ function Mounted(props: Props & { readonly processor: BlockProcessor }) {
     }),
     [held, editable],
   );
-  // The latest, for a view that mounts after they change.
-  const latest = useRef(viewProps);
   const changed = useRef(onChange);
   useEffect(() => {
-    latest.current = viewProps;
     changed.current = onChange;
-  }, [viewProps, onChange]);
-
-  useEffect(() => {
-    const into = element.current;
-    if (into === null) return;
-    let live = true;
-    let handle: MountedBlock | undefined;
-    const first = latest.current;
-    processor
-      .load()
-      .then((drawing) =>
-        drawing.mount(into, first, (next) => {
-          changed.current(next);
-        }),
-      )
-      .then(async (view) => {
-        if (!live) {
-          view.unmount();
-          return;
-        }
-        handle = view;
-        mounted.current = view;
-        if (latest.current !== first) await view.update(latest.current);
-      })
-      .catch((error: unknown) => {
-        if (live) setFailure(errorText(error));
+  }, [onChange]);
+  const start = useCallback(
+    async (element: HTMLElement, first: BlockViewProps) => {
+      const drawing = await processor.load();
+      return drawing.mount(element, first, (next) => {
+        changed.current(next);
       });
-    return () => {
-      live = false;
-      handle?.unmount();
-      mounted.current = undefined;
-    };
-  }, [processor]);
-
-  useEffect(() => {
-    mounted.current?.update(viewProps).catch((error: unknown) => {
-      setFailure(errorText(error));
-    });
-  }, [viewProps]);
-
+    },
+    [processor],
+  );
   return (
-    <div className="plugin-view" data-plugin={processor.plugin} contentEditable={false}>
-      {failure === undefined ? null : <Failed message={failure} />}
-      <div ref={element} />
-    </div>
+    <PluginMount
+      start={start}
+      viewProps={viewProps}
+      className="plugin-view"
+      plugin={processor.plugin}
+    />
   );
 }
