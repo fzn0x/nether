@@ -465,6 +465,23 @@ device; a plugin from a vault is off until it is turned on.
 The Backlinks plugin has a setting of its own, whether each note that
 links here shows the text around its links.
 
+## The directory
+
+At the bottom of the Plugins tab, **From the directory** lists the
+plugins of Nether's directory, once you click **Browse the directory**:
+nothing is fetched before you ask. Search it by name, description or author, and click
+**Install** to put a plugin's files in the vault's `.nether/plugins`
+folder. It is then listed under From this vault, off, with what it asks
+for, until you turn it on. An entry that the vault has at another version
+offers **Update**, which leaves the plugin off until you approve it again.
+
+The directory is an index in Nether's repository, `registry/index.json`.
+Each entry names a plugin's repository on GitHub, a commit and each file's
+SHA-256, so what installs is exactly what was reviewed; a file that is not
+that one is refused. To add yours, follow
+[`registry/README.md`](https://github.com/fzn0x/nether/blob/main/registry/README.md)
+and open a pull request.
+
 ## The sandbox
 
 A plugin from a vault's folder runs apart from the app. Its code runs in

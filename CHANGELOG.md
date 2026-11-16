@@ -76,6 +76,13 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   back. No plugin reaches a hidden folder, as `.nether` or `.obsidian`.
   The plugin sandbox, Phase 4's third item, is done
   ([ADR 0064](docs/adr/0064-a-plugin-reads-and-writes-notes-through-the-app-as-far-as-it-asked.md)).
+- The plugin and theme directory: Browse the directory, in the Plugins
+  and Appearance tabs, reads `registry/index.json` from Nether's
+  repository when asked, and installs a plugin or a theme from the commit
+  and hashes its entry names. A plugin installs off, until this device
+  approves it; a theme that would load from an address is refused. The
+  web app's policy lets it reach `raw.githubusercontent.com`
+  ([ADR 0065](docs/adr/0065-the-directory-is-an-index-in-the-repository-of-files-pinned-by-commit-and-hash.md)).
 - The server's REST API, first part: personal access tokens, read or
   write, for one workspace or all, with an expiry, made with the
   account's password, shown once, kept as hashes and revoked with a
