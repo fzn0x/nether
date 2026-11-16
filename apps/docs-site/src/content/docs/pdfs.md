@@ -1,6 +1,6 @@
 ---
 title: PDFs
-description: How to read PDFs in Nether, highlight and comment on them, and link to a highlight, with every highlight kept as Markdown that Obsidian reads.
+description: How to read PDFs in Nether, highlight them in colors and comment on them, link to a highlight, and follow a PDF's outline and links, with every highlight kept as Markdown that Obsidian reads.
 ---
 
 Nether opens the PDFs in your vault in a tab of their own, where you can
@@ -16,7 +16,18 @@ Cmd and a click opens it in a new tab.
 
 The toolbar moves between pages, by **Previous page**, **Next page** or a
 page number, and zooms in and out. The PDF opens as wide as the pane.
-**Highlights** shows or hides the list of highlights beside the pages.
+**Highlights** shows or hides the list of highlights beside the pages, and
+**Outline** the PDF's own outline in its place.
+
+## The outline and the PDF's links
+
+**Outline** lists the PDF's bookmarks, nested as the PDF nests them. Choose
+one to go to its place. A PDF without an outline says so.
+
+Links in the PDF's pages work as in a PDF reader: one to another page goes
+there, and one to a web address opens it in your browser. Each is a button
+over its words, reached with Tab and named by where it goes. **Back**
+returns to where you followed the last link or outline entry from.
 
 ## Highlighting
 
@@ -29,13 +40,18 @@ type the words, and press Enter to go to the first place they are,
 Enter again for the next, and Shift+Enter for the one before. Then press
 Ctrl+Shift+H to highlight the words found.
 
-The highlights list names each highlight's page and its words. Choose one
-to show it on its page. Under each, you can:
+New highlights take the color chosen beside **Highlight**: yellow, red,
+blue or purple. These are the colors of the PDF++ plugin for Obsidian, so
+a highlight shows in the same color in both.
+
+The highlights list names each highlight's page, its color and its words.
+Choose one to show it on its page. Under each, you can:
 
 - **Comment**: write a comment, in Markdown, and **Save** it, or press
   Ctrl+Enter. Escape leaves it as it was.
 - **Copy link**: copy a link to the highlight, to paste in another note.
 - **Show in note**: open the note that keeps it, at the highlight.
+- Choose another **color** for it.
 - **Remove**: take the highlight, and its comment, out of its note.
 
 ## Where highlights are kept
@@ -53,14 +69,35 @@ The first highlight of `paper.pdf` starts a note beside it, named
 ```
 
 The link is the one Obsidian's **Copy link to selection** writes: opened
-in Obsidian, it shows the PDF at that passage. The last line is the
-highlight's block ID, which links to it use.
+in Obsidian, it shows the PDF at that passage. A color other than yellow
+goes at the end of the link's place, as PDF++ writes it:
+`[[paper.pdf#page=3&selection=4,0,5,20&color=red|paper, page 3]]`. The
+last line is the highlight's block ID, which links to it use.
 
 The note is yours to edit, rename or move. Nether finds a PDF's highlights
 by their links, in whatever note holds them, and adds new ones to the
 note that holds most. A highlight whose words have moved, because the PDF
 changed, is found by its words; one whose words are gone is listed as not
 found in the PDF.
+
+## Passages linked from other notes
+
+Every link to a passage of the PDF, in any note, shows on the PDF too, in
+its color, and is listed under **Linked from notes** with its note's name
+and the words around it. That includes the quotes Obsidian's **Copy as
+quote** writes, and those of the PDF++ plugin, colors included:
+
+```markdown
+> Attention is all you need [[paper.pdf#page=1&selection=32,0,32,14|paper, page 1]]
+
+> [!PDF|red] [[paper.pdf#page=3&selection=4,0,5,20&color=red|paper, page 3]]
+> > The words, as PDF++ quotes them.
+```
+
+They are your notes' own text: choose one to show its place, or **Show in
+note** to open its note. Nether does not change them from the list. As in
+Obsidian and PDF++, each is found by the numbers in its link alone, and
+one whose numbers no longer fit its page is listed as not found.
 
 ## Linking to a PDF and to a highlight
 
@@ -81,9 +118,8 @@ once the app has been opened.
 
 ## Not yet
 
-- Highlights written in other notes, as Obsidian's **Copy as quote** and
-  the PDF++ plugin write them, do not show on the PDF yet, and neither do
-  highlight colors.
+- PDF++'s callouts, `> [!PDF|red]`, show in the editor as quotes, their
+  first line as text.
 - A PDF embedded in a note, `![[paper.pdf]]`, still shows in the web
   view's own viewer, and as a card on Linux.
 - Highlights are of words only: not yet of an area, such as a figure or
