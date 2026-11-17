@@ -29,6 +29,7 @@ import {
   startSession,
   tokenHash,
 } from "./sessions.ts";
+import { type EventOrigin, type ServerEvents, accountActor, originOf } from "./events.ts";
 
 /** Days an invitation can be accepted in. */
 export const invitationDays = 7;
@@ -160,6 +161,8 @@ export async function acceptInvitation(
   tx: Queryable,
   invitation: OpenInvitation,
   userId: string,
+  events: ServerEvents,
+  origin: EventOrigin,
 ): Promise<{ id: string; name: string; role: string }> {
   await tx.query(
     `INSERT INTO memberships (workspace_id, user_id, role) VALUES ($1, $2, $3)
@@ -181,14 +184,39 @@ export async function acceptInvitation(
     "SELECT role FROM memberships WHERE workspace_id = $1 AND user_id = $2",
     [invitation.workspaceId, userId],
   );
-  return {
-    id: invitation.workspaceId,
-    name: invitation.workspaceName,
-    role: readText(rows[0], "role"),
-  };
+  const role = readText(rows[0], "role");
+  const page =
+    invitation.unitId === null ? {} : { unit: invitation.unitId, level: invitation.level };
+  await events.emit(
+    tx,
+    {
+      action: "invitation.accepted",
+      actor: accountActor(userId),
+      workspace: invitation.workspaceId,
+      target: { type: "invitation", id: invitation.id },
+      details: { role: invitation.role, ...page },
+    },
+    origin,
+  );
+  await events.emit(
+    tx,
+    {
+      action: "member.joined",
+      actor: accountActor(userId),
+      workspace: invitation.workspaceId,
+      target: { type: "account", id: userId },
+      details: { role, ...page },
+    },
+    origin,
+  );
+  return { id: invitation.workspaceId, name: invitation.workspaceName, role };
 }
 
-export function registerInvitations(app: FastifyInstance, db: Database): void {
+export function registerInvitations(
+  app: FastifyInstance,
+  db: Database,
+  events: ServerEvents,
+): void {
   const account = signedIn(db);
 
   /** Why an account may not manage a workspace's invitations, or undefined if it may. */
@@ -239,23 +267,37 @@ export function registerInvitations(app: FastifyInstance, db: Database): void {
       const token = newToken();
       const id = randomUUID();
       const email = request.body.email?.trim() ?? null;
-      const { rows } = await db.query(
-        `INSERT INTO invitations
-           (id, token_hash, workspace_id, role, email, invited_by, expires_at, unit_id, level)
-         VALUES ($1, $2, $3, $4, $5, $6, now() + $7 * interval '1 day', $8, $9)
-         RETURNING expires_at`,
-        [
-          id,
-          tokenHash(token),
-          workspace,
-          role,
-          email,
-          me.id,
-          invitationDays,
-          unit ?? null,
-          level ?? null,
-        ],
-      );
+      const rows = await db.transaction(async (tx) => {
+        const made = await tx.query(
+          `INSERT INTO invitations
+             (id, token_hash, workspace_id, role, email, invited_by, expires_at, unit_id, level)
+           VALUES ($1, $2, $3, $4, $5, $6, now() + $7 * interval '1 day', $8, $9)
+           RETURNING expires_at`,
+          [
+            id,
+            tokenHash(token),
+            workspace,
+            role,
+            email,
+            me.id,
+            invitationDays,
+            unit ?? null,
+            level ?? null,
+          ],
+        );
+        await events.emit(
+          tx,
+          {
+            action: "invitation.created",
+            actor: accountActor(me.id),
+            workspace,
+            target: { type: "invitation", id, name: email },
+            details: { role, ...(unit === undefined ? {} : { unit, level: level ?? null }) },
+          },
+          originOf(request),
+        );
+        return made.rows;
+      });
       return reply.code(201).send({
         id,
         token,
@@ -299,14 +341,35 @@ export function registerInvitations(app: FastifyInstance, db: Database): void {
     { schema: { params: invitationParams }, preHandler: account },
     async (request, reply) => {
       const workspace = request.params.workspace.toLowerCase();
-      const refused = await refusal(accountOf(request).id, workspace);
+      const me = accountOf(request);
+      const refused = await refusal(me.id, workspace);
       if (refused !== undefined) return fail(reply, ...refused);
-      const { rows } = await db.query(
-        `DELETE FROM invitations WHERE id = $1 AND workspace_id = $2 AND accepted_at IS NULL
-         RETURNING id`,
-        [request.params.invitation.toLowerCase(), workspace],
-      );
-      if (rows.length === 0) return fail(reply, 404, noInvitation);
+      const revoked = await db.transaction(async (tx) => {
+        const { rows } = await tx.query(
+          `DELETE FROM invitations WHERE id = $1 AND workspace_id = $2 AND accepted_at IS NULL
+           RETURNING id, role, email`,
+          [request.params.invitation.toLowerCase(), workspace],
+        );
+        const row = rows[0];
+        if (row === undefined) return false;
+        await events.emit(
+          tx,
+          {
+            action: "invitation.revoked",
+            actor: accountActor(me.id),
+            workspace,
+            target: {
+              type: "invitation",
+              id: readText(row, "id"),
+              name: readTextOrNull(row, "email"),
+            },
+            details: { role: readText(row, "role") },
+          },
+          originOf(request),
+        );
+        return true;
+      });
+      if (!revoked) return fail(reply, 404, noInvitation);
       return reply.code(204).send();
     },
   );
@@ -405,10 +468,29 @@ export function registerInvitations(app: FastifyInstance, db: Database): void {
             "INSERT INTO users (id, email, email_key, name, password_hash) VALUES ($1, $2, $3, $4, $5)",
             [user.id, user.email, emailKey(email), user.name, passwordHash],
           );
+          await events.emit(
+            tx,
+            {
+              action: "account.created",
+              actor: accountActor(user.id),
+              target: { type: "account", id: user.id, name: user.name },
+              details: { by: "invitation" },
+            },
+            originOf(request),
+          );
         }
 
-        const workspace = await acceptInvitation(tx, invitation, user.id);
-        const session = me === undefined ? await startSession(tx, user.id, request) : undefined;
+        const workspace = await acceptInvitation(
+          tx,
+          invitation,
+          user.id,
+          events,
+          originOf(request),
+        );
+        const session =
+          me === undefined
+            ? await startSession(tx, user.id, request, "invitation", events)
+            : undefined;
         return {
           status: me === undefined ? 201 : 200,
           body: { ...session, user, workspace },

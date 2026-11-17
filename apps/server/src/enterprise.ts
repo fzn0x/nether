@@ -6,7 +6,8 @@
 // seconds the switches are kept. Nothing here imports the modules: a build
 // passes in those it has.
 import type { FastifyInstance, FastifyPluginAsync, FastifyReply, FastifyRequest } from "fastify";
-import type { Database } from "./db.ts";
+import type { Database, Queryable } from "./db.ts";
+import type { ServerEvents } from "./events.ts";
 
 export const enterpriseFeatures = ["sso", "scim", "audit", "policies", "admin", "ha"] as const;
 
@@ -25,6 +26,10 @@ export interface EnterpriseContext {
     request: FastifyRequest,
     reply: FastifyReply,
   ) => Promise<FastifyReply | undefined>;
+  /** The server's events, which a module may listen to, as audit logs do (ADR 0081). */
+  readonly events: Pick<ServerEvents, "listen">;
+  /** NETHER_SECRET_KEY's 32 bytes, for what a module keys or seals; null without one. */
+  readonly secretKey: Buffer | null;
 }
 
 /** An enterprise feature's code: a Fastify plugin the server registers in every build that has it. */
@@ -133,9 +138,12 @@ export class EnterpriseSwitches {
     >;
   }
 
-  /** Keeps the console's choice for a feature the environment does not pin; this server sees it at once. */
-  async set(feature: EnterpriseFeature, on: boolean): Promise<void> {
-    await this.#db.query(
+  /**
+   * Keeps the console's choice for a feature the environment does not pin,
+   * in `db`'s transaction when given one; this server sees it at once.
+   */
+  async set(feature: EnterpriseFeature, on: boolean, db: Queryable = this.#db): Promise<void> {
+    await db.query(
       `INSERT INTO instance_settings (key, value) VALUES ($1, to_jsonb($2::boolean))
         ON CONFLICT (key) DO UPDATE SET value = excluded.value, updated_at = now()`,
       [settingKey(feature), on],
@@ -164,6 +172,7 @@ export async function registerEnterprise(
   db: Database,
   switches: EnterpriseSwitches,
   modules: readonly EnterpriseModule[],
+  shared: Pick<EnterpriseContext, "events" | "secretKey">,
 ): Promise<void> {
   for (const feature of enterpriseFeatures) {
     if (switches.pinned(feature) === true && !switches.available(feature)) {
@@ -177,6 +186,6 @@ export async function registerEnterprise(
     const isOn = () => switches.on(module.feature);
     const whenOn = async (request: FastifyRequest, reply: FastifyReply) =>
       (await isOn()) ? undefined : notFound(request, reply);
-    await app.register(module.plugin, { db, isOn, whenOn });
+    await app.register(module.plugin, { db, isOn, whenOn, ...shared });
   }
 }

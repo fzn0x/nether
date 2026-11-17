@@ -21,6 +21,7 @@ import { type Database, type Queryable, readBoolean, readText, readTextOrNull } 
 import { emailKey, fail, limitByAddress, tokenField } from "./http.ts";
 import { acceptInvitation, invites, openInvitation } from "./invitations.ts";
 import { newToken, startSession, tokenHash } from "./sessions.ts";
+import { type EventOrigin, type ServerEvents, accountActor, originOf } from "./events.ts";
 
 /** Minutes a flow may take at the provider. */
 const flowMinutes = 10;
@@ -124,6 +125,7 @@ export function registerOidc(
   db: Database,
   oidc: OidcConfig,
   publicUrl: string,
+  events: ServerEvents,
 ): void {
   const callbackUrl = `${publicUrl}/api/oidc/callback`;
   const plainHttp = oidc.issuer.startsWith("http:");
@@ -161,6 +163,7 @@ export function registerOidc(
     tx: Queryable,
     person: Person,
     invitationHash: string | null,
+    origin: EventOrigin,
   ): Promise<Outcome> {
     const invitation =
       invitationHash === null ? undefined : await openInvitation(tx, invitationHash);
@@ -191,6 +194,16 @@ export function registerOidc(
           emailKey(email),
           person.name,
         ]);
+        await events.emit(
+          tx,
+          {
+            action: "account.created",
+            actor: accountActor(userId),
+            target: { type: "account", id: userId, name: person.name },
+            details: { by: invitation === undefined ? "oidc" : "invitation" },
+          },
+          origin,
+        );
       }
       await tx.query("INSERT INTO identities (issuer, subject, user_id) VALUES ($1, $2, $3)", [
         oidc.issuer,
@@ -205,7 +218,7 @@ export function registerOidc(
       email = readText(rows[0], "email");
     }
     if (!invites(invitation, email)) return { error: "other_address" };
-    const workspace = await acceptInvitation(tx, invitation, userId);
+    const workspace = await acceptInvitation(tx, invitation, userId, events, origin);
     return { userId, workspaceId: workspace.id };
   }
 
@@ -288,8 +301,20 @@ export function registerOidc(
       }
       const flowId = readText(flow, "id");
       const redirect = readText(flow, "redirect");
-      const failed = async (error: OidcError) => {
+      const failed = async (error: OidcError, email?: string) => {
         await db.query("DELETE FROM oidc_flows WHERE id = $1", [flowId]);
+        await events.attempt(
+          db,
+          {
+            action: "session.signed_in",
+            outcome: "failure",
+            reason: error.replaceAll("_", " "),
+            actor: email === undefined ? { kind: "anonymous" } : { kind: "anonymous", email },
+            details: { method: "oidc" },
+          },
+          originOf(request),
+          request.log,
+        );
         return back(reply, redirect, { error });
       };
       if (request.query.error !== undefined) return failed("access_denied");
@@ -320,7 +345,12 @@ export function registerOidc(
           [flowId],
         );
         if (taken.rows.length === 0) return { error: "provider_error" } as const;
-        const resolved = await resolve(tx, person, readTextOrNull(flow, "invitation_hash"));
+        const resolved = await resolve(
+          tx,
+          person,
+          readTextOrNull(flow, "invitation_hash"),
+          originOf(request),
+        );
         if ("error" in resolved) return resolved;
         const code = newToken();
         await tx.query(
@@ -332,7 +362,7 @@ export function registerOidc(
         );
         return { code };
       });
-      if ("error" in outcome) return failed(outcome.error);
+      if ("error" in outcome) return failed(outcome.error, person.email);
       return back(reply, redirect, { code: outcome.code });
     },
   );
@@ -353,11 +383,14 @@ export function registerOidc(
           [tokenHash(request.body.code)],
         );
         const flow = rows[0];
-        if (flow === undefined) return undefined;
+        if (flow === undefined) return { failed: "code used, expired or unknown" } as const;
         const challenge = Buffer.from(readText(flow, "challenge"));
         const proven = Buffer.from(pkceChallenge(request.body.verifier));
         if (challenge.length !== proven.length || !timingSafeEqual(challenge, proven)) {
-          return undefined;
+          return {
+            failed: "not the app that began it",
+            userId: readText(flow, "user_id"),
+          } as const;
         }
         const userId = readText(flow, "user_id");
         const users = await tx.query(
@@ -377,7 +410,7 @@ export function registerOidc(
               );
         const workspace = workspaces?.rows[0];
         return {
-          ...(await startSession(tx, userId, request)),
+          ...(await startSession(tx, userId, request, "oidc", events)),
           user: {
             id: userId,
             name: readText(user, "name"),
@@ -395,7 +428,19 @@ export function registerOidc(
               }),
         };
       });
-      if (outcome === undefined) {
+      if ("failed" in outcome) {
+        await events.attempt(
+          db,
+          {
+            action: "session.signed_in",
+            outcome: "failure",
+            reason: outcome.failed,
+            actor: "userId" in outcome ? accountActor(outcome.userId) : { kind: "anonymous" },
+            details: { method: "oidc" },
+          },
+          originOf(request),
+          request.log,
+        );
         return fail(reply, 401, "That sign-in code was used, has expired, or is not this app's.");
       }
       return reply.code(201).send(outcome);

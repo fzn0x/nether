@@ -9,9 +9,16 @@ import { type Database, type Queryable, readText, readTime } from "./db.ts";
 import { fail, uuidField } from "./http.ts";
 import { accountOf, signedIn } from "./sessions.ts";
 import { membership } from "./workspaces.ts";
+import {
+  type EventActor,
+  type EventOrigin,
+  type ServerEvents,
+  accountActor,
+  originOf,
+} from "./events.ts";
 
 const roles = ["owner", "admin", "member", "guest"] as const;
-type Role = (typeof roles)[number];
+export type Role = (typeof roles)[number];
 
 interface WorkspaceParams {
   readonly workspace: string;
@@ -63,6 +70,42 @@ async function owners(tx: Queryable, workspace: string): Promise<number> {
 }
 
 /**
+ * Sets a member's role, from the role it had, and tells of it in the same
+ * transaction (ADR 0081): the one way a role changes, whoever asks, a
+ * workspace's owner or admin, or an instance admin. Who may ask is the
+ * caller's to check.
+ */
+export async function setMemberRole(
+  tx: Queryable,
+  change: {
+    readonly workspace: string;
+    readonly user: string;
+    readonly from: string;
+    readonly to: Role;
+  },
+  actor: EventActor,
+  origin: EventOrigin,
+  events: ServerEvents,
+): Promise<void> {
+  await tx.query("UPDATE memberships SET role = $3 WHERE workspace_id = $1 AND user_id = $2", [
+    change.workspace,
+    change.user,
+    change.to,
+  ]);
+  await events.emit(
+    tx,
+    {
+      action: "member.role_changed",
+      actor,
+      workspace: change.workspace,
+      target: { type: "account", id: change.user },
+      details: { from: change.from, to: change.to },
+    },
+    origin,
+  );
+}
+
+/**
  * The members' routes. `changed` hears of each account whose place in a
  * workspace changed, to close its connections.
  */
@@ -70,6 +113,7 @@ export function registerMembers(
   app: FastifyInstance,
   db: Database,
   changed: (userId: string) => void,
+  events: ServerEvents,
 ): void {
   const account = signedIn(db);
 
@@ -109,7 +153,8 @@ export function registerMembers(
       const workspace = request.params.workspace.toLowerCase();
       const user = request.params.user.toLowerCase();
       const { role } = request.body;
-      const me = await membership(db, accountOf(request).id, workspace);
+      const myId = accountOf(request).id;
+      const me = await membership(db, myId, workspace);
       if (me === undefined) return fail(reply, 404, noWorkspace);
       if (me.role !== "owner" && me.role !== "admin") {
         return fail(reply, 403, "Only the workspace's owners and admins change roles.");
@@ -128,9 +173,12 @@ export function registerMembers(
         if (current === "owner" && role !== "owner" && count === 1)
           return [409, lastOwner] as const;
         if (current !== role) {
-          await tx.query(
-            "UPDATE memberships SET role = $3 WHERE workspace_id = $1 AND user_id = $2",
-            [workspace, user, role],
+          await setMemberRole(
+            tx,
+            { workspace, user, from: current, to: role },
+            accountActor(myId),
+            originOf(request),
+            events,
           );
         }
         return current === role ? "same" : "changed";
@@ -178,6 +226,17 @@ export function registerMembers(
           `DELETE FROM unit_grants WHERE user_id = $2
              AND unit_id IN (SELECT id FROM units WHERE workspace_id = $1)`,
           [workspace, user],
+        );
+        await events.emit(
+          tx,
+          {
+            action: leaving ? "member.left" : "member.removed",
+            actor: accountActor(myId),
+            workspace,
+            target: { type: "account", id: user },
+            details: { role },
+          },
+          originOf(request),
         );
         return undefined;
       });

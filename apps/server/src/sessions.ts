@@ -23,6 +23,7 @@ import {
   passwordField,
   uuidField,
 } from "./http.ts";
+import { type ServerEvents, type SessionMethod, accountActor, originOf } from "./events.ts";
 import { hashPassword, verifyPassword } from "./passwords.ts";
 
 /** Days a session lasts unused. */
@@ -57,11 +58,16 @@ export interface NewSession {
   readonly expiresAt: string;
 }
 
-/** Starts a session for a user, as signing in does. */
+/**
+ * Starts a session for a user, as signing in does, and tells of it in the
+ * same transaction, by how it began (ADR 0081).
+ */
 export async function startSession(
   db: Queryable,
   userId: string,
   request: FastifyRequest,
+  method: SessionMethod,
+  events: ServerEvents,
 ): Promise<NewSession> {
   const token = newToken();
   const client = (request.headers["user-agent"] ?? "").slice(0, 200);
@@ -70,6 +76,11 @@ export async function startSession(
      VALUES ($1, $2, $3, $4, now() + $5 * interval '1 day')
      RETURNING expires_at`,
     [randomUUID(), userId, tokenHash(token), client, sessionLifetimeDays],
+  );
+  await events.emit(
+    db,
+    { action: "session.signed_in", actor: accountActor(userId), details: { method } },
+    originOf(request),
   );
   return { token, expiresAt: readTime(rows[0], "expires_at").toISOString() };
 }
@@ -210,7 +221,7 @@ const passwordBody = {
 export const wrongPassword = "That password is not this account's.";
 
 /** The routes of signing in and out, of one's sessions, and of one's account. */
-export function registerSessions(app: FastifyInstance, db: Database): void {
+export function registerSessions(app: FastifyInstance, db: Database, events: ServerEvents): void {
   const account = signedIn(db);
 
   app.post<{ Body: SignIn }>(
@@ -235,10 +246,34 @@ export function registerSessions(app: FastifyInstance, db: Database): void {
       // so the time an answer takes does not tell which addresses have one.
       const matches = await verifyPassword(request.body.password, hash ?? (await decoyHash()));
       if (row === undefined || hash === null || !matches) {
+        // The log may say which, as only instance admins read it.
+        const reason =
+          row === undefined
+            ? "no such account"
+            : hash === null
+              ? "the account has no password"
+              : "wrong password";
+        await events.attempt(
+          db,
+          {
+            action: "session.signed_in",
+            outcome: "failure",
+            reason,
+            actor:
+              row === undefined
+                ? { kind: "anonymous", email: request.body.email.slice(0, 320) }
+                : accountActor(readText(row, "id")),
+            details: { method: "password" },
+          },
+          originOf(request),
+          request.log,
+        );
         return fail(reply, 401, "That email address and password do not match an account.");
       }
       const id = readText(row, "id");
-      const session = await startSession(db, id, request);
+      const session = await db.transaction((tx) =>
+        startSession(tx, id, request, "password", events),
+      );
       return reply.code(201).send({
         ...session,
         user: {
@@ -272,7 +307,15 @@ export function registerSessions(app: FastifyInstance, db: Database): void {
 
   // Signing out.
   app.delete("/api/sessions/current", { preHandler: account }, async (request, reply) => {
-    await db.query("DELETE FROM sessions WHERE id = $1", [accountOf(request).sessionId]);
+    const me = accountOf(request);
+    await db.transaction(async (tx) => {
+      await tx.query("DELETE FROM sessions WHERE id = $1", [me.sessionId]);
+      await events.emit(
+        tx,
+        { action: "session.signed_out", actor: accountActor(me.id) },
+        originOf(request),
+      );
+    });
     if (readCookies(request.headers.cookie).has(sessionCookie)) clearSessionCookies(reply);
     return reply.code(204).send();
   });
@@ -290,18 +333,33 @@ export function registerSessions(app: FastifyInstance, db: Database): void {
         return fail(reply, 403, wrongPassword);
       }
       const { session } = request.body;
-      if (session === undefined) {
-        await db.query("DELETE FROM sessions WHERE user_id = $1 AND id <> $2", [
-          me.id,
-          me.sessionId,
-        ]);
-        return reply.code(204).send();
-      }
-      const { rows } = await db.query(
-        "DELETE FROM sessions WHERE id = $1 AND user_id = $2 RETURNING id",
-        [session.toLowerCase(), me.id],
-      );
-      if (rows.length === 0) return fail(reply, 404, "This account has no such session.");
+      const ended = await db.transaction(async (tx) => {
+        const { rows } =
+          session === undefined
+            ? await tx.query("DELETE FROM sessions WHERE user_id = $1 AND id <> $2 RETURNING id", [
+                me.id,
+                me.sessionId,
+              ])
+            : await tx.query("DELETE FROM sessions WHERE id = $1 AND user_id = $2 RETURNING id", [
+                session.toLowerCase(),
+                me.id,
+              ]);
+        if (session !== undefined && rows.length === 0) return false;
+        await events.emit(
+          tx,
+          {
+            action: "session.revoked",
+            actor: accountActor(me.id),
+            details: {
+              sessions: rows.map((row) => readText(row, "id")),
+              all: session === undefined,
+            },
+          },
+          originOf(request),
+        );
+        return true;
+      });
+      if (!ended) return fail(reply, 404, "This account has no such session.");
       return reply.code(204).send();
     },
   );
@@ -346,6 +404,11 @@ export function registerSessions(app: FastifyInstance, db: Database): void {
           me.id,
           me.sessionId,
         ]);
+        await events.emit(
+          tx,
+          { action: "account.password_changed", actor: accountActor(me.id) },
+          originOf(request),
+        );
       });
       return reply.code(204).send();
     },
