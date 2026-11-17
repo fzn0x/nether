@@ -2710,6 +2710,44 @@ button {
   align-items: center;
 }
 
+.admin-directory-groups {
+  margin-top: 0.75rem;
+}
+
+.admin-directory-group-list,
+.admin-directory-places {
+  margin: 0.5rem 0;
+  padding: 0;
+  list-style: none;
+}
+
+.admin-directory-group-list > li {
+  margin-bottom: 0.75rem;
+}
+
+.admin-directory-group-list h4 {
+  margin: 0 0 0.25rem;
+  font-size: 0.9375rem;
+}
+
+.admin-directory-map {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 0.75rem;
+  align-items: end;
+}
+
+.admin-directory-map label {
+  display: grid;
+  gap: 0.25rem;
+}
+
+/* A workspace whose owners left or were deactivated (ADR 0085). */
+.admin-ownerless {
+  color: var(--accent);
+  font-weight: 600;
+}
+
 .admin-find {
   display: flex;
   flex-wrap: wrap;

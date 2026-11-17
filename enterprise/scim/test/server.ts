@@ -53,7 +53,7 @@ export async function start(env: Record<string, string> = {}): Promise<Test> {
 /** A request from the console, as the instance admin, or another session. */
 export function admin(
   test: Test,
-  method: "GET" | "POST" | "PATCH" | "DELETE",
+  method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE",
   url: string,
   payload?: object,
   token = test.token,

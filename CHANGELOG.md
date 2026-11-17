@@ -443,6 +443,15 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   domains, deactivates and reactivates them, and removes one by
   deactivating it, taking it out of every workspace and letting it go,
   unless a workspace it is in is on legal hold.
+  Then SCIM groups: `/Groups` makes, renames, changes the members of and
+  removes groups, in Okta's and Entra ID's forms. On the Directories page
+  an instance admin gives a group's members a place in a workspace, as
+  owner, admin or member; each change settles the places it touches in
+  one transaction and disconnects those whose place changed. A member
+  keeps the higher of its own role and its groups'; owners cannot lower
+  it below them or remove it, and the members list says which group gives
+  the place. The console's Workspaces page marks those with no active
+  owner, and lists them alone when asked.
 
 ### Changed
 

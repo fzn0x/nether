@@ -618,6 +618,8 @@ export interface Member {
   readonly role: string;
   /** Whether a directory deactivated the account, which then signs in no way (ADR 0085). */
   readonly deactivated: boolean;
+  /** The groups that give it a place, the highest role first: below it, its role is the directory's. */
+  readonly groups: readonly { readonly id: string; readonly name: string; readonly role: string }[];
 }
 
 /** A workspace's members, by name; a guest is refused the list. */
@@ -639,6 +641,16 @@ export async function members(
       email: text(member.email, base),
       role: text(member.role, base),
       deactivated: member.deactivated === true,
+      groups: Array.isArray(member.groups)
+        ? (member.groups as unknown[]).map((each) => {
+            const group = record(each);
+            return {
+              id: text(group.id, base),
+              name: text(group.name, base),
+              role: text(group.role, base),
+            };
+          })
+        : [],
     };
   });
 }

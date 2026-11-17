@@ -22,7 +22,7 @@ export const scimModule: EnterpriseModule = {
     app,
     { db, config, isOn, whenOn, events, disconnect, dataPolicies, security, every },
   ) => {
-    registerConsole(app, { db, config, events, security, whenOn });
+    registerConsole(app, { db, config, events, security, disconnect, whenOn });
     registerScim(app, { db, config, events, disconnect, dataPolicies, whenOn });
 
     // Each day, on one node, the last week of a token is in the server's

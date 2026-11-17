@@ -194,6 +194,28 @@ describe("the console's workspaces", () => {
     expect((await list(test, "?after=not-a-page")).statusCode).toBe(400);
   });
 
+  it("say which have no active owner, and are found by it", async () => {
+    const test = await start();
+    const archive = await workspace(test, "Archive");
+    const bea = await join(test, "member", "Bea");
+    const beas = await workspace(test, "Bea's");
+    await test.db.query(
+      "UPDATE memberships SET user_id = $2 WHERE workspace_id = $1 AND role = 'owner'",
+      [beas, bea.id],
+    );
+    // Archive's owner left, and Bea, the other's only owner, was deactivated (ADR 0085).
+    await test.db.query("DELETE FROM memberships WHERE workspace_id = $1", [archive]);
+    await test.db.query("UPDATE users SET deactivated_at = now() WHERE id = $1", [bea.id]);
+    const page = (await list(test)).json<WorkspacePage>();
+    expect(page.workspaces.map((each) => [each.name, each.activeOwners])).toEqual([
+      ["Archive", 0],
+      ["Bea's", 0],
+      ["Team", 1],
+    ]);
+    const ownerless = (await list(test, "?ownerless=true")).json<WorkspacePage>();
+    expect(ownerless.workspaces.map((each) => each.name)).toEqual(["Archive", "Bea's"]);
+  });
+
   it("open to their members, marking those deactivated", async () => {
     const test = await start();
     const bea = await join(test, "member", "Bea");
