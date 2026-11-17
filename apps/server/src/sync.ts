@@ -12,7 +12,7 @@
 // a document opens at its unit's level for the account, read-only below edit,
 // and the list of stored documents names only those of the account's units.
 import websocket from "@fastify/websocket";
-import { Hocuspocus, type LocalTransactionOrigin } from "@hocuspocus/server";
+import { type Extension, Hocuspocus, type LocalTransactionOrigin } from "@hocuspocus/server";
 import type { FastifyInstance } from "fastify";
 import * as Y from "yjs";
 import type { Closable } from "./cluster.ts";
@@ -429,11 +429,23 @@ function under(path: string, folder: string): boolean {
   return path.toLowerCase().startsWith(folder.toLowerCase());
 }
 
+/** How sync runs beside other nodes, as the `ha` module asks (ADR 0082). */
+export interface SyncOptions {
+  /** Hocuspocus's extensions, as one that shares open documents across nodes. */
+  readonly extensions?: readonly Extension[];
+  /**
+   * Whether `state` reads a document through a connection of its own, so
+   * it sees another node's open copy, rather than what is stored.
+   */
+  readonly readsThrough?: boolean;
+}
+
 export async function registerSync(
   app: FastifyInstance,
   db: Database,
   events: ServerEvents,
   policies: LinkPolicies,
+  options: SyncOptions = {},
 ): Promise<SyncControl> {
   /** Who changed each vault document since it was last stored, by its name. */
   const changers = new Map<string, Changer[]>();
@@ -463,6 +475,7 @@ export async function registerSync(
   const known = new Map<string, number>();
   const hocuspocus = new Hocuspocus<SyncContext>({
     quiet: true,
+    extensions: [...(options.extensions ?? [])],
     // Stored after two seconds without a change, and at least every ten.
     debounce: 2000,
     maxDebounce: 10_000,
@@ -772,8 +785,28 @@ export async function registerSync(
     },
 
     async state(workspaceId, document) {
-      const open = hocuspocus.documents.get(`${workspaceId}/${document}`);
+      const name = `${workspaceId}/${document}`;
+      const open = hocuspocus.documents.get(name);
       if (open !== undefined) return Y.encodeStateAsUpdate(open);
+      if (options.readsThrough === true) {
+        // Opened here for the read, with another node's copy when one has it
+        // open (ADR 0082); none for a document that has nothing yet.
+        const connection = await hocuspocus.openDirectConnection(name, {
+          userId: "",
+          via: "server",
+        });
+        const read = connection.document;
+        if (read === null) return undefined;
+        const state = read.store.clients.size === 0 ? undefined : Y.encodeStateAsUpdate(read);
+        // Let go without a store, as disconnecting would: a read changes
+        // nothing, and its store would take the place of one a client's
+        // change has pending. Unloaded unless a client has it open.
+        read.removeDirectConnection();
+        hocuspocus.unloadDocument(read).catch((error: unknown) => {
+          app.log.error({ err: error, document: name }, "Could not unload a document read");
+        });
+        return state;
+      }
       const { rows } = await db.query(
         "SELECT state FROM documents WHERE workspace_id = $1 AND name = $2",
         [workspaceId, document],

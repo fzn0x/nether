@@ -1,0 +1,27 @@
+{
+  "name": "@nether/enterprise-ha",
+  "version": "0.0.0",
+  "private": true,
+  "description": "High availability: several server nodes sharing sync through Valkey, switched on by the environment only (ADR 0082).",
+  "license": "AGPL-3.0-or-later",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@hocuspocus/extension-redis": "4.8.0",
+    "@nether/server": "workspace:*",
+    "fastify": "^5.12.7",
+    "ioredis": "^6.0.0"
+  },
+  "devDependencies": {
+    "@hocuspocus/provider": "~4.8.0",
+    "@types/node": "^24.19.2",
+    "vitest": "^5.0.5",
+    "yjs": "^13.6.33"
+  }
+}

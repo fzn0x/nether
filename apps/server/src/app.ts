@@ -16,6 +16,7 @@ import {
   EnterpriseSwitches,
   enterpriseFeatures,
   registerEnterprise,
+  startModules,
 } from "./enterprise.ts";
 import { registerFeatures } from "./features.ts";
 import { tooManyTries } from "./http.ts";
@@ -107,7 +108,8 @@ export interface Services {
   readonly aiResolve?: Resolver;
   /**
    * What this node tells the server's other nodes, and hears from them
-   * (ADR 0082); a bus of this process alone unless the `ha` module gives one.
+   * (ADR 0082): a test's, else the `ha` module's when its feature is on,
+   * else a bus of this process alone.
    */
   readonly bus?: ClusterBus;
   /** What looks up sites' domains' TXT records (ADR 0077); the system's unless a test gives another. */
@@ -167,6 +169,18 @@ export async function buildApp(config: Config, services: Services): Promise<Fast
     config.enterprise,
     modules.map((module) => module.feature),
   );
+  // What a module whose feature is on does as the server starts, before any
+  // route: the `ha` module's bus and Hocuspocus extension (ADR 0082).
+  const started = await startModules(switches, modules, {
+    db: services.db,
+    config,
+    log: app.log,
+  });
+  // Let go of once the documents are stored: hooks registered later close
+  // first, sync's among them.
+  app.addHook("onClose", async () => {
+    for (const each of started) await each.close?.();
+  });
   // Liveness: the process answers, whatever the database does (ADR 0082).
   app.get("/health", { schema: healthSchema }, async () => ({
     status: "ok",
@@ -280,8 +294,12 @@ export async function buildApp(config: Config, services: Services): Promise<Fast
     registerAttachments(app, services.db, services.blobs, config.attachmentLimit, dataPolicies);
   }
   // The relay's sockets come through the WebSocket plugin sync registers.
-  const sync = await registerSync(app, services.db, events, dataPolicies);
-  const bus = services.bus ?? new ProcessBus();
+  const sync = await registerSync(app, services.db, events, dataPolicies, {
+    extensions: started.flatMap((each) => each.syncExtensions ?? []),
+    readsThrough: started.some((each) => each.readsThroughSync === true),
+  });
+  const bus =
+    services.bus ?? started.find((each) => each.bus !== undefined)?.bus ?? new ProcessBus();
   const relay = registerRelay(app, services.db, bus);
   // An account's sockets, or a share-link visitor's, closed on every node,
   // so its apps connect again and are checked anew (ADR 0082).

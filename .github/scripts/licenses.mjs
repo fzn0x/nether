@@ -37,6 +37,9 @@ export const allowedExceptions = new Set(["LLVM-exception"]);
 // "name": "the license found, and where".
 export const reviewed = {
   khroma: "MIT, in its license file; package.json has no license field",
+  // Under @hocuspocus/extension-redis, for the `ha` module (ADR 0082).
+  "@sesamecare-oss/redlock":
+    "MIT, in its LICENSE.md (Mike Marcacci's, as the original redlock); package.json says UNLICENSED",
 };
 
 /** Whether an SPDX expression such as "(MIT OR Apache-2.0)" is allowed. */

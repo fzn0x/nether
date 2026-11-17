@@ -32,7 +32,7 @@ async function start(
 }
 
 describe("readConfig", () => {
-  it("defaults to localhost:3000, info logs and no enterprise feature pinned", () => {
+  it("defaults to localhost:3000, info logs, and no enterprise feature pinned but ha, off", () => {
     expect(readConfig(database)).toEqual({
       host: "127.0.0.1",
       port: 3000,
@@ -54,6 +54,7 @@ describe("readConfig", () => {
       publicUrl: null,
       oidc: null,
       storage: { kind: "disk", path: "data/attachments" },
+      storageShared: false,
       attachmentLimit: 100 * 1024 * 1024,
       historyDays: 30,
       backup: null,
@@ -64,7 +65,8 @@ describe("readConfig", () => {
         audit: undefined,
         policies: undefined,
         admin: undefined,
-        ha: undefined,
+        // The environment's alone: off unless it says on (ADR 0082).
+        ha: false,
       },
       security: {},
     });

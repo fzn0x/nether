@@ -3,7 +3,12 @@ import { isIP } from "node:net";
 import { hostname } from "node:os";
 import { fileURLToPath } from "node:url";
 import { endpointsVariable, maxEndpoints, readEndpoints } from "./aiEndpoints.ts";
-import { type EnterprisePins, enterpriseFeatures, switchVariable } from "./enterprise.ts";
+import {
+  type EnterprisePins,
+  enterpriseFeatures,
+  environmentOnly,
+  switchVariable,
+} from "./enterprise.ts";
 import { type SecurityPins, securityNames, securitySettings } from "./settings.ts";
 
 export const logLevels = ["fatal", "error", "warn", "info", "debug", "trace", "silent"] as const;
@@ -94,6 +99,11 @@ export interface Config {
   readonly oidc: OidcConfig | null;
   /** Where attachments' bytes are kept: a folder on the server's disk, or an S3-compatible bucket. */
   readonly storage: StorageConfig;
+  /**
+   * Whether NETHER_STORAGE_SHARED says the disk path is one volume every
+   * node mounts, as high availability needs of attachments on disk (ADR 0082).
+   */
+  readonly storageShared: boolean;
   /** The largest attachment the server takes, in bytes. */
   readonly attachmentLimit: number;
   /** How many days the server keeps notes' earlier versions (ADR 0041). */
@@ -582,7 +592,11 @@ function readWebApp(env: NodeJS.ProcessEnv): WebAppConfig | null {
 /** Reads the configuration, throwing a ConfigError that names the variable at fault. */
 export function readConfig(env: NodeJS.ProcessEnv): Config {
   const enterprise = Object.fromEntries(
-    enterpriseFeatures.map((feature) => [feature, readPin(env, switchVariable(feature))]),
+    enterpriseFeatures.map((feature) => {
+      const pin = readPin(env, switchVariable(feature));
+      // One the environment alone sets is off unless it says on (ADR 0082).
+      return [feature, environmentOnly.includes(feature) ? (pin ?? false) : pin];
+    }),
   ) as Record<keyof EnterprisePins, boolean | undefined>;
   const host = env.NETHER_HOST?.trim() ?? "";
   const publicUrl = readHttpUrl(env, "NETHER_PUBLIC_URL");
@@ -606,6 +620,8 @@ export function readConfig(env: NodeJS.ProcessEnv): Config {
     publicUrl,
     oidc: readOidc(env, publicUrl),
     storage: readStorage(env),
+    storageShared:
+      (env.NETHER_STORAGE_SHARED ?? "").trim() !== "" && readSwitch(env, "NETHER_STORAGE_SHARED"),
     attachmentLimit: readAttachmentLimit(env),
     historyDays: readHistoryDays(env),
     backup: readBackup(env),

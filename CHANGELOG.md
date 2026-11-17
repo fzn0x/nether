@@ -25,7 +25,12 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   then closes its sockets with 1012 and stores its open documents.
   Migrations expand, and contract a release later: a server runs on a
   database a newer release migrated unless a step since needs a newer
-  server. `node dist/admin.js migrate` migrates without starting the server
+  server. `node dist/admin.js migrate` migrates without starting the server.
+  `NETHER_ENTERPRISE_HA=on`, which the environment alone sets, makes a node
+  one of several: open documents and who is in them are shared through
+  Valkey, the API reads other nodes' open copies, and a node stops at
+  startup unless it has Valkey, attachments every node reads
+  (`NETHER_STORAGE_SHARED` for a shared volume) and a setup code
   ([ADR 0082](docs/adr/0082-several-nodes-share-sync-through-valkey-take-their-order-from-postgresql-and-roll-out-one-at-a-time.md)).
 - Publishing: a page with its subpages, or the folder it is in, published
   from its Share dialog as a site anyone opens at the server's
