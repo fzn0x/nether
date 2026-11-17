@@ -6,7 +6,9 @@ description: How to start a Nether server with Docker Compose, set it up, put it
 A Nether server syncs vaults between devices, shares them with other
 people and serves the web app. One `docker compose up` starts it with
 everything it needs: PostgreSQL for its data, Valkey for its rate limits,
-and a volume for attachments and backups.
+and a volume for attachments and backups. To run it on Kubernetes, one
+node or several, see [Kubernetes](../kubernetes/) and
+[High availability](../high-availability/).
 
 ## Start it
 
