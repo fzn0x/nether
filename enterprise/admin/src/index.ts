@@ -1,7 +1,7 @@
 // The admin console's pages beyond its features' switches (ADR 0079): the
 // `admin` enterprise feature. The server's usage, counted from its database
-// when asked, and its workspaces, whose members' roles an instance admin
-// may set (ADR 0083); its security settings come next. The Features page
+// when asked; its workspaces, whose members' roles an instance admin may
+// set (ADR 0083); and its security settings (ADR 0084). The Features page
 // is the server's own, in every build.
 import { serverVersion } from "@nether/server/src/app.ts";
 import type { Database } from "@nether/server/src/db.ts";
@@ -10,6 +10,7 @@ import { instanceAdmin } from "@nether/server/src/features.ts";
 import { fail, uuidField } from "@nether/server/src/http.ts";
 import { type Role, roles, setRole } from "@nether/server/src/members.ts";
 import { accountOf, signedIn } from "@nether/server/src/sessions.ts";
+import { SettingRefused } from "@nether/server/src/settings.ts";
 import { decodeCursor, listWorkspaces, workspaceWithMembers } from "./workspaces.ts";
 
 export type { Owner, WorkspaceMember, WorkspacePage, WorkspaceSummary } from "./workspaces.ts";
@@ -40,6 +41,14 @@ const roleBody = {
   required: ["role"],
   additionalProperties: false,
   properties: { role: { type: "string", enum: roles } },
+} as const;
+
+// Settings by name. The settings check each name and value themselves: a
+// type here would have Fastify coerce values, as false to 0, before they do.
+const securityBody = {
+  type: "object",
+  minProperties: 1,
+  maxProperties: 10,
 } as const;
 
 /** What the server holds, as the console's Usage page shows it. */
@@ -104,7 +113,7 @@ export async function usage(db: Database): Promise<Usage> {
 /** The `admin` feature's module: its routes answer only while it is on, and to instance admins. */
 export const adminModule: EnterpriseModule = {
   feature: "admin",
-  plugin: (app, { db, whenOn, disconnect }) => {
+  plugin: (app, { db, whenOn, disconnect, security }) => {
     const account = signedIn(db);
     app.get(
       "/api/admin/usage",
@@ -155,6 +164,30 @@ export const adminModule: EnterpriseModule = {
         // As the workspace's own change does: its apps connect again, checked anew.
         if (outcome === "changed") disconnect(user);
         return { id: user, role };
+      },
+    );
+
+    // The Security page: each setting, its value and what pins it; changes all or none.
+    app.get(
+      "/api/admin/security",
+      { preHandler: [whenOn, account, instanceAdmin("see the server's security settings")] },
+      async () => ({ settings: await security.states() }),
+    );
+
+    app.put<{ Body: Record<string, unknown> }>(
+      "/api/admin/security",
+      {
+        schema: { body: securityBody },
+        preHandler: [whenOn, account, instanceAdmin("change the server's security settings")],
+      },
+      async (request, reply) => {
+        try {
+          await security.set(request.body);
+        } catch (error) {
+          if (error instanceof SettingRefused) return fail(reply, error.status, error.message);
+          throw error;
+        }
+        return { settings: await security.states() };
       },
     );
     return Promise.resolve();

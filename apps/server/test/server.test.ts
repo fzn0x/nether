@@ -59,6 +59,7 @@ describe("readConfig", () => {
         admin: undefined,
         ha: undefined,
       },
+      security: {},
     });
   });
 

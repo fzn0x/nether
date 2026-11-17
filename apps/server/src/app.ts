@@ -24,6 +24,7 @@ import { purgeNotifications, registerNotifications } from "./notifications.ts";
 import type { Mailer } from "./mail.ts";
 import { registerOidc } from "./oidc.ts";
 import { registerSessions } from "./sessions.ts";
+import { SecuritySettings } from "./settings.ts";
 import { registerSetup } from "./setup.ts";
 import { registerRelay } from "./relay.ts";
 import { registerSync } from "./sync.ts";
@@ -153,9 +154,13 @@ export async function buildApp(config: Config, services: Services): Promise<Fast
     enterprise: await switches.all(),
   }));
   registerFeatures(app, services.db, switches);
+  // The sessions' lengths, the sign-in limits and email codes (ADR 0084):
+  // the pinned ones written where every node and query reads them.
+  const security = new SecuritySettings(services.db, config.security);
+  await security.applyPins();
 
   registerSetup(app, services.db, services.setupCode);
-  registerSessions(app, services.db);
+  registerSessions(app, services.db, security);
   registerInvitations(app, services.db);
   registerWorkspaces(app, services.db);
   registerVersions(app, services.db);
@@ -264,17 +269,22 @@ export async function buildApp(config: Config, services: Services): Promise<Fast
     ...(services.aiResolve === undefined ? {} : { resolve: services.aiResolve }),
   });
   if (services.mailer !== undefined) {
-    registerCodes(app, services.db, services.mailer, config.publicUrl);
+    registerCodes(app, services.db, services.mailer, security, config.publicUrl);
   }
   const { oidc, publicUrl } = config;
   if (oidc !== null && publicUrl !== null) registerOidc(app, services.db, oidc, publicUrl);
   // How the app may offer to sign in on this server.
-  app.get("/api/sign-in-methods", () => ({
+  app.get("/api/sign-in-methods", async () => ({
     password: true,
-    emailCode: services.mailer !== undefined,
+    emailCode: services.mailer !== undefined && (await security.values()).emailCodes,
     oidc: oidc === null ? null : { name: oidc.name },
   }));
-  await registerEnterprise(app, { db: services.db, disconnect: reconnect }, switches, modules);
+  await registerEnterprise(
+    app,
+    { db: services.db, disconnect: reconnect, security },
+    switches,
+    modules,
+  );
   // The web app at `/`, with its own answer for paths the API does not have.
   await registerWebApp(app, config.webApp);
   return app;
