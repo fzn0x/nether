@@ -1,6 +1,6 @@
 ---
 title: PDFs
-description: How to read PDFs in Nether, highlight them in colors and comment on them, link to a highlight, and follow a PDF's outline and links, with every highlight kept as Markdown that Obsidian reads.
+description: How to read PDFs in Nether, highlight words or areas in colors and comment on them, link to and embed a highlight, embed a PDF in a note, and follow a PDF's outline and links, with every highlight kept as Markdown that Obsidian reads.
 ---
 
 Nether opens the PDFs in your vault in a tab of their own, where you can
@@ -43,6 +43,22 @@ Ctrl+Shift+H to highlight the words found.
 New highlights take the color chosen beside **Highlight**: yellow, red,
 blue or purple. These are the colors of the PDF++ plugin for Obsidian, so
 a highlight shows in the same color in both.
+
+## Highlighting an area
+
+For a figure, a table or a scanned page, highlight an area instead of
+words. Choose **Area**: a box appears in the middle of the page shown.
+Drag on a page to draw another, or move the box with the arrow keys and
+resize it with Shift and the arrow keys. Then choose **Highlight**, or
+press Enter on the box. Escape leaves it.
+
+An area is written as the PDF++ plugin writes a box of a page, its
+corners in the PDF's own units:
+`[[paper.pdf#page=3&rect=72,400,300,600|paper, page 3]]`. It has no words,
+so everything in its callout is the comment. Obsidian alone opens it at
+its page.
+
+## The highlights list
 
 The highlights list names each highlight's page, its color and its words.
 Choose one to show it on its page. Under each, you can:
@@ -111,6 +127,25 @@ opens the PDF at the highlight, chosen in the list. An embed of it,
 note, and edits them there, as any [synced block](../links/#synced-blocks)
 does.
 
+## Embedding a PDF in a note
+
+`![[paper.pdf]]` shows the PDF in the note, in a box 480 pixels tall, or
+as tall as `#height=` says: `![[paper.pdf#page=3&height=300]]` opens at
+page 3 in a box 300 pixels tall. **Open** opens the PDF in a tab at the
+page the box shows.
+
+An embed of a passage shows just that passage, marked in its color:
+`![[paper.pdf#page=3&selection=4,0,5,20]]`, Obsidian's link with a `!`
+before it. An embed of a box, `![[paper.pdf#page=3&rect=72,400,300,600]]`,
+as PDF++ writes one, shows just that box, as wide as the note, or as wide
+as `&width=` says.
+
+An embed of a highlight, `![[paper highlights#^k3x9q2ab]]`, shows its
+passage above its words and comment.
+
+Nether draws a PDF in a note only once it comes near the screen, so a
+note with PDFs far down opens as fast as one without.
+
 ## In the web app
 
 PDFs open and highlight in the web app as in the desktop app, offline too
@@ -120,8 +155,4 @@ once the app has been opened.
 
 - PDF++'s callouts, `> [!PDF|red]`, show in the editor as quotes, their
   first line as text.
-- A PDF embedded in a note, `![[paper.pdf]]`, still shows in the web
-  view's own viewer, and as a card on Linux.
-- Highlights are of words only: not yet of an area, such as a figure or
-  a scanned page.
 - A PDF with a password does not open.

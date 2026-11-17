@@ -1,9 +1,15 @@
 export {
+  type PdfArea,
+  type PdfMarked,
   type PdfPassage,
   type PdfPlace,
+  type PdfRect,
   type PdfSelection,
+  isArea,
   isPdf,
+  markedOf,
   namesPassage,
+  readEmbedSize,
   readPdfPlace,
   writePdfPlace,
 } from "./link.ts";

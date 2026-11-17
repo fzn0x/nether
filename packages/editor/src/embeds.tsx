@@ -22,6 +22,8 @@ import type { EditorWords } from "./words.ts";
 
 interface FileProps {
   readonly link: string;
+  /** What followed the link's `#`, as a PDF's `page=3`. */
+  readonly part?: string | undefined;
   readonly url: string | undefined;
   readonly kind: FileKind;
   readonly name: string;
@@ -83,7 +85,7 @@ function FileActions(props: {
 
 /** A file shown as what it is: an image, a PDF, a player, or a card. */
 function FileContent(props: FileProps) {
-  const { link, url, kind, name, alt, width, height, words, files } = props;
+  const { link, part, url, kind, name, alt, width, height, words, files } = props;
   const [broken, setBroken] = useState(false);
   if (url === undefined) return <Missing link={link} label={words.missingFile} />;
   if (broken) return <Missing link={link} label={words.brokenFile} />;
@@ -127,7 +129,9 @@ function FileContent(props: FileProps) {
         />
       );
     case "pdf":
-      // The webview's own viewer shows PDFs where it has one; WebKitGTK has none.
+      // The app draws PDFs itself where it can (ADR 0067); else the webview's
+      // own viewer shows them where it has one, and WebKitGTK has none.
+      if (files?.pdf !== undefined) return files.pdf(link, part);
       return navigator.pdfViewerEnabled ? (
         <iframe className="file-pdf" src={url} title={name} />
       ) : (
@@ -285,11 +289,15 @@ export function FileView(props: ViewProps) {
     );
   }
   const name = typeof node.attrs.name === "string" ? node.attrs.name : markdownPath(src);
+  // A PDF's place after `#`, as `file.pdf#page=3`, names no other file.
+  const hash = fileKind(src) === "pdf" ? src.indexOf("#") : -1;
+  const path = hash === -1 ? src : src.slice(0, hash);
   return (
     <NodeViewWrapper className="file-block">
       <FileContent
-        link={src}
-        url={fileUrl(files, src, true)}
+        link={path}
+        {...(hash === -1 ? {} : { part: src.slice(hash + 1) })}
+        url={fileUrl(files, path, true)}
         kind={fileKind(src)}
         name={name}
         words={words}
@@ -355,6 +363,11 @@ export function EmbedView(props: ViewProps) {
     <NodeViewWrapper className={`file-block ${kind === "image" ? "image-block" : ""}`}>
       <FileContent
         link={title}
+        part={
+          typeof (node.attrs.target as { heading?: unknown } | null)?.heading === "string"
+            ? (node.attrs.target as { heading: string }).heading
+            : undefined
+        }
         url={fileUrl(files, title, false)}
         kind={kind}
         name={name}

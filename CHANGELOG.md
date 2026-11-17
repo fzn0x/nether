@@ -157,6 +157,23 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   goes into the note as one edit that one undo takes out
   ([ADR 0068](docs/adr/0068-ai-comes-from-the-users-own-provider-reached-from-their-device.md),
   [ADR 0069](docs/adr/0069-writing-assist-streams-into-a-preview-and-goes-in-as-one-edit.md)).
+- PDFs embedded in notes are drawn by pdf.js in the note, on every system,
+  once they come near the screen and not before
+  ([ADR 0067](docs/adr/0067-pdf-embeds-draw-with-pdf-js-when-on-screen-and-an-area-is-pdf-plus-plus-rect.md)):
+  the whole PDF in a box, at `#page=` and `#height=`, with Open to its
+  tab; a passage or PDF++'s `&rect=` box alone; and above a highlight's
+  embed, its passage. An area of a page is highlighted by a drag or from
+  the keyboard, written as PDF++'s `&rect=`. Every view and embed of a PDF
+  shares one loaded copy.
+- The web clipper, `apps/clipper`, a Manifest V3 extension for Chrome and
+  Firefox: its button saves the selection, or the whole page as a reader
+  view shows it, as Markdown the importer would write, to edit before it
+  goes; as a new note with its `source`, `clipped` and `author`, added to
+  a note found by search, read again if it changed meanwhile, or as a
+  database row. It signs in with a write token, kept in the browser's own
+  storage, and reaches the person's server alone
+  ([ADR 0066](docs/adr/0066-the-web-clipper-is-a-manifest-v3-extension-that-sends-clips-to-the-users-own-server-alone.md)).
+  The build makes a ZIP of each for its store.
 - AI in the web app, through its server: the server keeps providers, each
   account's own and those its admins set for everyone, with each key
   sealed by the admin's `NETHER_SECRET_KEY` and never given back. The web

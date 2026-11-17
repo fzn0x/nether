@@ -9,10 +9,12 @@
 import type { NoteId } from "@nether/core";
 import type { LinkGraph } from "@nether/graph";
 import {
+  type PdfMarked,
   type PdfPassage,
-  type PdfSelection,
+  type PdfRect,
   type TextItem,
-  colorValue,
+  isArea,
+  markedOf,
   commentMarkdown,
   findOnPage,
   locatePassage,
@@ -24,21 +26,10 @@ import {
 } from "@nether/pdf";
 import type { Vault } from "@nether/storage";
 import {
-  type PDFDocumentLoadingTask,
-  type PDFDocumentProxy,
-  type PDFPageProxy,
-  PDFWorker,
-  type RenderTask,
-  TextLayer,
-  getDocument,
-} from "pdfjs-dist";
-import PdfJsWorker from "pdfjs-dist/build/pdf.worker.min.mjs?worker";
-import {
   type CSSProperties,
   type KeyboardEvent,
   useCallback,
   useEffect,
-  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -46,7 +37,19 @@ import {
 import { backend } from "./backend.ts";
 import { t } from "./messages.ts";
 import type { NotePart } from "./noteLinks.ts";
-import { type PdfDestination, PdfOutline, destinationOf, webAddress } from "./PdfOutline.tsx";
+import { type PdfDestination, PdfOutline, destinationOf } from "./PdfOutline.tsx";
+import {
+  type Focus,
+  type Mark,
+  type MarkKind,
+  PdfPage,
+  type Size,
+  type TextContent,
+  cssColor,
+  errorText,
+  selectionOf,
+  usePdf,
+} from "./pdfPages.tsx";
 import {
   type NoteHighlight,
   type NotePassageLink,
@@ -61,67 +64,15 @@ import {
   setHighlightComment,
 } from "./pdfHighlights.ts";
 
-type TextContent = Awaited<ReturnType<PDFPageProxy["getTextContent"]>>;
-
-/** A page's size at 100%, in CSS pixels. */
-interface Size {
-  readonly width: number;
-  readonly height: number;
-}
-
-/** What is marked on a page: a highlight, the one chosen, the words to highlight, a match of Find, a link's passage. */
-type MarkKind = "highlight" | "chosen" | "pending" | "match" | "focus";
-
-interface Mark {
-  readonly key: string;
-  readonly kind: MarkKind;
-  readonly selection: PdfSelection;
-  /** A highlight's color, as CSS; none for the default. */
-  readonly color?: string | undefined;
-}
-
-/** A link of the PDF's own on a page (ADR 0062): its box, and where it goes. */
-interface PageLink {
-  readonly left: number;
-  readonly top: number;
-  readonly width: number;
-  readonly height: number;
-  readonly to: PdfDestination | { readonly url: string };
-}
-
-/** A place to show, and a key new each time it is asked, even for the same place. */
-interface Focus {
-  readonly page: number;
-  readonly mark?: string;
-  readonly key: number;
-}
-
 /** Words chosen to highlight, from a selection or from Find. */
 interface Pending {
-  readonly passage: PdfPassage;
+  readonly passage: PdfMarked;
+  /** None for an area. */
   readonly words: string;
 }
 
 const minScale = 0.25;
 const maxScale = 4;
-/** The most pixels a page's canvas holds, 64 MB: past it, a page is drawn finer than the screen no more. */
-const maxPixels = 2 ** 24;
-
-/** Where pdf.js fetches what a PDF needs, as the build copies it (vite.config.ts). */
-function resources() {
-  const base = new URL(`${import.meta.env.BASE_URL}pdfjs/`, location.href).href;
-  return {
-    cMapUrl: `${base}cmaps/`,
-    cMapPacked: true,
-    standardFontDataUrl: `${base}standard_fonts/`,
-    wasmUrl: `${base}wasm/`,
-  };
-}
-
-function errorText(error: unknown): string {
-  if (error instanceof Error && error.name === "PasswordException") return t("pdfPassword");
-  return error instanceof Error ? error.message : String(error);
-}
 
 function nameOf(path: string): string {
   return path.slice(path.lastIndexOf("/") + 1).replace(/\.pdf$/i, "");
@@ -151,359 +102,6 @@ function colorName(color: string | undefined): string {
     default:
       return color ?? t("pdfColorYellow");
   }
-}
-
-/** A color as CSS, CSS's own names known by the page. */
-function cssColor(color: string | undefined): string | undefined {
-  return colorValue(color, (name) => CSS.supports("color", name));
-}
-
-/** The PDF at `path`, loaded through the vault's files, again when the file changes. */
-function usePdf(vault: Vault, path: string): { doc?: PDFDocumentProxy; error?: string } {
-  const [state, setState] = useState<{ doc?: PDFDocumentProxy; error?: string }>({});
-  const [version, setVersion] = useState(0);
-  useEffect(() => {
-    let seen = vault.fileInfo(path);
-    return vault.subscribe(() => {
-      const now = vault.fileInfo(path);
-      if (now?.modified === seen?.modified && now?.size === seen?.size) return;
-      seen = now;
-      setVersion((count) => count + 1);
-    });
-  }, [vault, path]);
-  useEffect(() => {
-    // StrictMode starts this twice: what the first start made is stopped.
-    const controller = new AbortController();
-    const stopped = () => controller.signal.aborted;
-    let port: Worker | undefined;
-    let worker: PDFWorker | undefined;
-    let task: PDFDocumentLoadingTask | undefined;
-    setState({});
-    if (vault.fileInfo(path) === undefined) {
-      setState({ error: t("pdfGone") });
-      return;
-    }
-    vault
-      .readBytes(path)
-      .then(async (file) => {
-        if (stopped()) return;
-        // A worker of its own, stopped with the PDF, so that nothing stays once it closes.
-        port = new PdfJsWorker();
-        worker = PDFWorker.create({ port });
-        task = getDocument({ data: file.bytes, worker, ...resources() });
-        const doc = await task.promise;
-        if (!stopped()) setState({ doc });
-      })
-      .catch((error: unknown) => {
-        if (!stopped()) setState({ error: errorText(error) });
-      });
-    return () => {
-      controller.abort();
-      const done = task?.destroy() ?? Promise.resolve();
-      void done.finally(() => {
-        worker?.destroy();
-        port?.terminate();
-        // What the text layers measured text with, unless another PDF still draws.
-        TextLayer.cleanup();
-      });
-    };
-  }, [vault, path, version]);
-  return state;
-}
-
-/** The node and offset in a page's text layer where a character of an item is; past the end for the last. */
-function boundary(
-  divs: readonly HTMLElement[],
-  index: number,
-  offset: number,
-  forward: boolean,
-): { readonly node: Node; readonly offset: number } | undefined {
-  // An empty item has no element on the page: the next one starts, or the one before ends.
-  for (let at = index; at >= 0 && at < divs.length; at += forward ? 1 : -1) {
-    const node = divs[at]?.firstChild;
-    if (divs[at]?.isConnected !== true || !(node instanceof Text)) continue;
-    if (at === index) return { node, offset: Math.min(offset, node.length) };
-    return { node, offset: forward ? 0 : node.length };
-  }
-  return undefined;
-}
-
-/** The boxes a passage covers on its page, from the page's corner. */
-function boxesOf(
-  divs: readonly HTMLElement[],
-  selection: PdfSelection,
-  page: DOMRect,
-): { left: number; top: number; width: number; height: number }[] {
-  const start = boundary(divs, selection.beginIndex, selection.beginOffset, true);
-  const end = boundary(divs, selection.endIndex, selection.endOffset, false);
-  if (start === undefined || end === undefined) return [];
-  const range = document.createRange();
-  try {
-    range.setStart(start.node, start.offset);
-    range.setEnd(end.node, end.offset);
-  } catch {
-    return [];
-  }
-  return [...range.getClientRects()]
-    .filter((rect) => rect.width > 0.5 && rect.height > 0.5)
-    .map((rect) => ({
-      left: rect.left - page.left,
-      top: rect.top - page.top,
-      width: rect.width,
-      height: rect.height,
-    }));
-}
-
-/** Where in an item's element a range's end is, as an offset in the item's text. */
-function offsetIn(div: HTMLElement, node: Node, offset: number): number {
-  const length = div.textContent.length;
-  if (node === div) return offset === 0 ? 0 : length;
-  return node.nodeType === Node.TEXT_NODE ? Math.min(offset, length) : 0;
-}
-
-/** The passage a range selects on a page, from the items its text layer drew; undefined for none. */
-function selectionOf(range: Range, divs: readonly HTMLElement[]): PdfSelection | undefined {
-  let begin: readonly [number, number] | undefined;
-  let end: readonly [number, number] | undefined;
-  for (const [index, div] of divs.entries()) {
-    if (!div.isConnected || div.textContent === "" || !range.intersectsNode(div)) continue;
-    const from = div.contains(range.startContainer)
-      ? offsetIn(div, range.startContainer, range.startOffset)
-      : 0;
-    const to = div.contains(range.endContainer)
-      ? offsetIn(div, range.endContainer, range.endOffset)
-      : div.textContent.length;
-    if (from >= to) continue;
-    begin ??= [index, from];
-    end = [index, to];
-  }
-  return begin === undefined || end === undefined
-    ? undefined
-    : { beginIndex: begin[0], beginOffset: begin[1], endIndex: end[0], endOffset: end[1] };
-}
-
-function PdfPage(props: {
-  readonly doc: PDFDocumentProxy;
-  readonly number: number;
-  readonly count: number;
-  readonly size: Size;
-  readonly scale: number;
-  readonly near: boolean;
-  readonly marks: readonly Mark[];
-  readonly focus: Focus | undefined;
-  readonly textOf: (page: number) => Promise<TextContent>;
-  readonly onText: (page: number, divs: readonly HTMLElement[] | undefined) => void;
-  readonly onSize: (page: number, size: Size) => void;
-  readonly onError: (error: unknown) => void;
-  readonly register: (page: number, element: HTMLElement | null) => void;
-  /** Follows a link of the PDF's own. */
-  readonly onLink: (to: PageLink["to"]) => void;
-}) {
-  const { doc, number, count, size, scale, near, marks, focus, textOf, onText, onSize, onError } =
-    props;
-  const [links, setLinks] = useState<readonly PageLink[]>([]);
-  const page = useRef<HTMLDivElement | null>(null);
-  const canvas = useRef<HTMLCanvasElement>(null);
-  const layer = useRef<HTMLDivElement>(null);
-  const [divs, setDivs] = useState<readonly HTMLElement[] | undefined>();
-
-  // Drawn while near the screen; far away, its canvas lets its pixels go.
-  useEffect(() => {
-    if (!near) return;
-    // Read through a function: the flag changes while this waits.
-    const controller = new AbortController();
-    const cancelled = () => controller.signal.aborted;
-    let render: RenderTask | undefined;
-    let text: TextLayer | undefined;
-    void (async () => {
-      const proxy = await doc.getPage(number);
-      if (cancelled()) return;
-      const whole = proxy.getViewport({ scale: 1 });
-      onSize(number, { width: whole.width, height: whole.height });
-      const viewport = proxy.getViewport({ scale });
-      const drawn = canvas.current;
-      const container = layer.current;
-      if (drawn === null || container === null) return;
-      const ratio = Math.min(
-        window.devicePixelRatio || 1,
-        Math.sqrt(maxPixels / (viewport.width * viewport.height)),
-      );
-      drawn.width = Math.floor(viewport.width * ratio);
-      drawn.height = Math.floor(viewport.height * ratio);
-      render = proxy.render({
-        canvas: drawn,
-        viewport,
-        transform: ratio === 1 ? undefined : [ratio, 0, 0, ratio, 0, 0],
-      });
-      const content = await textOf(number);
-      if (cancelled()) return;
-      container.replaceChildren();
-      text = new TextLayer({ textContentSource: content, container, viewport });
-      await text.render();
-      if (cancelled()) return;
-      setDivs(text.textDivs);
-      onText(number, text.textDivs);
-      // Its links, to its own pages or to the web; others do nothing, so they are left out.
-      const found: PageLink[] = [];
-      for (const annotation of (await proxy.getAnnotations({ intent: "display" })) as unknown[]) {
-        const { subtype, rect, dest, url } = annotation as {
-          subtype?: unknown;
-          rect?: unknown;
-          dest?: unknown;
-          url?: unknown;
-        };
-        if (subtype !== "Link" || !Array.isArray(rect) || rect.length !== 4) continue;
-        const web = webAddress(url);
-        const to = web !== undefined ? { url: web } : await destinationOf(doc, dest);
-        if (to === undefined) continue;
-        const [x1, y1, x2, y2] = rect as number[];
-        const [left = 0, top = 0] = viewport.convertToViewportPoint(x1 ?? 0, y1 ?? 0) as number[];
-        const [right = 0, bottom = 0] = viewport.convertToViewportPoint(
-          x2 ?? 0,
-          y2 ?? 0,
-        ) as number[];
-        found.push({
-          left: Math.min(left, right),
-          top: Math.min(top, bottom),
-          width: Math.abs(right - left),
-          height: Math.abs(bottom - top),
-          to,
-        });
-      }
-      if (cancelled()) return;
-      setLinks(found);
-      await render.promise;
-    })().catch((error: unknown) => {
-      if (cancelled() || (error instanceof Error && error.name === "RenderingCancelledException")) {
-        return;
-      }
-      onError(error);
-    });
-    const drawn = canvas.current;
-    const container = layer.current;
-    return () => {
-      controller.abort();
-      render?.cancel();
-      text?.cancel();
-      setDivs(undefined);
-      setLinks([]);
-      onText(number, undefined);
-      container?.replaceChildren();
-      if (drawn !== null) {
-        drawn.width = 0;
-        drawn.height = 0;
-      }
-    };
-  }, [doc, number, scale, near, textOf, onText, onSize, onError]);
-
-  // The marks, from the words' boxes once the text layer is drawn.
-  const [boxes, setBoxes] = useState<
-    readonly {
-      key: string;
-      kind: MarkKind;
-      color: string | undefined;
-      left: number;
-      top: number;
-      width: number;
-      height: number;
-    }[]
-  >([]);
-  useLayoutEffect(() => {
-    const element = page.current;
-    if (divs === undefined || element === null) {
-      setBoxes([]);
-      return;
-    }
-    const corner = element.getBoundingClientRect();
-    setBoxes(
-      marks.flatMap((mark) =>
-        boxesOf(divs, mark.selection, corner).map((box, index) => ({
-          ...box,
-          key: `${mark.key}:${String(index)}`,
-          kind: mark.kind,
-          color: mark.color,
-        })),
-      ),
-    );
-  }, [divs, marks]);
-
-  // A passage asked for is scrolled to once its marks are drawn.
-  const shown = useRef<number | undefined>(undefined);
-  useEffect(() => {
-    if (focus?.page !== number || focus.mark === undefined || shown.current === focus.key) return;
-    const target = page.current?.querySelector(`[data-mark="${CSS.escape(focus.mark)}"]`);
-    if (target === null || target === undefined) return;
-    shown.current = focus.key;
-    target.scrollIntoView({ block: "center" });
-  }, [boxes, focus, number]);
-
-  const { register } = props;
-  return (
-    <div
-      ref={(element) => {
-        page.current = element;
-        register(number, element);
-      }}
-      className="pdf-page"
-      role="group"
-      data-page={number}
-      aria-label={t("pdfPage", { page: number, count })}
-      style={
-        {
-          width: `${String(size.width * scale)}px`,
-          height: `${String(size.height * scale)}px`,
-          "--total-scale-factor": String(scale),
-          "--scale-round-x": "1px",
-          "--scale-round-y": "1px",
-        } as CSSProperties
-      }
-    >
-      <canvas ref={canvas} className="pdf-canvas" aria-hidden="true" />
-      <div className="pdf-marks" aria-hidden="true">
-        {boxes.map((box) => (
-          <div
-            key={box.key}
-            className={`pdf-mark pdf-mark-${box.kind}`}
-            data-mark={box.key.slice(0, box.key.lastIndexOf(":"))}
-            style={{
-              left: `${String(box.left)}px`,
-              top: `${String(box.top)}px`,
-              width: `${String(box.width)}px`,
-              height: `${String(box.height)}px`,
-              ...(box.color === undefined ? {} : { "--mark-color": box.color }),
-            }}
-          />
-        ))}
-      </div>
-      <div ref={layer} className="textLayer" />
-      {links.length === 0 ? null : (
-        <div className="pdf-links">
-          {links.map((link, index) => (
-            <button
-              key={index}
-              type="button"
-              className="pdf-link"
-              aria-label={
-                "url" in link.to
-                  ? t("pdfLinkTo", { address: link.to.url })
-                  : t("pdfGoToPage", { page: link.to.page })
-              }
-              title={"url" in link.to ? link.to.url : t("pdfGoToPage", { page: link.to.page })}
-              style={{
-                left: `${String(link.left)}px`,
-                top: `${String(link.top)}px`,
-                width: `${String(link.width)}px`,
-                height: `${String(link.height)}px`,
-              }}
-              onClick={() => {
-                props.onLink(link.to);
-              }}
-            />
-          ))}
-        </div>
-      )}
-    </div>
-  );
 }
 
 export default function PdfView(props: {
@@ -778,26 +376,27 @@ export default function PdfView(props: {
   }, [vault, graph, refresh, linksLoaded]);
 
   // Where each highlight's passage is now, by its selection and its words.
-  const [located, setLocated] = useState<ReadonlyMap<string, PdfPassage | null>>(new Map());
+  const [located, setLocated] = useState<ReadonlyMap<string, PdfMarked | null>>(new Map());
   useEffect(() => {
     if (doc === undefined) return;
     const controller = new AbortController();
     void (async () => {
-      const found = new Map<string, PdfPassage | null>();
+      const found = new Map<string, PdfMarked | null>();
+      // An area is found by its box alone, on its page if the PDF still has it (ADR 0067).
+      const place = async (passage: PdfMarked, words: string) =>
+        isArea(passage)
+          ? passage.page <= doc.numPages
+            ? passage
+            : undefined
+          : locatePassage(passage, words, doc.numPages, itemsOf);
       for (const item of highlights) {
         const { passage, words } = item.highlight;
-        found.set(
-          keyOf(item),
-          (await locatePassage(passage, words, doc.numPages, itemsOf)) ?? null,
-        );
+        found.set(keyOf(item), (await place(passage, words)) ?? null);
       }
       // Other links, by their selection alone, as Obsidian and PDF++ find them (ADR 0062).
       for (const item of links) {
         const { passage } = item.link;
-        found.set(
-          linkKeyOf(item),
-          (await locatePassage(passage, "", doc.numPages, itemsOf)) ?? null,
-        );
+        found.set(linkKeyOf(item), (await place(passage, "")) ?? null);
       }
       if (!controller.signal.aborted) setLocated(found);
     })().catch(report);
@@ -857,11 +456,53 @@ export default function PdfView(props: {
     });
   };
 
+  // Drawing an area to highlight (ADR 0067): by a drag on a page, or a box the keyboard moves.
+  const [drawing, setDrawing] = useState(false);
+  const [areaFocus, setAreaFocus] = useState(0);
+  const startArea = async () => {
+    if (drawing) {
+      setDrawing(false);
+      setPending(undefined);
+      return;
+    }
+    setDrawing(true);
+    setMatches(undefined);
+    document.getSelection()?.removeAllRanges();
+    if (doc === undefined) return;
+    // A box in the middle of the page shown, for the keyboard to move.
+    const [x1 = 0, y1 = 0, x2 = 0, y2 = 0] = (await doc.getPage(current)).view;
+    const width = x2 - x1;
+    const height = y2 - y1;
+    const rect: PdfRect = [
+      x1 + width * 0.25,
+      y1 + height * 0.35,
+      x1 + width * 0.75,
+      y1 + height * 0.65,
+    ];
+    setPending({ passage: { page: current, rect }, words: "" });
+    setAreaFocus((key) => key + 1);
+  };
+  const area = {
+    drawing,
+    focusKey: areaFocus,
+    onArea: (page: number, rect: PdfRect) => {
+      setPending({ passage: { page, rect }, words: "" });
+    },
+    onDone: () => {
+      void highlight();
+    },
+    onCancel: () => {
+      setDrawing(false);
+      setPending(undefined);
+      scroller.current?.focus();
+    },
+  };
+
   // The color new highlights take: PDF++'s name, yellow writing none (ADR 0062).
   const [color, setColor] = useState<string>(highlightColors[0]?.name ?? "yellow");
   const highlight = async () => {
     if (pending === undefined) return;
-    const { page, selection } = pending.passage;
+    const { page } = pending.passage;
     const colored = color === highlightColors[0]?.name ? undefined : color;
     try {
       const added = await addPdfHighlight(
@@ -870,7 +511,7 @@ export default function PdfView(props: {
         highlightsHome(highlights),
         t("pdfHighlightsName", { name }),
         {
-          passage: { page, selection, ...(colored === undefined ? {} : { color: colored }) },
+          passage: colored === undefined ? pending.passage : { ...pending.passage, color: colored },
           words: pending.words,
           name: t("pdfPageName", { name, page: pending.passage.page }),
         },
@@ -880,7 +521,12 @@ export default function PdfView(props: {
       setMatches(undefined);
       document.getSelection()?.removeAllRanges();
       setChosen(`${added.note}:${added.id}`);
-      setStatus(t("pdfHighlighted", { words: pending.words }));
+      setDrawing(false);
+      setStatus(
+        isArea(pending.passage)
+          ? t("pdfAreaHighlighted", { page })
+          : t("pdfHighlighted", { words: pending.words }),
+      );
       await refresh();
     } catch (problem) {
       report(problem);
@@ -940,7 +586,7 @@ export default function PdfView(props: {
   };
 
   // A link's place: its page, and its passage marked, a highlight's chosen in the list.
-  const [linked, setLinked] = useState<PdfPassage | undefined>();
+  const [linked, setLinked] = useState<PdfMarked | undefined>();
   const asked = useRef<number | undefined>(undefined);
   useEffect(() => {
     if (
@@ -956,14 +602,16 @@ export default function PdfView(props: {
     const place = readPdfPlace(at.part);
     if (place === undefined) return;
     const page = Math.min(place.page, sizes.length);
-    if (place.selection === undefined) {
+    const marked = markedOf({ ...place, page });
+    if (marked === undefined) {
       setLinked(undefined);
       goTo(page);
       return;
     }
-    const passage = { page, selection: place.selection };
-    const sameAs = (own: PdfPassage) =>
-      own.page === place.page && JSON.stringify(own.selection) === JSON.stringify(place.selection);
+    const passage = marked;
+    const sameAs = (own: PdfMarked) =>
+      own.page === place.page &&
+      JSON.stringify([own.selection, own.rect]) === JSON.stringify([place.selection, place.rect]);
     // A highlight of the passage first, then another note's link to it.
     const same = highlights.find((item) => sameAs(item.highlight.passage));
     const sameLink = links.find((item) => sameAs(item.link.passage));
@@ -983,9 +631,14 @@ export default function PdfView(props: {
   // What each page marks.
   const marksByPage = useMemo(() => {
     const byPage = new Map<number, Mark[]>();
-    const add = (passage: PdfPassage, key: string, kind: MarkKind, color?: string) => {
+    const add = (passage: PdfMarked, key: string, kind: MarkKind, color?: string) => {
       const list = byPage.get(passage.page) ?? [];
-      list.push({ key, kind, selection: passage.selection, color: cssColor(color) });
+      list.push({
+        key,
+        kind,
+        ...(isArea(passage) ? { rect: passage.rect } : { selection: passage.selection }),
+        color: cssColor(color),
+      });
       byPage.set(passage.page, list);
     };
     const marked = (key: string, color: string | undefined) => {
@@ -998,6 +651,7 @@ export default function PdfView(props: {
     for (const item of links) marked(linkKeyOf(item), item.link.passage.color);
     if (linked !== undefined) add(linked, "focus", "focus");
     if (pending !== undefined && matches !== undefined) add(pending.passage, "match", "match");
+    if (pending !== undefined && isArea(pending.passage)) add(pending.passage, "area", "area");
     return byPage;
   }, [highlights, links, located, chosen, linked, pending, matches]);
 
@@ -1121,6 +775,17 @@ export default function PdfView(props: {
             }}
           >
             {t("pdfHighlight")}
+          </button>
+          <button
+            type="button"
+            className="quiet"
+            aria-pressed={drawing}
+            title={t("pdfAreaHint")}
+            onClick={() => {
+              void startArea();
+            }}
+          >
+            {t("pdfArea")}
           </button>
           <label className="pdf-color">
             <span className="pdf-color-swatch" style={{ background: cssColor(color) }} />
@@ -1253,6 +918,7 @@ export default function PdfView(props: {
                 onError={report}
                 register={register}
                 onLink={onLink}
+                area={area}
               />
             ))
           )}
@@ -1281,8 +947,11 @@ export default function PdfView(props: {
                   const lost = where === null;
                   const page = where?.page ?? item.highlight.passage.page;
                   const comment = commentMarkdown(item.highlight.comment);
-                  const words =
-                    item.highlight.words === "" ? t("pdfNoWords") : item.highlight.words;
+                  const words = isArea(item.highlight.passage)
+                    ? t("pdfAreaWords")
+                    : item.highlight.words === ""
+                      ? t("pdfNoWords")
+                      : item.highlight.words;
                   return (
                     <li key={key} className={key === chosen ? "chosen" : undefined}>
                       <button
@@ -1457,7 +1126,11 @@ export default function PdfView(props: {
                               } as CSSProperties
                             }
                           >
-                            {item.link.words === "" ? t("pdfNoWords") : item.link.words}
+                            {item.link.words !== ""
+                              ? item.link.words
+                              : isArea(item.link.passage)
+                                ? t("pdfAreaWords")
+                                : t("pdfNoWords")}
                           </span>
                         </button>
                         <span

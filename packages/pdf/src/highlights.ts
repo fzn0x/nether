@@ -19,7 +19,7 @@ import {
   walkBlocks,
 } from "@nether/core";
 import { type ParsedMarkdown, parseMarkdown, serializeMarkdown } from "@nether/markdown";
-import { type PdfPassage, readPdfPlace, writePdfPlace } from "./link.ts";
+import { type PdfMarked, isArea, markedOf, readPdfPlace, writePdfPlace } from "./link.ts";
 import { normalizeWords } from "./text.ts";
 
 /** The callout kind a highlight is, one of Obsidian's own. */
@@ -31,8 +31,9 @@ export interface Highlight {
   readonly id: BlockId;
   /** The PDF its link names, as written: `paper.pdf`, `Papers/paper.pdf`. */
   readonly target: string;
-  readonly passage: PdfPassage;
-  /** The words highlighted. */
+  /** Its passage of words, or its box for a highlight of an area (ADR 0067). */
+  readonly passage: PdfMarked;
+  /** The words highlighted; none for an area. */
   readonly words: string;
   /** The comment's blocks, none for no comment. */
   readonly comment: readonly ContentBlock[];
@@ -75,18 +76,15 @@ export function readHighlight(block: ContentBlock): Highlight | undefined {
   if (link === undefined || !("title" in link.target) || link.target.heading === undefined) {
     return undefined;
   }
-  const place = readPdfPlace(link.target.heading);
-  if (place?.selection === undefined) return undefined;
+  const passage = markedOf(readPdfPlace(link.target.heading));
+  if (passage === undefined) return undefined;
   const [first, ...rest] = block.children ?? [];
-  const quoted = first?.type === "paragraph";
+  // An area has no words: all it holds is its comment.
+  const quoted = first?.type === "paragraph" && !isArea(passage);
   return {
     id: block.id,
     target: link.target.title,
-    passage: {
-      page: place.page,
-      selection: place.selection,
-      ...(place.color === undefined ? {} : { color: place.color }),
-    },
+    passage,
     words: quoted ? inlineWords(first.content) : "",
     comment: quoted ? rest : (block.children ?? []),
   };
@@ -108,7 +106,7 @@ export interface NewHighlight {
   readonly id: BlockId;
   /** The link to the PDF from the note the highlight goes in: `paper.pdf`. */
   readonly target: string;
-  readonly passage: PdfPassage;
+  readonly passage: PdfMarked;
   /** The link's name, as Obsidian writes it: "paper, page 3". */
   readonly name: string;
   readonly words: string;
@@ -135,7 +133,9 @@ export function highlightCallout(highlight: NewHighlight): Callout {
         alias: highlight.name,
       },
     ],
-    children: [quote, ...(highlight.comment ?? [])],
+    children: isArea(highlight.passage)
+      ? [...(highlight.comment ?? [])]
+      : [quote, ...(highlight.comment ?? [])],
   };
 }
 
@@ -163,7 +163,10 @@ export function withComment(
   const block = [...walkBlocks(content)].find(
     (each): each is Callout => each.id === id && each.type === "callout",
   );
-  if (block === undefined || readHighlight(block) === undefined) return undefined;
+  const highlight = block === undefined ? undefined : readHighlight(block);
+  if (block === undefined || highlight === undefined) return undefined;
+  // An area's comment is all it holds.
+  if (isArea(highlight.passage)) return replaceBlock(content, id, { ...block, children: comment });
   const [quote] = block.children ?? [];
   if (quote?.type !== "paragraph") return undefined;
   return replaceBlock(content, id, { ...block, children: [quote, ...comment] });
@@ -183,8 +186,13 @@ export function withColor(
   );
   const highlight = block === undefined ? undefined : readHighlight(block);
   if (block === undefined || highlight === undefined) return undefined;
-  const { page, selection } = highlight.passage;
-  const heading = writePdfPlace({ page, selection, ...(color === undefined ? {} : { color }) });
+  const { page, selection, rect } = highlight.passage;
+  const heading = writePdfPlace({
+    page,
+    ...(selection === undefined ? {} : { selection }),
+    ...(rect === undefined ? {} : { rect }),
+    ...(color === undefined ? {} : { color }),
+  });
   const title = block.content.map((inline) =>
     inline.type === "wikiLink" && "title" in inline.target
       ? { ...inline, target: { ...inline.target, heading } }

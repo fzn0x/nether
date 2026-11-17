@@ -58,13 +58,15 @@ on it. Plugins from a vault run in a sandbox, with only what each device
 approved for them, and plugins and themes install from Nether's
 directory. The server's [REST API](../api/) reads and writes notes,
 databases and search for scripts, with personal access tokens, and its
-webhooks tell other services when notes change; the app makes both.
-[PDFs](../pdfs/) open in a view of their own, to be highlighted and
-commented on, each highlight Markdown that Obsidian reads. [Writing
-assist](../ai/) rewrites, fixes, summarizes, translates or continues what
-you select, with an AI provider you bring, in the desktop app and in the
-web app through its server. The [roadmap](../roadmap/) lists what each
-phase delivers.
+webhooks tell other services when notes change; the app makes both. The
+[web clipper](../clipper/) saves pages and selections from Chrome and
+Firefox as Markdown.
+[PDFs](../pdfs/) open in a view of their own and in the notes that embed
+them, their words or areas highlighted and commented on, each highlight
+Markdown that Obsidian reads. [Writing assist](../ai/) rewrites, fixes,
+summarizes, translates or continues what you select, with an AI provider
+you bring, in the desktop app and in the web app through its server. The
+[roadmap](../roadmap/) lists what each phase delivers.
 
 The full requirements, the architecture and the decision records live in
 the [repository](https://github.com/fzn0x/nether/tree/main/docs).
