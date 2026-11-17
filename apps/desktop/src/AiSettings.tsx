@@ -1,20 +1,26 @@
-// The AI tab of the vault's settings (ADR 0068): the providers set up on
-// this device, each key kept in the system's keychain; which one this
-// vault uses, or none; and for a vault that syncs, its workspace's switch,
-// which its owners and admins change for everyone in it. It is the one
-// place AI shows before a provider is set up.
+// The AI tab of the vault's settings. In the desktop app (ADR 0068), the
+// providers set up on this device, each key kept in the system's keychain;
+// in the web app (ADR 0070), those its server keeps, the account's own and
+// those its admins set for everyone, each key sealed on the server and
+// never shown again. Then which one this vault uses, or none; and for a
+// vault that syncs, its workspace's switch, which its owners and admins
+// change for everyone in it. It is the one place AI shows before a
+// provider is set up.
 import { type ProviderKind, isLocal, providerUrl } from "@nether/ai";
 import { type SyntheticEvent, useEffect, useState } from "react";
-import type { VaultAiChoice } from "./ai.ts";
+import type { AiProviderEntry, ServerAi, VaultAiChoice } from "./ai.ts";
 import { providerWhere } from "./aiWords.ts";
 import { backend } from "./backend.ts";
 import { t } from "./messages.ts";
-import type { AIProvider } from "./mygo.ts";
 import { hostOf } from "./sync.ts";
 import type { VaultAi } from "./useAi.ts";
 
+type Scope = "own" | "instance";
+
 interface Draft {
   readonly id: string;
+  /** Whose a new provider is, on a server: the account's, or everyone's. */
+  readonly scope: Scope;
   readonly name: string;
   readonly kind: ProviderKind;
   readonly url: string;
@@ -27,20 +33,24 @@ interface Draft {
 
 const anthropicUrl = "https://api.anthropic.com";
 
-const blank: Draft = {
-  id: "",
-  name: "",
-  kind: "openai",
-  url: "",
-  model: "",
-  key: "",
-  hasKey: false,
-  removeKey: false,
-};
+function blank(scope: Scope): Draft {
+  return {
+    id: "",
+    scope,
+    name: "",
+    kind: "openai",
+    url: "",
+    model: "",
+    key: "",
+    hasKey: false,
+    removeKey: false,
+  };
+}
 
-function draftOf(provider: AIProvider): Draft {
+function draftOf(provider: AiProviderEntry): Draft {
   return {
     id: provider.id,
+    scope: provider.scope ?? "own",
     name: provider.name,
     kind: provider.kind === "anthropic" ? "anthropic" : "openai",
     url: provider.url,
@@ -53,13 +63,23 @@ function draftOf(provider: AIProvider): Draft {
 
 const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
+/** Whether this account may change a provider: any on this device, on a server its own, or as an admin everyone's. */
+function changes(server: ServerAi | undefined, provider: AiProviderEntry): boolean {
+  if (server === undefined) return true;
+  return provider.scope === "instance" ? server.manage.instance : server.manage.own;
+}
+
 /** A provider's fields, to add one or change one. */
 function ProviderForm(props: {
   readonly draft: Draft;
+  /** What the server allows, in the web app; undefined on this device. */
+  readonly server: ServerAi | undefined;
+  /** The server's host, as the hints name it. */
+  readonly host: string;
   readonly onSave: (draft: Draft) => Promise<void>;
   readonly onCancel: () => void;
 }) {
-  const { onSave, onCancel } = props;
+  const { server, host, onSave, onCancel } = props;
   const [draft, setDraft] = useState(props.draft);
   const [error, setError] = useState<string | undefined>();
   const [busy, setBusy] = useState(false);
@@ -67,6 +87,8 @@ function ProviderForm(props: {
     setDraft((current) => ({ ...current, ...next }));
   };
   const field = (name: string) => `ai-provider-${name}`;
+  // A server that keeps no keys takes providers that need none.
+  const keyless = server !== undefined && !server.keepsKeys;
 
   const submit = (event: SyntheticEvent) => {
     event.preventDefault();
@@ -87,12 +109,42 @@ function ProviderForm(props: {
     });
   };
 
+  const urlHint =
+    draft.kind === "anthropic"
+      ? t("aiProviderUrlHintAnthropic")
+      : server === undefined
+        ? t("aiProviderUrlHintOpenai")
+        : draft.scope === "instance"
+          ? t("aiProviderUrlHintInstance")
+          : t("aiProviderUrlHintOwn", { server: host });
+  const keyHint = draft.hasKey
+    ? t("aiProviderKeyKept")
+    : server === undefined
+      ? t("aiProviderKeyHint")
+      : keyless
+        ? t("aiProviderKeyNone", { server: host })
+        : t("aiProviderKeyHintServer", { server: host });
+
   return (
     <form className="ai-provider-form" onSubmit={submit}>
       <fieldset>
         <legend>
           {draft.id === "" ? t("aiAddProvider") : t("aiEditProvider", { name: props.draft.name })}
         </legend>
+        {draft.id === "" && server?.manage.instance === true ? (
+          <label className="field">
+            {t("aiProviderFor")}
+            <select
+              value={draft.scope}
+              onChange={(event) => {
+                change({ scope: event.target.value === "instance" ? "instance" : "own" });
+              }}
+            >
+              {server.manage.own ? <option value="own">{t("aiForMe")}</option> : null}
+              <option value="instance">{t("aiForEveryone", { server: host })}</option>
+            </select>
+          </label>
+        ) : null}
         <label className="field">
           {t("aiProviderName")}
           <input
@@ -136,9 +188,7 @@ function ProviderForm(props: {
             }}
           />
           <span className="hint" id={field("url-hint")}>
-            {draft.kind === "anthropic"
-              ? t("aiProviderUrlHintAnthropic")
-              : t("aiProviderUrlHintOpenai")}
+            {urlHint}
           </span>
         </div>
         <div className="field">
@@ -164,20 +214,21 @@ function ProviderForm(props: {
             value={draft.key}
             autoComplete="off"
             spellCheck={false}
-            disabled={draft.removeKey}
+            disabled={draft.removeKey || keyless}
             aria-describedby={field("key-hint")}
             onChange={(event) => {
               change({ key: event.target.value });
             }}
           />
           <span className="hint" id={field("key-hint")}>
-            {draft.hasKey ? t("aiProviderKeyKept") : t("aiProviderKeyHint")}
+            {keyHint}
           </span>
         </div>
         {(() => {
-          // An address of another computer over plain HTTP carries the key and the text unencrypted.
+          // On this device, an address of another computer over plain HTTP
+          // carries the key and the text unencrypted; a server refuses one.
           const url = providerUrl(draft.url);
-          return url?.startsWith("http://") === true && !isLocal(url) ? (
+          return server === undefined && url?.startsWith("http://") === true && !isLocal(url) ? (
             <p className="hint" role="status">
               {t("aiPlainHttp")}
             </p>
@@ -232,6 +283,9 @@ export function AiSettings(props: {
   const { settings, choice, workspace, resolution, lookUpWorkspace } = ai;
   const [editing, setEditing] = useState<Draft | undefined>();
   const [error, setError] = useState<string | undefined>();
+  // What the server allows, when it keeps the providers, as in the web app.
+  const relay = settings.server;
+  const host = server === undefined ? "" : hostOf(server);
 
   // Its owners and admins change the workspace's switch here, AI set up or not.
   useEffect(lookUpWorkspace, [lookUpWorkspace]);
@@ -244,14 +298,17 @@ export function AiSettings(props: {
   };
 
   const save = async (draft: Draft) => {
-    const kept = await backend.saveAiProvider({
-      id: draft.id,
-      name: draft.name,
-      kind: draft.kind,
-      url: draft.url,
-      model: draft.model,
-      hasKey: draft.hasKey,
-    });
+    const kept = await backend.saveAiProvider(
+      {
+        id: draft.id,
+        name: draft.name,
+        kind: draft.kind,
+        url: draft.url,
+        model: draft.model,
+        hasKey: draft.hasKey,
+      },
+      draft.scope,
+    );
     if (draft.removeKey) await backend.setAiKey(kept.id, "");
     else if (draft.key !== "") await backend.setAiKey(kept.id, draft.key);
     setEditing(undefined);
@@ -260,123 +317,153 @@ export function AiSettings(props: {
 
   const fallback = settings.providers.find((provider) => provider.id === settings.default);
   const manages = workspace?.role === "owner" || workspace?.role === "admin";
+  const adds = relay === undefined || relay.manage.own || relay.manage.instance;
+  const encryptedHere = resolution.reason === "encryptedRelay";
 
   return (
     <div className="settings-form ai-settings">
       <h3>{t("aiTab")}</h3>
       <div className="dialog-body">
-        <p className="hint">{t("aiIntro")}</p>
-        <h4>{t("aiProviders")}</h4>
-        {settings.providers.length === 0 ? (
-          <p className="hint">{t("aiNoProviders")}</p>
+        <p className="hint">
+          {relay === undefined ? t("aiIntro") : t("aiIntroServer", { server: host })}
+        </p>
+        {relay?.mode === "off" ? (
+          <p role="status">{t("aiServerOff", { server: host })}</p>
         ) : (
-          <ul className="plugin-list ai-providers">
-            {settings.providers.map((provider) => {
-              const nameId = `ai-name-${provider.id}`;
-              const isDefault = provider.id === settings.default;
-              return (
-                <li key={provider.id}>
-                  <div className="ai-provider-head">
-                    <strong id={nameId}>{provider.name}</strong>
-                    {isDefault ? <span className="ai-default">{t("aiIsDefault")}</span> : null}
-                  </div>
-                  <p className="hint">{providerWhere(provider)}</p>
-                  <div className="ai-provider-actions">
-                    <button
-                      type="button"
-                      className="quiet"
-                      id={`ai-edit-${provider.id}`}
-                      aria-labelledby={`ai-edit-${provider.id} ${nameId}`}
-                      onClick={() => {
-                        setEditing(draftOf(provider));
-                      }}
-                    >
-                      {t("edit")}
-                    </button>
-                    {isDefault ? null : (
-                      <button
-                        type="button"
-                        className="quiet"
-                        id={`ai-default-${provider.id}`}
-                        aria-labelledby={`ai-default-${provider.id} ${nameId}`}
-                        onClick={() => {
-                          act(() => backend.setDefaultAiProvider(provider.id));
-                        }}
-                      >
-                        {t("aiMakeDefault")}
-                      </button>
-                    )}
-                    <button
-                      type="button"
-                      className="quiet"
-                      id={`ai-remove-${provider.id}`}
-                      aria-labelledby={`ai-remove-${provider.id} ${nameId}`}
-                      onClick={() => {
-                        act(async () => {
-                          await backend.removeAiProvider(provider.id);
-                          if (choice.kind === "provider" && choice.id === provider.id) {
-                            await ai.setChoice({ kind: "default" });
-                          }
-                        });
-                      }}
-                    >
-                      {t("aiRemoveProvider")}
-                    </button>
-                  </div>
-                </li>
-              );
-            })}
-          </ul>
-        )}
-        {editing === undefined ? (
-          <div>
-            <button
-              type="button"
-              onClick={() => {
-                setEditing(blank);
-              }}
-            >
-              {t("aiAddProvider")}
-            </button>
-          </div>
-        ) : (
-          <ProviderForm
-            key={editing.id}
-            draft={editing}
-            onSave={save}
-            onCancel={() => {
-              setEditing(undefined);
-            }}
-          />
-        )}
-        {settings.providers.length === 0 ? null : (
           <>
-            <h4>{t("aiVault")}</h4>
-            <label className="field">
-              {t("aiVaultUses")}
-              <select
-                value={choiceValue(choice)}
-                disabled={workspace?.on === false}
-                onChange={(event) => {
-                  const next = choiceOf(event.target.value);
-                  act(() => ai.setChoice(next));
+            <h4>
+              {relay === undefined ? t("aiProviders") : t("aiProvidersServer", { server: host })}
+            </h4>
+            {settings.providers.length === 0 ? (
+              <p className="hint">{t("aiNoProviders")}</p>
+            ) : (
+              <ul className="plugin-list ai-providers">
+                {settings.providers.map((provider) => {
+                  const nameId = `ai-name-${provider.id}`;
+                  const isDefault = provider.id === settings.default;
+                  return (
+                    <li key={provider.id}>
+                      <div className="ai-provider-head">
+                        <strong id={nameId}>{provider.name}</strong>
+                        {isDefault ? <span className="ai-default">{t("aiIsDefault")}</span> : null}
+                        {provider.scope === "instance" ? (
+                          <span className="ai-default">{t("aiForEveryoneShort")}</span>
+                        ) : null}
+                      </div>
+                      <p className="hint">{providerWhere(provider, relay !== undefined)}</p>
+                      <div className="ai-provider-actions">
+                        {changes(relay, provider) ? (
+                          <button
+                            type="button"
+                            className="quiet"
+                            id={`ai-edit-${provider.id}`}
+                            aria-labelledby={`ai-edit-${provider.id} ${nameId}`}
+                            onClick={() => {
+                              setEditing(draftOf(provider));
+                            }}
+                          >
+                            {t("edit")}
+                          </button>
+                        ) : null}
+                        {isDefault ? null : (
+                          <button
+                            type="button"
+                            className="quiet"
+                            id={`ai-default-${provider.id}`}
+                            aria-labelledby={`ai-default-${provider.id} ${nameId}`}
+                            onClick={() => {
+                              act(() => backend.setDefaultAiProvider(provider.id));
+                            }}
+                          >
+                            {t("aiMakeDefault")}
+                          </button>
+                        )}
+                        {changes(relay, provider) ? (
+                          <button
+                            type="button"
+                            className="quiet"
+                            id={`ai-remove-${provider.id}`}
+                            aria-labelledby={`ai-remove-${provider.id} ${nameId}`}
+                            onClick={() => {
+                              act(async () => {
+                                await backend.removeAiProvider(provider.id);
+                                if (choice.kind === "provider" && choice.id === provider.id) {
+                                  await ai.setChoice({ kind: "default" });
+                                }
+                              });
+                            }}
+                          >
+                            {t("aiRemoveProvider")}
+                          </button>
+                        ) : null}
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+            {!adds ? (
+              <p className="hint">{t("aiAdminSets", { server: host })}</p>
+            ) : editing === undefined ? (
+              <div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEditing(blank(relay === undefined || relay.manage.own ? "own" : "instance"));
+                  }}
+                >
+                  {t("aiAddProvider")}
+                </button>
+              </div>
+            ) : (
+              <ProviderForm
+                key={editing.id}
+                draft={editing}
+                server={relay}
+                host={host}
+                onSave={save}
+                onCancel={() => {
+                  setEditing(undefined);
                 }}
-              >
-                <option value="default">
-                  {encrypted || fallback === undefined
-                    ? t("aiVaultNoDefault")
-                    : t("aiVaultDefault", { name: fallback.name })}
-                </option>
-                {settings.providers.map((provider) => (
-                  <option key={provider.id} value={`provider:${provider.id}`}>
-                    {`${provider.name}, ${providerWhere(provider)}`}
-                  </option>
-                ))}
-                <option value="off">{t("aiVaultOff")}</option>
-              </select>
-            </label>
-            {encrypted ? <p className="hint">{t("aiVaultEncrypted")}</p> : null}
-            {resolution.reason === "missing" ? <p role="status">{t("aiVaultMissing")}</p> : null}
+              />
+            )}
+            {settings.providers.length === 0 ? null : encryptedHere ? (
+              <>
+                <h4>{t("aiVault")}</h4>
+                <p role="status">{t("aiVaultEncryptedServer", { server: host })}</p>
+              </>
+            ) : (
+              <>
+                <h4>{t("aiVault")}</h4>
+                <label className="field">
+                  {t("aiVaultUses")}
+                  <select
+                    value={choiceValue(choice)}
+                    disabled={workspace?.on === false}
+                    onChange={(event) => {
+                      const next = choiceOf(event.target.value);
+                      act(() => ai.setChoice(next));
+                    }}
+                  >
+                    <option value="default">
+                      {encrypted || fallback === undefined
+                        ? t("aiVaultNoDefault")
+                        : t("aiVaultDefault", { name: fallback.name })}
+                    </option>
+                    {settings.providers.map((provider) => (
+                      <option key={provider.id} value={`provider:${provider.id}`}>
+                        {`${provider.name}, ${providerWhere(provider, relay !== undefined)}`}
+                      </option>
+                    ))}
+                    <option value="off">{t("aiVaultOff")}</option>
+                  </select>
+                </label>
+                {encrypted ? <p className="hint">{t("aiVaultEncrypted")}</p> : null}
+                {resolution.reason === "missing" ? (
+                  <p role="status">{t("aiVaultMissing")}</p>
+                ) : null}
+              </>
+            )}
           </>
         )}
         {workspace === undefined ? null : (
