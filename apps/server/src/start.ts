@@ -58,17 +58,24 @@ export async function startServer(options: StartOptions = {}): Promise<void> {
       app.log.info(migrated, "Migrated the database to the server's schema");
     }
     if (redis !== undefined) watchRedis(redis, app.log);
-    app.addHook("onClose", async () => {
+    // Once the server has closed, its open documents stored: not in an
+    // onClose hook, since the last one added runs first, before sync's.
+    const release = async () => {
       mailer?.close();
       await redis?.quit();
       await db.close();
-    });
+    };
     for (const signal of ["SIGINT", "SIGTERM"] as const) {
       process.once(signal, () => {
         const seconds = signal === "SIGTERM" ? config.drainSeconds : 0;
         app.log.info({ seconds }, `Received ${signal}: draining, then shutting down`);
         drain(app, readiness, seconds).then(
-          () => process.exit(0),
+          async () => {
+            await release().catch((error: unknown) => {
+              app.log.error({ err: error }, "Could not close the database or Valkey");
+            });
+            process.exit(0);
+          },
           (error: unknown) => {
             app.log.error({ err: error }, "Could not close in time; stopping anyway");
             process.exit(1);
