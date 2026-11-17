@@ -933,9 +933,13 @@ test("the admin console turns a feature on and off, for an instance admin alone"
   await page.goto("/admin");
   await expect(page.getByRole("heading", { name: "Admin console", level: 1 })).toBeVisible();
   const features = page.getByRole("region", { name: "Features" });
-  // A feature this build has no module for is shown, and cannot be turned on.
+  // High availability is the environment's alone: shown, and not turned on here. Every
+  // other feature has its module in this build, as the image has them.
   await expect(features.getByRole("checkbox", { name: "High availability" })).toBeDisabled();
-  await expect(features).toContainText("Not in this server's build of Nether yet.");
+  await expect(features).toContainText(
+    "Set by NETHER_ENTERPRISE_HA, in the server's environment, read as it starts.",
+  );
+  await expect(features).not.toContainText("Not in this server's build of Nether yet.");
   const pages = features.getByRole("checkbox", {
     name: "The console's usage, workspaces and security pages",
   });
