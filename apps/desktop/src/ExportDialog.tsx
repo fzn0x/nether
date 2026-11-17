@@ -14,7 +14,7 @@ import {
 } from "react";
 import type { Exporter, VaultMedia } from "./backend.ts";
 import type { ExportFormat } from "./exportNotes.ts";
-import type { ExportPolicy } from "./exportPolicy.ts";
+import type { ExportPolicy } from "./workspacePolicy.ts";
 import { t } from "./messages.ts";
 import type { CodeBlockRegistry } from "./plugins/codeBlocks.ts";
 import { useModal } from "./useModal.ts";

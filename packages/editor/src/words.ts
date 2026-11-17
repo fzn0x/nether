@@ -84,6 +84,18 @@ export interface EditorWords {
   readonly previewFailed: string;
   /** Opens a web link in the system's browser. */
   readonly openLink: string;
+  /** The bar above a phone's keyboard, and its buttons. */
+  readonly keyboardBar: string;
+  readonly insertBlock: string;
+  readonly linkNote: string;
+  readonly bold: string;
+  readonly italic: string;
+  readonly inlineCode: string;
+  readonly indent: string;
+  readonly outdent: string;
+  readonly undo: string;
+  readonly redo: string;
+  readonly hideKeyboard: string;
 }
 
 export const englishWords: EditorWords = {
@@ -136,4 +148,15 @@ export const englishWords: EditorWords = {
   missingNote: "No such note or part of one",
   syncedBlock: "Synced block from",
   syncFailed: "This block could not be saved to its note:",
+  keyboardBar: "Formatting",
+  insertBlock: "Insert a block",
+  linkNote: "Link to a note",
+  bold: "Bold",
+  italic: "Italic",
+  inlineCode: "Code",
+  indent: "Indent",
+  outdent: "Outdent",
+  undo: "Undo",
+  redo: "Redo",
+  hideKeyboard: "Hide the keyboard",
 };

@@ -10,7 +10,7 @@ import Collaboration from "@tiptap/extension-collaboration";
 import CollaborationCaret from "@tiptap/extension-collaboration-caret";
 import { Placeholder } from "@tiptap/extensions";
 import { EditorContent, useEditor } from "@tiptap/react";
-import { useEffect, useMemo, useRef } from "react";
+import { type FocusEvent, Suspense, lazy, useEffect, useMemo, useRef, useState } from "react";
 import { BlockKeys } from "./actions.ts";
 import {
   AssistHighlight,
@@ -40,6 +40,12 @@ import { SlashMenu } from "./SlashMenu.tsx";
 import { netherNodeViews } from "./views.tsx";
 import { type EditorWords, englishWords } from "./words.ts";
 import type * as Y from "yjs";
+
+// The bar above a phone's keyboard, which loads only where it shows (ADR 0087).
+const KeyboardBar = lazy(() => import("./KeyboardBar.tsx"));
+
+/** Room kept below the caret for the bar, so typing never goes under it. */
+const barRoom = 72;
 
 /** Others editing the note at once, and who this person is to them. */
 export interface NoteCollaboration {
@@ -107,6 +113,11 @@ export interface NoteEditorProps {
   readonly slashEntries?: readonly BlockEntry[];
   /** Writing assist on the selection, with `document` (ADR 0069). */
   readonly assist?: NoteAssistView;
+  /**
+   * On a phone, a bar of formatting and block actions above the on-screen
+   * keyboard while the editor has the focus (ADR 0087).
+   */
+  readonly keyboardBar?: boolean;
 }
 
 export function NoteEditor(props: NoteEditorProps) {
@@ -127,7 +138,10 @@ export function NoteEditor(props: NoteEditorProps) {
     comments,
     slashEntries,
     assist,
+    keyboardBar = false,
   } = props;
+  // Whether the focus is in the editor or its bar, while the bar shows.
+  const [focused, setFocused] = useState(false);
   // The latest callbacks, so the editor need not be made again when they change.
   const changed = useRef(onChange);
   const commented = useRef(comments);
@@ -197,6 +211,13 @@ export function NoteEditor(props: NoteEditorProps) {
           role: "textbox",
           "aria-multiline": "true",
         },
+        // The caret is kept above the bar over the keyboard, where there is one.
+        ...(keyboardBar
+          ? {
+              scrollMargin: { top: 8, right: 0, bottom: barRoom, left: 0 },
+              scrollThreshold: barRoom,
+            }
+          : {}),
       },
       onUpdate: ({ editor: current, transaction }) => {
         // IDs the editor gives blocks as it loads, and other changes kept out of
@@ -274,8 +295,25 @@ export function NoteEditor(props: NoteEditorProps) {
   }, [editor, focusKey]);
 
   return (
-    <div className="note-editor">
+    <div
+      className="note-editor"
+      {...(keyboardBar && editable
+        ? {
+            onFocus: () => {
+              setFocused(true);
+            },
+            onBlur: (event: FocusEvent<HTMLDivElement>) => {
+              if (!event.currentTarget.contains(event.relatedTarget)) setFocused(false);
+            },
+          }
+        : {})}
+    >
       <EditorContent editor={editor} />
+      {keyboardBar && editable && focused ? (
+        <Suspense fallback={null}>
+          <KeyboardBar editor={editor} words={words} />
+        </Suspense>
+      ) : null}
       {editable ? (
         <BlockHandle
           editor={editor}

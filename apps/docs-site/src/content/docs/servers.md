@@ -97,6 +97,13 @@ syncs it as the desktop app does. Make a new workspace from the same page.
 - **Signing in.** Invitation links and the links in sign-in emails open
   the web app. **Account and encryption** signs out, and turns on or
   unlocks end-to-end encryption.
+- **On a phone.** One note shows at a time, under a bar: its menu button
+  opens your notes and the menus as a drawer, beside the buttons for
+  **Open a note** and the command palette. Menus and dialogs open from the
+  bottom of the screen. While you write, a bar over the keyboard inserts
+  blocks and links, makes text bold, italic or code, makes and indents
+  lists, moves, duplicates or deletes the block you are in, and undoes.
+  A property moves up or down from the menu its handle opens.
 
 What a browser keeps goes when its site data is cleared; what has synced
 stays on the server.
