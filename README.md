@@ -46,7 +46,9 @@ Notion exports. Self-hosting is available for enterprise.
 > edit; [buttons](https://fzn0x.github.io/nether/buttons/) in a note, as
 > Meta Bind writes them, run commands, make notes from templates and set
 > properties, and a database's triggers set a row's properties when one
-> becomes a value; and the
+> becomes a value; a page or a folder
+> [publishes](https://fzn0x.github.io/nether/publishing/) as a site the
+> server draws for anyone, linking only between its own pages; and the
 > [roadmap](docs/roadmap.md#phase-4-platform) ticks off the rest as it
 > lands.
 

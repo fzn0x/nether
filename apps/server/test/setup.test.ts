@@ -62,6 +62,8 @@ describe("migrate", () => {
       "sessions",
       "share_links",
       "sign_in_codes",
+      "site_files",
+      "sites",
       "unit_grants",
       "units",
       "user_keys",

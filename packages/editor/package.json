@@ -11,6 +11,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./document": "./src/document.ts",
+    "./render": "./src/render.ts",
     "./source": "./src/SourceEditor.tsx",
     "./math.css": "./src/math.css"
   },
