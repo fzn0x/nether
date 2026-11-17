@@ -31,6 +31,8 @@ export interface WorkspaceSummary {
   readonly encryption: "none" | "end-to-end";
   readonly createdAt: string;
   readonly owners: readonly Owner[];
+  /** Its owners whose accounts are not deactivated: none marks it No active owner (ADR 0085). */
+  readonly activeOwners: number;
   /** How many of its members have each role. */
   readonly roles: {
     readonly owner: number;
@@ -104,7 +106,7 @@ export function decodeCursor(text: string): Cursor | undefined {
 // vaults' documents and the notes' comments are not notes.
 const summaries = String.raw`
   SELECT w.id, w.name, lower(w.name) AS sort_name, w.encryption, w.created_at,
-         o.owners, r.owner, r.admin, r.member, r.guest,
+         o.owners, o.active_owners, r.owner, r.admin, r.member, r.guest,
          d.notes, d.bytes + e.bytes AS document_bytes, v.bytes AS history_bytes,
          a.count AS attachments, a.bytes AS attachment_bytes,
          greatest(d.changed_at, e.changed_at) AS changed_at
@@ -112,7 +114,8 @@ const summaries = String.raw`
     CROSS JOIN LATERAL (
       SELECT coalesce(json_agg(json_build_object('id', u.id, 'name', u.name, 'email', u.email,
                                                  'deactivated', u.deactivated_at IS NOT NULL)
-                               ORDER BY lower(u.name), lower(u.email)), '[]'::json) AS owners
+                               ORDER BY lower(u.name), lower(u.email)), '[]'::json) AS owners,
+             count(*) FILTER (WHERE u.deactivated_at IS NULL) AS active_owners
         FROM memberships m JOIN users u ON u.id = m.user_id
        WHERE m.workspace_id = w.id AND m.role = 'owner'
     ) o
@@ -166,6 +169,7 @@ function summary(row: Row): WorkspaceSummary {
     encryption,
     createdAt: readTime(row, "created_at").toISOString(),
     owners: owners(row.owners),
+    activeOwners: readCount(row, "active_owners"),
     roles: {
       owner: readCount(row, "owner"),
       admin: readCount(row, "admin"),
@@ -185,11 +189,17 @@ function summary(row: Row): WorkspaceSummary {
 
 /**
  * A page of the server's workspaces, by name, after `after` when given. A
- * search finds a workspace by its name, or by a member's name or email.
+ * search finds a workspace by its name, or by a member's name or email;
+ * `ownerless` keeps those with no active owner, whose owners left or were
+ * deactivated, for an instance admin to give one (ADR 0085).
  */
 export async function listWorkspaces(
   db: Database,
-  options: { readonly search?: string; readonly after?: Cursor } = {},
+  options: {
+    readonly search?: string;
+    readonly after?: Cursor;
+    readonly ownerless?: boolean;
+  } = {},
 ): Promise<WorkspacePage> {
   const search = options.search?.trim() ?? "";
   const { rows } = await db.query(
@@ -200,9 +210,10 @@ export async function listWorkspaces(
                            AND (strpos(lower(u.name), lower($1)) > 0
                                 OR strpos(lower(u.email), lower($1)) > 0)))
         AND ($2::text IS NULL OR (lower(w.name), w.id) > ($2::text, $3::uuid))
+        AND (NOT $4::boolean OR o.active_owners = 0)
       ORDER BY lower(w.name), w.id
       LIMIT ${String(pageSize + 1)}`,
-    [search, options.after?.name ?? null, options.after?.id ?? null],
+    [search, options.after?.name ?? null, options.after?.id ?? null, options.ownerless === true],
   );
   const page = rows.slice(0, pageSize);
   const last = page.at(-1);
