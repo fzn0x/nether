@@ -1,9 +1,10 @@
 {
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
-    "types": ["node"],
+    // The desktop app's code the bench imports is built by Vite: `import.meta.env`, `?worker`.
+    "types": ["node", "vite/client"],
     // The desktop app's search, which the bench imports, reaches the editor's components.
     "jsx": "react-jsx"
   },
-  "include": ["src"]
+  "include": ["src", "../../apps/desktop/src/env.d.ts"]
 }

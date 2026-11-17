@@ -192,6 +192,34 @@ describe("highlights in a note", () => {
     expect(withoutHighlight(parsed.content, id("nothing"))).toBeUndefined();
   });
 
+  it("reads, makes, comments on and recolors a highlight of an area, all of it comment", () => {
+    const callout = highlightCallout({
+      id: id("area1"),
+      target: "paper.pdf",
+      passage: { page: 3, rect: [72, 400, 300, 600] },
+      name: "paper, page 3",
+      words: "ignored for an area",
+      comment: commentBlocks("The figure."),
+    });
+    const text = highlightsNote(callout);
+    expect(text).toBe(
+      "> [!quote] [[paper.pdf#page=3&rect=72,400,300,600|paper, page 3]]\n> The figure.\n\n^area1\n",
+    );
+    const parsed = parseMarkdown(text);
+    const [read] = readHighlights(parsed.content);
+    expect(read).toMatchObject({ passage: { page: 3, rect: [72, 400, 300, 600] }, words: "" });
+    expect(commentMarkdown(read?.comment ?? [])).toBe("The figure.");
+
+    const changed = withComment(parsed.content, id("area1"), commentBlocks("Now *this*."));
+    expect(rewrite(parsed, changed ?? [])).toContain(
+      "> [!quote] [[paper.pdf#page=3&rect=72,400,300,600|paper, page 3]]\n> Now *this*.\n",
+    );
+    const red = withColor(parsed.content, id("area1"), "red");
+    expect(rewrite(parsed, red ?? [])).toContain(
+      "[[paper.pdf#page=3&rect=72,400,300,600&color=red|paper, page 3]]",
+    );
+  });
+
   it("has no comment for no Markdown", () => {
     expect(commentBlocks("")).toEqual([]);
     expect(commentMarkdown([])).toBe("");

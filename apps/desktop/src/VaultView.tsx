@@ -25,12 +25,12 @@ import { CommandPalette } from "./CommandPalette.tsx";
 import { ContextMenu, type MenuEntry, type MenuPoint } from "./ContextMenu.tsx";
 import { type Menu, MenuBar } from "./MenuBar.tsx";
 import { IconButton } from "./IconButton.tsx";
-import { commandIcons, itemIcons, menuIcons } from "./icons.ts";
+import { assistIcon, commandIcons, itemIcons, menuIcons } from "./icons.ts";
 import { NewFolderDialog } from "./NewFolderDialog.tsx";
 import { TextPromptDialog } from "./TextPromptDialog.tsx";
 import { myName, setMyName } from "./people.ts";
 import { DeleteFolderDialog } from "./DeleteFolderDialog.tsx";
-import { commandShown, shownEntries } from "./features.ts";
+import { build, commandShown, shownEntries } from "./features.ts";
 import { SidebarResizer, useSidebarWidth } from "./SidebarResizer.tsx";
 import { builtInTheme } from "./appearance.ts";
 import {
@@ -93,6 +93,7 @@ import { SettingsDialog, type SettingsTab } from "./SettingsDialog.tsx";
 import { PluginsSettings } from "./PluginsSettings.tsx";
 import { PluginSettings } from "./PluginSettings.tsx";
 
+import { useAi } from "./useAi.ts";
 import { useAppearance } from "./useAppearance.ts";
 import { useBookmarks } from "./useBookmarks.ts";
 import { TrashPanel } from "./TrashPanel.tsx";
@@ -188,6 +189,10 @@ const ImportDialog = lazy(() =>
 );
 const AppearanceSettings = lazy(() =>
   import("./AppearanceSettings.tsx").then(({ AppearanceSettings: tab }) => ({ default: tab })),
+);
+// So does the AI tab, with the providers' code (ADR 0068).
+const AiSettings = lazy(() =>
+  import("./AiSettings.tsx").then(({ AiSettings: tab }) => ({ default: tab })),
 );
 const ServersDialog = lazy(() =>
   import("./ServersDialog.tsx").then(({ ServersDialog: dialog }) => ({ default: dialog })),
@@ -298,10 +303,12 @@ interface PaneAsks {
   readonly source: number;
   readonly rename: number;
   readonly comment: number;
+  /** Changes to ask for writing assist on the selection (ADR 0069). */
+  readonly assist: number;
   readonly thread?: { readonly thread: string; readonly key: number } | undefined;
 }
 
-const noAsks: PaneAsks = { mode: "blocks", source: 0, rename: 0, comment: 0 };
+const noAsks: PaneAsks = { mode: "blocks", source: 0, rename: 0, comment: 0, assist: 0 };
 
 export function VaultView(props: {
   readonly info: VaultInfo;
@@ -313,6 +320,8 @@ export function VaultView(props: {
   const state = useVault(info);
   const vault = state.status === "open" ? state.vault : undefined;
   const sync = useSync(vault);
+  // The AI provider the vault uses, if any: with none, nothing of AI shows (ADR 0068).
+  const ai = useAi(vault, sync.link);
   const notifications = useNotifications(vault, sync.link);
   const people = usePeople(sync.link);
   // The vault's light or dark, theme and snippets, on the page while it is open.
@@ -1497,6 +1506,26 @@ export function VaultView(props: {
         />
       ),
     },
+    // Where AI is set up, the one place it shows before it is; the web app
+    // gets it through its server, in a later part (ADR 0068).
+    ...(build.web
+      ? []
+      : [
+          {
+            id: "ai",
+            name: t("aiTab"),
+            render: () => (
+              <Suspense fallback={null}>
+                <AiSettings
+                  ai={ai}
+                  encrypted={sync.link?.encrypted === true}
+                  server={sync.link?.server}
+                  onClose={closeDialog}
+                />
+              </Suspense>
+            ),
+          },
+        ]),
     ...(pluginState.state === undefined
       ? []
       : (() => {
@@ -1640,6 +1669,36 @@ export function VaultView(props: {
 
   commandState.current = { run, nameNow: commandName };
 
+  // Writing assist works on the focused pane's note, in blocks, where this
+  // person may edit it; the command shows only while the vault has an AI
+  // provider (ADR 0068), and so does its shortcut.
+  const assistNow = useRef<(() => void) | undefined>(undefined);
+  assistNow.current =
+    state.status === "open" &&
+    selected !== undefined &&
+    mode === "blocks" &&
+    sync.levelOf?.(selected) !== "view" &&
+    sync.levelOf?.(selected) !== "comment"
+      ? () => {
+          ask(focusedKey, (current) => ({ ...current, assist: current.assist + 1 }));
+        }
+      : undefined;
+  const aiReady = ai.resolution.provider !== undefined;
+  useEffect(() => {
+    if (!aiReady) return;
+    return registry.add({
+      id: "assist",
+      name: () => t("aiAssistCommand"),
+      menu: "note",
+      keys: ["Mod+J"],
+      icon: assistIcon,
+      enabled: () => assistNow.current !== undefined,
+      run: () => {
+        assistNow.current?.();
+      },
+    });
+  }, [registry, aiReady]);
+
   /**
    * The menus' items, each a command; one that cannot run now shows, but
    * cannot be chosen, and one this build leaves out does not show at all.
@@ -1657,7 +1716,12 @@ export function VaultView(props: {
       ...(keys === undefined ? {} : { keys }),
     };
   };
-  const pluginCommands = commands.filter((command) => command.plugin !== undefined);
+  // Plugins' commands, and those the app adds while they can run, as writing
+  // assist with an AI provider, come after a menu's own.
+  const coreIds = new Set<string>(commandIds);
+  const pluginCommands = commands.filter(
+    (command) => command.plugin !== undefined || !coreIds.has(command.id),
+  );
   const menus: readonly Menu[] = [...coreMenus, { name: "plugins" as const, entries: [] }].flatMap(
     ({ name, entries }) => {
       const own = shownEntries(entries, (id) => registry.get(id) !== undefined).flatMap(
@@ -2454,6 +2518,15 @@ export function VaultView(props: {
                           canComment={sync.levelOf?.(id) !== "view"}
                           commentRequest={paneAsks.comment}
                           commentKeys={keysOf("comment")}
+                          {...(ai.resolution.provider === undefined
+                            ? {}
+                            : {
+                                ai: {
+                                  provider: ai.resolution.provider,
+                                  request: paneAsks.assist,
+                                  allowedNow: ai.allowedNow,
+                                },
+                              })}
                           people={people}
                           onMention={(thread, mentioned, body) => {
                             const link = sync.link;

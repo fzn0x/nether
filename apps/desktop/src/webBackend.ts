@@ -255,6 +255,15 @@ export const web: Backend = {
     });
   },
   syncSocket: () => Promise.resolve(globalThis.WebSocket),
+  // AI comes to the web app through its server, in a later part (ADR 0068):
+  // until then it has no providers, so nothing of AI shows.
+  aiSettings: () => Promise.resolve({ providers: [], default: "" }),
+  saveAiProvider: () => Promise.reject(new Error(t("aiNotOnTheWeb"))),
+  setAiKey: () => Promise.reject(new Error(t("aiNotOnTheWeb"))),
+  aiKey: () => Promise.resolve(undefined),
+  removeAiProvider: () => Promise.resolve(),
+  setDefaultAiProvider: () => Promise.resolve(),
+  aiFetch: () => Promise.reject(new Error(t("aiNotOnTheWeb"))),
   // The web app updates with its server.
   updateSettings: () => Promise.resolve({ available: false, automatic: false }),
   setAutomaticUpdates: () => Promise.resolve(),

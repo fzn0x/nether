@@ -94,14 +94,13 @@ note, and links written in either app find the same files.
 | --- | --- |
 | `![[photo.png]]` or `![](attachments/photo.png)` | An image |
 | `![[photo.png\|300]]` or `![alt\|300](photo.png)` | An image 300 pixels wide |
-| `![[paper.pdf]]` | A PDF, in the app's viewer |
+| `![[paper.pdf]]` | A PDF, its pages in a box, or `![[paper.pdf#page=3]]` from a page |
 | `![[talk.m4a]]`, `![[clip.mp4]]` | Audio or video, with a player |
 | `![](https://example.com/photo.png)` | An image from the web |
 
-A PDF's card can open it in your system's PDF app, and any other file's
-card shows it in your file manager. On Linux, whose web view has no PDF
-viewer, PDFs show as cards. Open a PDF from the sidebar to read it in
-Nether and highlight it: see [PDFs](../pdfs/).
+A file's card shows it in your file manager. Nether draws PDFs itself,
+on every system, and a PDF's box opens it in a tab to read and
+highlight: see [PDFs](../pdfs/).
 
 ## Web links
 
