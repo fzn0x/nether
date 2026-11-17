@@ -71,7 +71,8 @@ token as `Authorization: Bearer <token>`. Every error is
 
 | Route | Signed in | |
 | --- | --- | --- |
-| `GET /health` | | The server's version, and which enterprise features are on |
+| `GET /health` | | Liveness: the server's version, and which enterprise features are on, `null` while the database does not answer; it checks nothing else (ADR 0082) |
+| `GET /health/ready` | | Readiness: 200 with `status` `ready` when the database answers and the node is not draining, else 503 with `draining` or `unready`; `database` is `up` or `down`, and `valkey` `up`, `down` or `none`, which never fails it |
 | `GET /api/instance/features` | instance admin | Each enterprise feature: `on`, `pinned` (`on` or `off` when its variable sets it, else `null`) and `available` (this build has its module) (ADR 0079) |
 | `PUT /api/instance/features/:feature` | instance admin | Turns a feature `on` or off, at once; 409 when its variable pins it, or the build has no module for it |
 | `GET /api/instance/nodes` | instance admin | The server's nodes seen in the last two minutes, each with its `name`, `version`, `startedAt`, `seenAt`, and `current` for the one answering (ADR 0082) |
@@ -355,9 +356,29 @@ own address.
 The schema is a list of numbered migrations in
 [`src/migrations.ts`](src/migrations.ts). Each start applies the ones the
 database lacks, in one transaction under a lock, so several nodes starting
-at once apply each once and a failed migration changes nothing. A server
-refuses to start on a database a newer server has migrated. Any number of
-versions may be skipped: a server applies every one in between, in order.
+at once apply each once and a failed migration changes nothing. Any number
+of versions may be skipped: a server applies every one in between, in
+order. `node dist/admin.js migrate` does the same without starting the
+server, as a Kubernetes Job does before a rollout.
+
+Migrations expand, and contract a release later (ADR 0082), so a rolling
+upgrade runs the previous release beside the new one on the new schema.
+`schema_migrations.readable_from` holds a contract step's oldest schema
+version that may run on it. A server runs on a database a newer server
+migrated unless a step since needs a newer schema than its own; then it
+refuses to start, saying which. The
+[contributing guide](../../CONTRIBUTING.md#database-migrations) has the
+rules.
+
+## Stopping
+
+On SIGTERM, as Kubernetes and `docker stop` send it, the server drains
+(ADR 0082): `/health/ready` answers 503 at once; after
+`NETHER_DRAIN_SECONDS`, while the load balancer takes the node out, it
+closes every sync and relay socket with 1012, "service restart", stores
+its open documents, finishes the requests under way, and exits. The apps
+connect again, to another node. On SIGINT, as Ctrl-C, it skips the wait;
+a second signal ends it at once.
 
 ## Backups and restoring
 
@@ -379,6 +400,7 @@ could not.
 node dist/admin.js backup                       # now, where NETHER_BACKUP keeps them
 node dist/admin.js backup ~/nether.ndjson.gz    # now, into a file
 node dist/admin.js backups                      # those kept
+node dist/admin.js migrate                      # the schema brought to this release's
 ```
 
 **Restoring**, into a new, empty database:
@@ -474,6 +496,7 @@ machine.
 | `NETHER_PORT` | `3000` | The port; `0` picks a free one |
 | `NETHER_LOG_LEVEL` | `info` | `fatal`, `error`, `warn`, `info`, `debug`, `trace` or `silent` |
 | `NETHER_DATABASE_URL` | none, required | The PostgreSQL database, as `postgres://user:password@host:5432/nether` |
+| `NETHER_DRAIN_SECONDS` | `5` | How long a node keeps serving after SIGTERM, its readiness answering 503, before it closes: 0 to 300 (ADR 0082) |
 | `NETHER_NODE_NAME` | the machine's name | This node's name among the server's nodes, as the console lists them (ADR 0082) |
 | `NETHER_REDIS_URL` | none | The Redis or Valkey server the rate limits count in, as `redis://valkey:6379` or `rediss://` for TLS; without one, each node counts in its memory |
 | `NETHER_SMTP_URL` | none | The SMTP server email goes through, as `smtp://user:password@host:587` or `smtps://user:password@host:465` |

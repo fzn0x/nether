@@ -191,6 +191,12 @@ The server brings its database to the new version's schema as it starts.
 Versions within one major release can be skipped. To choose when to move,
 set `NETHER_VERSION` to a release and change it when you are ready.
 
+As it stops, the server first answers 503 at `/health/ready`, so a load
+balancer sends it nothing new, waits `NETHER_DRAIN_SECONDS` (5 unless
+set), then closes. The apps connect again on their own. A server of the
+previous release still runs on the new schema, so a server of several
+nodes can be upgraded one node at a time.
+
 ## Back it up
 
 The server's data is in two volumes: `database`, PostgreSQL's, and
