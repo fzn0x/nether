@@ -56,6 +56,17 @@ jobs:
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v7
+      # A simulator's first boot takes minutes on the runner: it starts now and
+      # boots while the page, the app and the plugin's tests build.
+      - name: Start booting an iPhone simulator
+        id: simulator
+        run: |
+          udid=$(xcrun simctl list devices available --json | jq -r '
+            [.devices | to_entries | sort_by(.key)[] | select(.key | test("SimRuntime\\.iOS"))
+              | .value[] | select(.name | startswith("iPhone"))] | last | .udid')
+          echo "Booting $udid"
+          echo "udid=$udid" >> "$GITHUB_OUTPUT"
+          xcrun simctl boot "$udid"
       - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v7
         with:
@@ -83,16 +94,8 @@ jobs:
           -clonedSourcePackagesDirPath "$RUNNER_TEMP/SourcePackages"
           -derivedDataPath "$RUNNER_TEMP/DerivedData"
           CODE_SIGN_IDENTITY=- CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM= PROVISIONING_PROFILE_SPECIFIER=
-      - name: Boot an iPhone simulator
-        id: simulator
-        run: |
-          udid=$(xcrun simctl list devices available --json | jq -r '
-            [.devices | to_entries | sort_by(.key)[] | select(.key | test("SimRuntime\\.iOS"))
-              | .value[] | select(.name | startswith("iPhone"))] | last | .udid')
-          echo "Booting $udid"
-          echo "udid=$udid" >> "$GITHUB_OUTPUT"
-          xcrun simctl bootstatus "$udid" -b
-      - name: Test the plugin on the simulator
+      - name: Build the plugin's tests for the simulator
+        id: plugin
         working-directory: apps/mobile/plugin
         run: |
           xcodebuild -list
@@ -100,10 +103,20 @@ jobs:
           if xcodebuild -list -json | jq -e '.workspace.schemes | index("NetherMobilePlugin-Package")' > /dev/null; then
             scheme=NetherMobilePlugin-Package
           fi
-          xcodebuild test -scheme "$scheme" \
-            -destination "id=${{ steps.simulator.outputs.udid }}" \
+          echo "scheme=$scheme" >> "$GITHUB_OUTPUT"
+          xcodebuild build-for-testing -scheme "$scheme" \
+            -destination "generic/platform=iOS Simulator" \
             -clonedSourcePackagesDirPath "$RUNNER_TEMP/PluginPackages" \
             -derivedDataPath "$RUNNER_TEMP/PluginData"
+      - name: Wait for the simulator to finish booting
+        run: xcrun simctl bootstatus "${{ steps.simulator.outputs.udid }}"
+      - name: Test the plugin on the simulator
+        working-directory: apps/mobile/plugin
+        run: >-
+          xcodebuild test-without-building -scheme "${{ steps.plugin.outputs.scheme }}"
+          -destination "id=${{ steps.simulator.outputs.udid }}"
+          -clonedSourcePackagesDirPath "$RUNNER_TEMP/PluginPackages"
+          -derivedDataPath "$RUNNER_TEMP/PluginData"
       - name: Start the app in the simulator with a vault
         run: >-
           pnpm --filter @nether/mobile smoke:ios
