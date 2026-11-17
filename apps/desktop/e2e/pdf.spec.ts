@@ -344,3 +344,54 @@ test("the PDF's outline and its links go to their places, and Back returns", asy
   expect(page.url()).not.toContain("example.com");
   expect(errors).toEqual([]);
 });
+
+test("an area of a page is highlighted from the keyboard or by a drag, as PDF++'s rect", async ({
+  page,
+}) => {
+  const errors = errorsOf(page);
+  await openReading(page);
+  const area = page.getByRole("button", { name: "Area", exact: true });
+  await area.click();
+  await expect(area).toHaveAttribute("aria-pressed", "true");
+  // A box in the middle of the page shown, which the keyboard moves and resizes.
+  const box = page.getByRole("button", { name: /^Area on page 1:/ });
+  await expect(box).toBeFocused();
+  await expect(box).toHaveAccessibleName(/25% across, 35% down, 50% wide, 30% high/);
+  await page.keyboard.press("ArrowRight");
+  await expect(box).toHaveAccessibleName(/27% across, 35% down/);
+  await page.keyboard.press("Shift+ArrowDown");
+  await expect(box).toHaveAccessibleName(/50% wide, 32% high/);
+  expect(await violations(page)).toEqual([]);
+  await page.keyboard.press("Enter");
+  await expect(page.locator(".pdf-status")).toHaveText("Highlighted an area of page 1.");
+  await expect(area).toHaveAttribute("aria-pressed", "false");
+  // The box in the PDF's own units, as PDF++ writes it, and no words.
+  await expect
+    .poll(() => read(page, highlightsNote))
+    .toMatch(
+      /^> \[!quote\] \[\[Reading\.pdf#page=1&rect=108,99,308,195\|Reading, page 1\]\]\n\n\^[a-z0-9]{8}\n$/,
+    );
+  const items = page.getByRole("complementary", { name: "Highlights" }).getByRole("listitem");
+  await expect(items.first()).toContainText("An area of the page");
+  await expect(
+    page.getByRole("group", { name: "Page 1 of 2" }).locator(".pdf-mark-chosen").first(),
+  ).toBeVisible();
+
+  // With the pointer: a box dragged on the second page.
+  await area.click();
+  const second = page.getByRole("group", { name: "Page 2 of 2" });
+  await second.scrollIntoViewIfNeeded();
+  const frame = await second.boundingBox();
+  if (frame === null) throw new Error("the second page is not on the screen");
+  await page.mouse.move(frame.x + frame.width * 0.1, frame.y + frame.height * 0.1);
+  await page.mouse.down();
+  await page.mouse.move(frame.x + frame.width * 0.5, frame.y + frame.height * 0.6, { steps: 4 });
+  await page.mouse.up();
+  await expect(page.getByRole("button", { name: /^Area on page 2:/ })).toHaveAccessibleName(
+    /10% across, 10% down, 40% wide, 50% high/,
+  );
+  await page.getByRole("button", { name: "Highlight", exact: true }).click();
+  await expect.poll(() => read(page, highlightsNote)).toContain("[[Reading.pdf#page=2&rect=");
+  await expect(items).toHaveCount(2);
+  expect(errors).toEqual([]);
+});

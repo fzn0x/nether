@@ -9,7 +9,7 @@ import { parseMarkdown } from "@nether/markdown";
 import {
   type Highlight,
   type PassageLink,
-  type PdfPassage,
+  type PdfMarked,
   addHighlight,
   commentBlocks,
   highlightCallout,
@@ -118,7 +118,7 @@ export function highlightsNotePath(vault: Vault, path: string, name: string): st
 
 /** What a new highlight says: where, its words, and the link's name. */
 export interface HighlightInput {
-  readonly passage: PdfPassage;
+  readonly passage: PdfMarked;
   readonly words: string;
   /** The link's name, as Obsidian writes it: "paper, page 3". */
   readonly name: string;

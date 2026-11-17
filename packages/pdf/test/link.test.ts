@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { isPdf, namesPassage, readPdfPlace, writePdfPlace } from "../src/index.ts";
+import {
+  isArea,
+  isPdf,
+  markedOf,
+  namesPassage,
+  readEmbedSize,
+  readPdfPlace,
+  writePdfPlace,
+} from "../src/index.ts";
 
 describe("places in a PDF, as Obsidian links to them", () => {
   it("reads a page, and a passage on it as Copy link to selection writes it", () => {
@@ -69,5 +77,41 @@ describe("places in a PDF, as Obsidian links to them", () => {
     expect(namesPassage(undefined)).toBe(false);
     expect(isPdf("Papers/Paper.PDF")).toBe(true);
     expect(isPdf("Board.canvas")).toBe(false);
+  });
+
+  it("reads PDF++'s box, corners in either order, and writes it in whole units", () => {
+    expect(readPdfPlace("page=1&rect=300,200,700,600")).toEqual({
+      page: 1,
+      rect: [300, 200, 700, 600],
+    });
+    expect(readPdfPlace("page=1&rect=700.5,600,300,200.25&color=red")).toEqual({
+      page: 1,
+      rect: [300, 200.25, 700.5, 600],
+      color: "red",
+    });
+    for (const bad of ["1,2,3", "1,2,3,x", "1,2,1,5", "1,2,3,2", "1,,3,4"]) {
+      expect(readPdfPlace(`page=2&rect=${bad}`)).toEqual({ page: 2 });
+    }
+    expect(writePdfPlace({ page: 3, rect: [72.4, 400.6, 300, 600], color: "note" })).toBe(
+      "page=3&rect=72,401,300,600&color=note",
+    );
+    expect(namesPassage("page=3&rect=72,401,300,600")).toBe(true);
+    expect(namesPassage("page=3&rect=1,2")).toBe(false);
+  });
+
+  it("tells a box from a passage, and marks a passage when a link has both", () => {
+    const box = readPdfPlace("page=1&rect=1,2,3,4");
+    expect(box !== undefined && isArea(box)).toBe(true);
+    const both = markedOf(readPdfPlace("page=1&selection=0,0,0,1&rect=1,2,3,4"));
+    expect(both !== undefined && isArea(both)).toBe(false);
+    expect(markedOf(readPdfPlace("page=1"))).toBeUndefined();
+    expect(markedOf(undefined)).toBeUndefined();
+  });
+
+  it("reads an embed's size, Obsidian's height and PDF++'s width", () => {
+    expect(readEmbedSize("page=3&height=400")).toEqual({ height: 400 });
+    expect(readEmbedSize("#page=1&rect=1,2,3,4&width=300")).toEqual({ width: 300 });
+    expect(readEmbedSize("height=0&width=x")).toEqual({});
+    expect(readEmbedSize(undefined)).toEqual({});
   });
 });

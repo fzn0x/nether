@@ -157,6 +157,14 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   goes into the note as one edit that one undo takes out
   ([ADR 0068](docs/adr/0068-ai-comes-from-the-users-own-provider-reached-from-their-device.md),
   [ADR 0069](docs/adr/0069-writing-assist-streams-into-a-preview-and-goes-in-as-one-edit.md)).
+- PDFs embedded in notes are drawn by pdf.js in the note, on every system,
+  once they come near the screen and not before
+  ([ADR 0067](docs/adr/0067-pdf-embeds-draw-with-pdf-js-when-on-screen-and-an-area-is-pdf-plus-plus-rect.md)):
+  the whole PDF in a box, at `#page=` and `#height=`, with Open to its
+  tab; a passage or PDF++'s `&rect=` box alone; and above a highlight's
+  embed, its passage. An area of a page is highlighted by a drag or from
+  the keyboard, written as PDF++'s `&rect=`. Every view and embed of a PDF
+  shares one loaded copy.
 
 ### Changed
 

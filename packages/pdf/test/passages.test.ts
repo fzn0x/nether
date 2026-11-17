@@ -83,6 +83,18 @@ describe("links to a passage in a note's prose", () => {
     expect(links.map((link) => [link.passage.page, link.words])).toEqual([[9, "See also ."]]);
   });
 
+  it("reads PDF++'s box embeds as links to an area, and embeds of a passage", () => {
+    const links = readPassageLinks(
+      parseMarkdown(
+        "![[a.pdf#page=2&rect=10,20,110,220&color=red]]\n\nThe figure.\n\n![[a.pdf#page=1&selection=0,0,0,2]]\n\n![[a.pdf]]\n",
+      ).content,
+    );
+    expect(links.map((link) => [link.passage, link.words])).toEqual([
+      [{ page: 2, rect: [10, 20, 110, 220], color: "red" }, "The figure."],
+      [{ page: 1, selection: { beginIndex: 0, beginOffset: 0, endIndex: 0, endOffset: 2 } }, ""],
+    ]);
+  });
+
   it("gives a link alone in its block the next block's words, and none when there is none", () => {
     const links = readPassageLinks(
       parseMarkdown("[[a.pdf#page=1&selection=0,0,0,1]]\n\n- first\n- second\n").content,

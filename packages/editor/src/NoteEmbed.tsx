@@ -11,7 +11,7 @@ import { Extension, type JSONContent } from "@tiptap/core";
 import type { Node as ProseMirrorNode } from "@tiptap/pm/model";
 import { Plugin } from "@tiptap/pm/state";
 import { EditorContent, useEditor } from "@tiptap/react";
-import { useEffect, useRef, useState } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 import { fromEditor, toEditor } from "./convert.ts";
 import type { NoteFiles } from "./files.ts";
 import { blockIdsKey } from "./ids.ts";
@@ -32,6 +32,8 @@ export interface EmbeddedNote {
   readonly blocks: readonly ContentBlock[];
   /** Whether it is a synced block, which edits in place. */
   readonly synced?: boolean;
+  /** What the app shows above the blocks, as a highlight's passage drawn from its PDF. */
+  readonly figure?: ReactNode;
 }
 
 const lists = new Set(["bulletList", "orderedList", "taskList"]);
@@ -268,6 +270,7 @@ export function NoteEmbed(props: {
           {note.title}
         </button>
       </figcaption>
+      {note.figure ?? null}
       {synced ? (
         <SyncedBlock
           target={target}

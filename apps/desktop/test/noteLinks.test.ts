@@ -185,6 +185,19 @@ describe("noteLinks", () => {
       expect(opened).toHaveLength(4);
     });
     expect(opened[3]).toEqual(["photo.png.md", undefined]);
+
+    // A highlight's embed comes with its passage, drawn from its PDF; another block's does not.
+    const highlight = await links.embed?.({
+      title: "paper highlights",
+      block: "aaa111" as BlockId,
+    });
+    const figure = highlight?.figure as { props: { path: string; part: string } } | undefined;
+    expect(figure?.props).toMatchObject({
+      path: "Papers/paper.pdf",
+      part: "page=2&selection=1,0,1,4",
+    });
+    const plain = await links.embed?.({ title: "paper highlights", block: "bbb222" as BlockId });
+    expect(plain?.figure).toBeUndefined();
   });
 });
 
