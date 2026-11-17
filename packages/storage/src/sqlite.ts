@@ -180,6 +180,28 @@ function passageOf(row: readonly SqlValue[]): StoredPassage {
   };
 }
 
+/** A file's record from its row as `files()` packs it: path, note, size, modified, hash. */
+function fileRecordOf(row: unknown): FileRecord {
+  if (!Array.isArray(row)) throw new Error("The index holds a value of the wrong type.");
+  const [path, note, size, modified, hash] = row as unknown[];
+  if (
+    typeof path !== "string" ||
+    typeof size !== "number" ||
+    typeof modified !== "number" ||
+    (note !== null && typeof note !== "string") ||
+    (hash !== null && typeof hash !== "string")
+  ) {
+    throw new Error("The index holds a value of the wrong type.");
+  }
+  return {
+    path,
+    ...(note === null ? {} : { note: note as NoteId }),
+    size,
+    modified,
+    ...(hash === null ? {} : { hash }),
+  };
+}
+
 function bytes(value: SqlValue | undefined): Uint8Array {
   if (!(value instanceof Uint8Array)) throw new Error("The index holds a value of the wrong type.");
   return value;
@@ -239,16 +261,15 @@ export class SqliteStore implements IndexStore {
   }
 
   async files(): Promise<readonly FileRecord[]> {
+    // Every row as one JSON text, not a row each: MyGO's plugin sends each
+    // value as an object of its own, and on 50,000 files those took most
+    // of the time the vault took to open.
     const { rows } = await this.#database.query(
-      "SELECT path, note, size, modified, hash FROM files",
+      "SELECT json_group_array(json_array(path, note, size, modified, hash)) AS files FROM files",
     );
-    return rows.map(([path, note, size, modified, hash]) => ({
-      path: text(path),
-      ...(note === null || note === undefined ? {} : { note: text(note) as NoteId }),
-      size: integer(size),
-      modified: integer(modified),
-      ...(hash === null || hash === undefined ? {} : { hash: text(hash) }),
-    }));
+    const packed = JSON.parse(text(rows[0]?.[0])) as unknown;
+    if (!Array.isArray(packed)) throw new Error("The index holds a value of the wrong type.");
+    return packed.map(fileRecordOf);
   }
 
   async apply(change: IndexChange): Promise<void> {

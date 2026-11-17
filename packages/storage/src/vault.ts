@@ -226,8 +226,13 @@ export class Vault {
 
   /** Loads the index, then brings it up to date with the folder. */
   async open(): Promise<void> {
-    for (const record of await this.#store.files()) this.#remember(record);
+    await this.load();
     await this.reconcile("");
+  }
+
+  /** Loads the files the index kept, as they were when the vault last closed. */
+  async load(): Promise<void> {
+    for (const record of await this.#store.files()) this.#remember(record);
   }
 
   /** The vault's folders, empty ones too, sorted by path; the same list until they change. */

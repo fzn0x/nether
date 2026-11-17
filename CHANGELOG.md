@@ -487,6 +487,10 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- The desktop app opens a large vault sooner: on 50,000 notes its last
+  note shows at about 990 ms, against 1,440 before. The vault's files come
+  from its index as one JSON text, where each of their values crossed
+  MyGO's SQLite plugin as an object of its own.
 - The app's commands are in one registry with its plugins', from which
   the menus, the palette and the shortcuts are made.
 - Mermaid diagrams and query blocks are built-in plugins, drawn through
