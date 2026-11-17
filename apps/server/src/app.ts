@@ -30,7 +30,7 @@ import { AiEndpoints } from "./aiEndpoints.ts";
 import { DataPolicies } from "./dataPolicies.ts";
 import { registerSetup } from "./setup.ts";
 import { registerRelay } from "./relay.ts";
-import { type ClusterBus, ProcessBus } from "./cluster.ts";
+import { type ClusterBus, ProcessBus, shareDisconnects } from "./cluster.ts";
 import { ClusterJobs } from "./jobs.ts";
 import { purgeNodes, registerNodes, startHeartbeat } from "./nodes.ts";
 import { registerSync } from "./sync.ts";
@@ -271,20 +271,33 @@ export async function buildApp(config: Config, services: Services): Promise<Fast
   }
   // The relay's sockets come through the WebSocket plugin sync registers.
   const sync = await registerSync(app, services.db, events, dataPolicies);
-  const relay = registerRelay(app, services.db, services.bus ?? new ProcessBus());
-  const reconnect = (userId: string) => {
-    sync.disconnect(userId);
-    relay.disconnect(userId);
-  };
-  registerMembers(app, services.db, reconnect, events);
-  registerUnits(app, services.db, reconnect, sync, events);
+  const bus = services.bus ?? new ProcessBus();
+  const relay = registerRelay(app, services.db, bus);
+  // An account's sockets, or a share-link visitor's, closed on every node,
+  // so its apps connect again and are checked anew (ADR 0082).
+  const sockets = shareDisconnects(
+    bus,
+    node.id,
+    {
+      disconnect(userId) {
+        sync.disconnect(userId);
+        relay.disconnect(userId);
+      },
+    },
+    app.log,
+  );
+  app.addHook("onClose", (_instance, done) => {
+    sockets.stop();
+    done();
+  });
+  const { disconnect } = sockets;
+  registerMembers(app, services.db, disconnect, events);
+  registerUnits(app, services.db, disconnect, sync, events);
   // Share links, which open a shared page to anyone with one (ADR 0071).
   registerLinks(app, services.db, {
     publicUrl: config.publicUrl,
     webApp: config.webApp !== null,
-    disconnect: (userId) => {
-      sync.disconnect(userId);
-    },
+    disconnect,
     events,
     policies: dataPolicies,
   });
@@ -343,7 +356,7 @@ export async function buildApp(config: Config, services: Services): Promise<Fast
     {
       db: services.db,
       config,
-      disconnect: reconnect,
+      disconnect,
       security,
       aiEndpoints,
       every: jobs.every,
