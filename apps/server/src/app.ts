@@ -26,6 +26,7 @@ import { registerOidc } from "./oidc.ts";
 import { registerSessions } from "./sessions.ts";
 import { SecuritySettings } from "./settings.ts";
 import { AiEndpoints } from "./aiEndpoints.ts";
+import { DataPolicies } from "./dataPolicies.ts";
 import { registerSetup } from "./setup.ts";
 import { registerRelay } from "./relay.ts";
 import { type ClusterBus, ProcessBus } from "./cluster.ts";
@@ -160,7 +161,11 @@ export async function buildApp(config: Config, services: Services): Promise<Fast
     version,
     enterprise: await switches.all(),
   }));
-  registerFeatures(app, services.db, switches);
+  // The data policies (ADR 0088), which hold while the `policies` feature is on.
+  const dataPolicies = new DataPolicies(services.db, () => switches.on("policies"));
+  registerFeatures(app, services.db, switches, (feature) => {
+    if (feature === "policies") dataPolicies.switched();
+  });
   // The sessions' lengths, the sign-in limits and email codes (ADR 0084):
   // the pinned ones written where every node and query reads them.
   const security = new SecuritySettings(services.db, config.security);
@@ -171,7 +176,7 @@ export async function buildApp(config: Config, services: Services): Promise<Fast
   );
 
   registerSetup(app, services.db, services.setupCode);
-  registerSessions(app, services.db, security, aiEndpoints);
+  registerSessions(app, services.db, security, aiEndpoints, dataPolicies);
   registerInvitations(app, services.db);
   registerWorkspaces(app, services.db);
   registerVersions(app, services.db);
@@ -227,10 +232,10 @@ export async function buildApp(config: Config, services: Services): Promise<Fast
     done();
   });
   if (services.blobs !== undefined) {
-    registerAttachments(app, services.db, services.blobs, config.attachmentLimit);
+    registerAttachments(app, services.db, services.blobs, config.attachmentLimit, dataPolicies);
   }
   // The relay's sockets come through the WebSocket plugin sync registers.
-  const sync = await registerSync(app, services.db);
+  const sync = await registerSync(app, services.db, dataPolicies);
   const relay = registerRelay(app, services.db, services.bus ?? new ProcessBus());
   const reconnect = (userId: string) => {
     sync.disconnect(userId);
@@ -245,21 +250,24 @@ export async function buildApp(config: Config, services: Services): Promise<Fast
     disconnect: (userId) => {
       sync.disconnect(userId);
     },
+    policies: dataPolicies,
   });
   // Published sites, drawn for anyone at /p/<name>/ (ADR 0076).
   // Their custom domains' requests, on any route, are theirs (ADR 0077).
   const published = registerPublished(app, services.db, {
     blobs: services.blobs,
     publicUrl: config.publicUrl,
+    policies: dataPolicies,
   });
   registerSites(app, services.db, {
     publicUrl: config.publicUrl,
     changed: published.changed,
     resolveTxt: services.resolveTxt,
+    policies: dataPolicies,
   });
   // The public API, for personal access tokens (ADR 0059).
   registerTokens(app, services.db);
-  const api = registerApi(app, services.db, sync);
+  const api = registerApi(app, services.db, sync, dataPolicies);
   registerWrites(app, services.db, sync, api);
   // Webhooks, and the worker that sends their events (ADR 0060).
   registerWebhooks(app, services.db, config.webhookPrivate, api);
@@ -293,7 +301,7 @@ export async function buildApp(config: Config, services: Services): Promise<Fast
   }));
   await registerEnterprise(
     app,
-    { db: services.db, config, disconnect: reconnect, security, aiEndpoints },
+    { db: services.db, config, disconnect: reconnect, security, aiEndpoints, dataPolicies },
     switches,
     modules,
   );
