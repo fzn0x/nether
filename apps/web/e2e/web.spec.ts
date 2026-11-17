@@ -476,3 +476,76 @@ test("a share link opens its page to someone with no account, until it is revoke
   }
   expect(problems).toEqual([]);
 });
+
+/** Whether the server has stored a note at a path, as publishing it takes, read with the page's session. */
+function stored(page: Page, path: string): Promise<boolean> {
+  return page.evaluate(async (wanted) => {
+    const listed = (await (await fetch("/api/v1/workspaces")).json()) as {
+      workspaces: { id: string; name: string }[];
+    };
+    const team = listed.workspaces.find((workspace) => workspace.name === "Team");
+    if (team === undefined) return false;
+    const notes = (await (await fetch(`/api/v1/workspaces/${team.id}/notes`)).json()) as {
+      notes: { path: string }[];
+    };
+    return notes.notes.some((note) => note.path === wanted);
+  }, path);
+}
+
+test("a page published from the Share dialog opens for anyone, with no account, until unpublished", async ({
+  page,
+  browser,
+}) => {
+  const problems = problemsOf(page);
+  const publisher = await person("Publisher");
+  await signIn(page, publisher);
+  await openTeam(page);
+  await newNote(page, "Field guide", "Published for anyone.");
+  await expect.poll(() => fileText(page, "Field guide.md")).toBe("Published for anyone.\n");
+  await expect.poll(() => stored(page, "Field guide.md"), { timeout: 20_000 }).toBe(true);
+
+  await page.keyboard.press("Control+p");
+  await page.keyboard.type("Share this page");
+  await page.keyboard.press("Enter");
+  const share = page.getByRole("dialog", { name: "Share Field guide" });
+  const publishing = share.getByRole("region", { name: "Publish to the web" });
+  const name = `field-guide-${String(Date.now())}`;
+  await publishing.getByRole("textbox", { name: "Site name" }).fill(name);
+  await publishing.getByRole("button", { name: "Publish this page" }).click();
+  await expect(share.getByRole("status")).toHaveText(
+    "Field guide is published, and its address is copied.",
+  );
+  const url = await publishing
+    .getByRole("textbox", { name: "Address of Field guide" })
+    .inputValue();
+  expect(url).toBe(`http://127.0.0.1:4175/p/${name}/`);
+  expect(await violations(page)).toEqual([]);
+
+  // Someone with no account, in a browser of their own.
+  const visitor = await browser.newContext();
+  try {
+    const reader = await visitor.newPage();
+    const readerProblems = problemsOf(reader);
+    const opened = await reader.goto(url);
+    expect(opened?.status()).toBe(200);
+    expect(opened?.headers()["content-security-policy"]).toContain("default-src 'none'");
+    await expect(reader).toHaveTitle("Field guide");
+    await expect(reader.getByRole("heading", { name: "Field guide", level: 1 })).toBeVisible();
+    await expect(reader.getByText("Published for anyone.")).toBeVisible();
+    expect(await reader.locator("script").count()).toBe(0);
+    expect(await violations(reader)).toEqual([]);
+
+    // Unpublished, its address opens nothing at once.
+    await publishing.getByRole("button", { name: "Unpublish Field guide" }).click();
+    await expect(share.getByRole("status")).toHaveText(
+      "Field guide is unpublished: its address opens nothing now.",
+    );
+    const gone = await reader.goto(url);
+    expect(gone?.status()).toBe(404);
+    await expect(reader.getByRole("heading", { name: "Not published" })).toBeVisible();
+    expect(readerProblems).toEqual([]);
+  } finally {
+    await visitor.close();
+  }
+  expect(problems).toEqual([]);
+});
