@@ -254,8 +254,15 @@ export function storedBlobs(): MemoryBlobs {
   return blobs;
 }
 
-/** A set-up server, listening, with the admin's address and first workspace; `env` adds to its settings. */
-export async function startServer(env: Record<string, string> = {}) {
+/**
+ * A set-up server, listening, with the admin's address and first
+ * workspace; `env` adds to its settings, and `wrap`, given the database,
+ * gives what the server queries instead, as a test that delays answers.
+ */
+export async function startServer(
+  env: Record<string, string> = {},
+  wrap: (database: Database) => Database = (database) => database,
+) {
   db = await testDatabase();
   await migrate(db);
   const setupCode = newSetupCode();
@@ -265,7 +272,7 @@ export async function startServer(env: Record<string, string> = {}) {
     NETHER_LOG_LEVEL: "silent",
     ...env,
   });
-  server = await buildApp(config, { db, setupCode, blobs });
+  server = await buildApp(config, { db: wrap(db), setupCode, blobs });
   await server.listen({ host: "127.0.0.1", port: await freePort() });
   const url = `http://127.0.0.1:${String((server.server.address() as AddressInfo).port)}`;
   const setUp = await fetch(`${url}/api/setup`, {
