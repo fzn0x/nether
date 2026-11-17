@@ -438,7 +438,23 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   or its page, builds it for the simulator, signed to run locally with no
   account, checks each Swift package it ships against ADR 0001's licenses
   by `Package.resolved`, runs the plugin's tests on the simulator, and
-  starts the app there with a vault, its note found in the index.
+  starts the app there with a vault, its note found in the index. Then
+  signing in and sync, on both: requests to a server go natively, through
+  `CapacitorHttp`, read back as a `Response`; each session's token and the
+  account's private key are kept by `@aparajita/capacitor-secure-storage`,
+  in the iOS Keychain on this device only, and on Android sealed under a
+  key from the Keystore, which the app's backup rules leave out; and the
+  servers signed in to are listed beside the vaults. A provider's sign-in,
+  and single sign-on's, opens in iOS's sign-in sheet or an Android Custom
+  Tab and comes back to the app's own scheme,
+  `io.github.fzn0x.nether:/sign-in/provider`, which the server accepts at
+  that path only. The first screen lists the workspaces of each account
+  signed in to, each opened as a new vault on the phone linked to it. Sync
+  runs while the app is on screen: leaving, it saves every open note and
+  sends what is pending; coming back, or back online, it starts again at
+  once. Release builds speak only HTTPS. Webhooks and access tokens stay on
+  the desktop and the web. The emulator's smoke test signs in to a server
+  on CI's host and syncs a note each way.
 - Provisioning, first part: an account can be deactivated, which the
   server enforces whether the `scim` feature is on or off. It signs in no
   way: a password answers as a wrong one, no email code is sent, and a
