@@ -6,6 +6,7 @@
 // and their notes are not served: the server cannot read them.
 import type { JsonValue } from "@nether/core";
 import type { FastifyInstance, FastifyRequest } from "fastify";
+import { type DataPolicy, exportOff } from "./dataPolicies.ts";
 import { type Database, type Queryable, type Row, readText, readTime } from "./db.ts";
 import { fail, limitBy, uuidField } from "./http.ts";
 import type * as Markdown from "./markdown.ts";
@@ -276,6 +277,11 @@ export async function noteAnswer(sync: SyncControl, reached: Reached, row: Row) 
   };
 }
 
+/** What the API reads of a workspace's data policy. */
+export interface ApiPolicies {
+  of(workspace: string): Promise<DataPolicy>;
+}
+
 /** A database the account opens, with its schema as it is now; undefined for none. */
 export async function findDatabase(
   db: Queryable,
@@ -296,7 +302,14 @@ export async function findDatabase(
  * The public API's routes, reading. It gives the checks every route of the
  * API runs, its caller's and its limit, for the routes that write.
  */
-export function registerApi(app: FastifyInstance, db: Database, sync: SyncControl) {
+export function registerApi(
+  app: FastifyInstance,
+  db: Database,
+  sync: SyncControl,
+  policies: ApiPolicies,
+) {
+  /** Whether a workspace's data policy lets the API give its text (ADR 0088). */
+  const exported = async (workspace: string) => (await policies.of(workspace)).export;
   const caller = apiCaller(db);
   // Per account, its tokens and sessions together, so more tokens are not more requests.
   const limit = limitBy(app, "api", 300, "1 minute", (request) => callerOf(request).limitKey);
@@ -373,6 +386,7 @@ export function registerApi(app: FastifyInstance, db: Database, sync: SyncContro
       if (!("workspace" in reached)) return fail(reply, reached[0], reached[1]);
       const row = await listedNote(db, reached, request.params.note);
       if (row === undefined) return fail(reply, 404, noNote);
+      if (!(await exported(reached.workspace))) return fail(reply, 403, exportOff);
       const note = await noteAnswer(sync, reached, row);
       // What `If-Match` sends back to change the note only as it was read.
       reply.header("etag", note.tag);
@@ -438,6 +452,7 @@ export function registerApi(app: FastifyInstance, db: Database, sync: SyncContro
       if (!("workspace" in reached)) return fail(reply, reached[0], reached[1]);
       const found = await findDatabase(db, sync, reached, request.params.note);
       if (found === undefined) return fail(reply, 404, noDatabase);
+      if (!(await exported(reached.workspace))) return fail(reply, 403, exportOff);
       const after = request.query.after === undefined ? undefined : readCursor(request.query.after);
       if (request.query.after !== undefined && after === undefined) {
         return fail(reply, 400, badCursor);
@@ -476,9 +491,11 @@ export function registerApi(app: FastifyInstance, db: Database, sync: SyncContro
         return fail(reply, 404, noWorkspace);
       }
       if (request.query.q.trim() === "") return fail(reply, 400, "Type something to search for.");
-      return search(db, me.userId, request.query.q, request.query.limit, only);
+      // Results show passages of notes: a workspace the policy keeps is left out.
+      if (only !== undefined && !(await exported(only))) return fail(reply, 403, exportOff);
+      return search(db, me.userId, request.query.q, request.query.limit, only, exported);
     },
   );
 
-  return { caller, limit };
+  return { caller, limit, exported };
 }

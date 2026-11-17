@@ -321,11 +321,18 @@ export function registerWrites(
     });
   }
 
-  /** The answer to a write that made or changed a note: the note, as reading gives it. */
+  /**
+   * The answer to a write that made or changed a note: the note, as reading
+   * gives it. Where the workspace's data policy keeps its text (ADR 0088),
+   * only where the note is and when it changed.
+   */
   async function written(reached: Reached, id: string) {
     const row = await listedNote(db, reached, id);
     if (row === undefined) throw new Error(`The note ${id} is not listed after its write.`);
-    return noteAnswer(sync, reached, row);
+    const answer = await noteAnswer(sync, reached, row);
+    if (await checks.exported(reached.workspace)) return answer;
+    const { workspace, path, title, updatedAt } = answer.body;
+    return { tag: answer.tag, body: { id: answer.body.id, workspace, path, title, updatedAt } };
   }
 
   app.post<{ Params: WorkspaceParams; Body: NewNote }>(
