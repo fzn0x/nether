@@ -9,6 +9,7 @@ import type { BlobStore } from "../src/blobs.ts";
 import type { Database } from "../src/db.ts";
 import type { Mailer, Message } from "../src/mail.ts";
 import { migrate } from "../src/migrations.ts";
+import type { Resolver } from "../src/outbound.ts";
 import { newSetupCode } from "../src/setup.ts";
 import { testDatabase } from "./database.ts";
 
@@ -73,6 +74,7 @@ export async function startServer(
     blobs?: BlobStore;
     redis?: Redis;
     webhookWorker?: boolean;
+    aiResolve?: Resolver;
   } = {},
 ): Promise<TestServer> {
   const db = await testDatabase();
@@ -87,6 +89,7 @@ export async function startServer(
     ...(options.blobs === undefined ? {} : { blobs: options.blobs }),
     ...(redis === undefined ? {} : { redis }),
     ...(options.webhookWorker === undefined ? {} : { webhookWorker: options.webhookWorker }),
+    ...(options.aiResolve === undefined ? {} : { aiResolve: options.aiResolve }),
   });
   return {
     server,

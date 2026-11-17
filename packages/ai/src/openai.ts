@@ -3,6 +3,7 @@
 // and most gateways also serve. A reply streams as server-sent events, each
 // a `chat.completion.chunk` whose first choice's `delta.content` is the next
 // piece of text, and the stream ends with `data: [DONE]`.
+import { apiBase, callPath, requestHeaders } from "./endpoints.ts";
 import { AiError, errorMessage, isJson, parseJson, record, send } from "./errors.ts";
 import { serverSentEvents } from "./sse.ts";
 import type {
@@ -31,13 +32,8 @@ function refused(finish: unknown): void {
 }
 
 export function openAiCompatible(config: ProviderConfig, access: ProviderAccess): Provider {
-  const base = config.url.replace(/\/+$/, "");
-  const headers = (): Record<string, string> => ({
-    "content-type": "application/json",
-    ...(access.key === undefined || access.key === ""
-      ? {}
-      : { authorization: `Bearer ${access.key}` }),
-  });
+  const base = apiBase("openai", config.url);
+  const headers = () => requestHeaders("openai", access.key);
 
   return {
     async *chat(request: ChatRequest) {
@@ -45,7 +41,7 @@ export function openAiCompatible(config: ProviderConfig, access: ProviderAccess)
         ...(request.system === undefined ? [] : [{ role: "system", content: request.system }]),
         ...request.messages,
       ];
-      const response = await send(access.fetch, `${base}/chat/completions`, {
+      const response = await send(access.fetch, `${base}${callPath("openai", "chat") ?? ""}`, {
         method: "POST",
         headers: headers(),
         body: JSON.stringify({ model: config.model, messages, stream: true }),
@@ -74,7 +70,7 @@ export function openAiCompatible(config: ProviderConfig, access: ProviderAccess)
 
     async embed(request: EmbedRequest) {
       if (request.input.length === 0) return [];
-      const response = await send(access.fetch, `${base}/embeddings`, {
+      const response = await send(access.fetch, `${base}${callPath("openai", "embed") ?? ""}`, {
         method: "POST",
         headers: headers(),
         body: JSON.stringify({ model: request.model, input: request.input }),
