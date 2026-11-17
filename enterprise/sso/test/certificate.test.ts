@@ -26,7 +26,7 @@ describe("selfSigned", () => {
       `${String(2026 + certificateYears)}-11-17T10:19:30.000Z`,
     );
     expect(read.ca).toBe(false);
-    expect(read.serialNumber).toMatch(/^[0-7][0-9A-F]{31}$/);
+    expect(read.serialNumber).toMatch(/^[4-7][0-9A-F]{31}$/);
   });
 
   it("writes GeneralizedTime from 2050, and a name of any length", () => {

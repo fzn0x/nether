@@ -95,8 +95,10 @@ export function selfSigned(
   notAfter.setUTCFullYear(notAfter.getUTCFullYear() + certificateYears);
   const name = sequence(set(sequence(oid("2.5.4.3"), utf8(commonName))));
   // A random positive serial number of 16 bytes (RFC 5280 allows up to 20).
+  // Its first byte is from 0x40 to 0x7f: positive, and never zero, which
+  // DER would drop, leaving 15 bytes once in 128.
   const serial = randomBytes(16);
-  serial[0] = (serial[0] ?? 0) & 0x7f;
+  serial[0] = 0x40 | ((serial[0] ?? 0) & 0x3f);
   const extensions = explicit(
     3,
     sequence(
