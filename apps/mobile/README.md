@@ -87,8 +87,9 @@ pnpm --filter @nether/mobile smoke:ios path/to/App.app [simulator UDID]
 installs the app in a simulator with a vault of one note, the vault it had
 open last, starts it, and waits for the page's marks in the system's log:
 the vault open and its notes read. Then the vault's index, in the app's
-SQLite, holds the note with the hash the plugin worked out, and search
-finds it. CI runs it on macOS, only for changes to the app or its page.
+SQLite, holds the note with the size and time the plugin listed, and
+search finds it. CI runs it on macOS, only for changes to the app or its
+page.
 
 `pnpm --filter @nether/perf android` measures opening to the last note and
 idle memory on a `perf` build ([tools/perf](../../tools/perf/README.md)).
