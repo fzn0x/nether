@@ -6,6 +6,7 @@ import type { AddressInfo } from "node:net";
 import { HocuspocusProvider } from "@hocuspocus/provider";
 import { afterEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
+import type { Database } from "../src/db.ts";
 import { type SetUp, type TestServer, bearer, setUp, signIn, startServer } from "./app.ts";
 import { freePort } from "./ports.ts";
 
@@ -20,8 +21,8 @@ afterEach(async () => {
 
 const b64 = (bytes: number) => randomBytes(bytes).toString("base64");
 
-async function start(): Promise<TestServer & SetUp> {
-  running = await startServer();
+async function start(wrapDb?: (db: Database) => Database): Promise<TestServer & SetUp> {
+  running = await startServer(wrapDb === undefined ? {} : { wrapDb });
   return { ...running, ...(await setUp(running)) };
 }
 
@@ -282,6 +283,59 @@ describe("the relay", () => {
       documents: [{ name: note.split("/")[1], seq: second.seq }],
       more: false,
     });
+  });
+
+  it("answers a document's pushes in the order it numbers them, though they are stored at once", async () => {
+    // The database answers the first push it stores only once it has
+    // answered the next, as PostgreSQL may answer two connections; or after
+    // half a second, for a relay that stores a document's pushes in turn.
+    let release: (() => void) | undefined;
+    let armed = false;
+    const test = await start((db) => ({
+      ...db,
+      async query(text, params) {
+        const result = await db.query(text, params);
+        if (!armed || !text.includes("INSERT INTO encrypted_updates")) return result;
+        if (release === undefined) {
+          await new Promise<void>((resolve) => {
+            release = resolve;
+            setTimeout(resolve, 500);
+          });
+          armed = false;
+        } else {
+          setTimeout(() => release?.(), 100);
+        }
+        return result;
+      },
+    }));
+    await keys(test, test.token);
+    const workspace = await encryptedWorkspace(test, test.token);
+    const note = `${workspace}/${randomUUID()}`;
+    const laptop = await relay(test, test.token);
+    const phone = await relay(test, test.token);
+    for (const client of [laptop, phone]) {
+      client.send({ type: "subscribe", name: note, after: 0 });
+      await client.next((message) => message.type === "subscribed");
+    }
+
+    armed = true;
+    laptop.send({ type: "push", id: "l", name: note, data: "AAEC" });
+    phone.send({ type: "push", id: "p", name: note, data: "AwQF" });
+    const fromLaptop = Number((await laptop.next((message) => message.id === "l")).seq);
+    const fromPhone = Number((await phone.next((message) => message.id === "p")).seq);
+    // Each client is sent the other's update numbered before its own
+    // before it is told its own number, so its number is how far it read.
+    const [first, second] = fromLaptop < fromPhone ? [laptop, phone] : [phone, laptop];
+    const earlier = Math.min(fromLaptop, fromPhone);
+    const sent = second.received.findIndex(
+      (message) =>
+        message.type === "updates" &&
+        (message.updates as { seq: number }[]).some((update) => update.seq === earlier),
+    );
+    const told = second.received.findIndex((message) => message.type === "pushed");
+    expect(sent).toBeGreaterThanOrEqual(0);
+    expect(sent).toBeLessThan(told);
+    expect(first.received.some((message) => message.type === "updates")).toBe(true);
   });
 
   it("replaces the updates up to one with a snapshot", async () => {
