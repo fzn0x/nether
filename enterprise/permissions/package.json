@@ -13,7 +13,8 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@nether/server": "workspace:*"
+    "@nether/server": "workspace:*",
+    "fastify": "^5.12.7"
   },
   "devDependencies": {
     "@types/node": "^24.19.2",

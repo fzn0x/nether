@@ -442,6 +442,9 @@ importers:
       '@nether/server':
         specifier: workspace:*
         version: link:../../apps/server
+      fastify:
+        specifier: ^5.12.7
+        version: 5.12.7
     devDependencies:
       '@types/node':
         specifier: ^24.19.2
