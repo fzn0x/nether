@@ -25,7 +25,7 @@ import { CommandPalette } from "./CommandPalette.tsx";
 import { ContextMenu, type MenuEntry, type MenuPoint } from "./ContextMenu.tsx";
 import { type Menu, MenuBar } from "./MenuBar.tsx";
 import { IconButton } from "./IconButton.tsx";
-import { assistIcon, commandIcons, itemIcons, menuIcons } from "./icons.ts";
+import { assistIcon, buildIcon, commandIcons, itemIcons, menuIcons } from "./icons.ts";
 import { NewFolderDialog } from "./NewFolderDialog.tsx";
 import { TextPromptDialog } from "./TextPromptDialog.tsx";
 import { myName, setMyName } from "./people.ts";
@@ -193,6 +193,10 @@ const AppearanceSettings = lazy(() =>
 // So does the AI tab, with the providers' code (ADR 0068).
 const AiSettings = lazy(() =>
   import("./AiSettings.tsx").then(({ AiSettings: tab }) => ({ default: tab })),
+);
+// And building with AI, the first time it is asked for (ADR 0078).
+const BuildDialog = lazy(() =>
+  import("./BuildDialog.tsx").then(({ BuildDialog: dialog }) => ({ default: dialog })),
 );
 const ServersDialog = lazy(() =>
   import("./ServersDialog.tsx").then(({ ServersDialog: dialog }) => ({ default: dialog })),
@@ -406,6 +410,7 @@ export function VaultView(props: {
     | "history"
     | "export"
     | "import"
+    | "build"
     | "palette"
     | undefined
   >();
@@ -1695,6 +1700,21 @@ export function VaultView(props: {
       },
     });
   }, [registry, aiReady]);
+  // Building with AI, in the File menu while the vault has a provider.
+  useEffect(() => {
+    if (!aiReady) return;
+    return registry.add({
+      id: "build",
+      name: () => t("buildCommand"),
+      menu: "file",
+      keys: [],
+      icon: buildIcon,
+      enabled: () => true,
+      run: () => {
+        setDialog("build");
+      },
+    });
+  }, [registry, aiReady]);
 
   /**
    * The menus' items, each a command; one that cannot run now shows, but
@@ -2073,6 +2093,29 @@ export function VaultView(props: {
             setDialog(undefined);
           }}
         />
+      ) : null}
+      {dialog === "build" && state.status === "open" && ai.resolution.provider !== undefined ? (
+        <Suspense fallback={null}>
+          <BuildDialog
+            vault={state.vault}
+            provider={ai.resolution.provider}
+            workspaceId={sync.link?.workspaceId}
+            through={
+              ai.settings.server === undefined || sync.link === undefined
+                ? undefined
+                : hostOf(sync.link.server)
+            }
+            allowedNow={ai.allowedNow}
+            templatesFolder={settings.folder}
+            onOpen={(path) => {
+              const note = state.vault.noteAt(path);
+              if (note !== undefined) openNote(note.id);
+            }}
+            onClose={() => {
+              setDialog(undefined);
+            }}
+          />
+        </Suspense>
       ) : null}
       {dialog === "import" && state.status === "open" ? (
         <Suspense fallback={null}>

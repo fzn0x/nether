@@ -58,6 +58,7 @@ import {
   Trash2,
   UserRound,
   UserRoundCheck,
+  WandSparkles,
   Users,
   Webhook,
 } from "lucide-react";
@@ -113,6 +114,9 @@ export const commandIcons: Readonly<Record<CommandId, LucideIcon>> = {
 
 /** Writing assist's command, which shows only once AI is set up (ADR 0068). */
 export const assistIcon: LucideIcon = Sparkles;
+
+/** Building with AI's command, which shows only once AI is set up (ADR 0078). */
+export const buildIcon: LucideIcon = WandSparkles;
 
 /** The menu bar's menus. */
 export const menuIcons = {
