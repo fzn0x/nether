@@ -649,6 +649,66 @@ export const migrations: readonly Migration[] = [
       );
     `,
   },
+  {
+    version: 23,
+    name: "audit log",
+    sql: `
+      -- The audit log (ADR 0081): what the server told of, each event chained
+      -- to the one before by its hash. The audit module alone writes and
+      -- reads it; it is here so a backup restores it. Names are kept as they
+      -- were when the event happened.
+      CREATE TABLE audit_events (
+        seq bigint PRIMARY KEY,
+        id uuid NOT NULL UNIQUE,
+        at timestamptz NOT NULL,
+        action text NOT NULL,
+        outcome text NOT NULL CHECK (outcome IN ('success', 'failure')),
+        reason text,
+        -- account, visitor, anonymous or system.
+        actor_type text NOT NULL,
+        -- An account's ID, or a visitor's link's.
+        actor_id text,
+        actor_name text,
+        actor_email text,
+        token_id text,
+        token_name text,
+        workspace_id text,
+        workspace_name text,
+        target_type text,
+        target_id text,
+        target_name text,
+        address text,
+        user_agent text,
+        details jsonb NOT NULL DEFAULT '{}',
+        prev_hash text NOT NULL,
+        hash text NOT NULL
+      );
+      CREATE INDEX audit_events_at ON audit_events (at);
+      CREATE INDEX audit_events_actor ON audit_events (actor_id, seq);
+      CREATE INDEX audit_events_email ON audit_events (lower(actor_email), seq);
+      CREATE INDEX audit_events_workspace ON audit_events (workspace_id, seq);
+      CREATE INDEX audit_events_action ON audit_events (action, seq);
+
+      -- Append-only: no row changes, and none goes but those the retention
+      -- purge names, through the setting it makes for its own transaction.
+      CREATE FUNCTION audit_events_append_only() RETURNS trigger LANGUAGE plpgsql AS $$
+      BEGIN
+        IF TG_OP = 'DELETE' THEN
+          IF OLD.seq <= coalesce(
+            nullif(current_setting('nether.audit_purge_through', true), ''), '0'
+          )::bigint THEN
+            RETURN OLD;
+          END IF;
+        END IF;
+        RAISE EXCEPTION 'The audit log is append-only: % is refused.', TG_OP;
+      END;
+      $$;
+      CREATE TRIGGER audit_events_append_only BEFORE UPDATE OR DELETE ON audit_events
+        FOR EACH ROW EXECUTE FUNCTION audit_events_append_only();
+      CREATE TRIGGER audit_events_no_truncate BEFORE TRUNCATE ON audit_events
+        FOR EACH STATEMENT EXECUTE FUNCTION audit_events_append_only();
+    `,
+  },
 ];
 
 /** The schema version this server writes and reads. */

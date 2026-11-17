@@ -8,6 +8,7 @@ import type { FastifyInstance } from "fastify";
 import { type Database, type Queryable, readBytes, readNumber, readText } from "./db.ts";
 import { fail, nameField, uuidField } from "./http.ts";
 import { accountOf, signedIn } from "./sessions.ts";
+import { type ServerEvents, accountActor, originOf } from "./events.ts";
 
 export type Encryption = "none" | "end-to-end";
 
@@ -77,7 +78,7 @@ const workspaceParams = {
   properties: { workspace: uuidField },
 } as const;
 
-export function registerWorkspaces(app: FastifyInstance, db: Database): void {
+export function registerWorkspaces(app: FastifyInstance, db: Database, events: ServerEvents): void {
   const account = signedIn(db);
 
   // An account's key pair: its public key, and its private key in a box only
@@ -173,6 +174,17 @@ export function registerWorkspaces(app: FastifyInstance, db: Database): void {
             [id, me.id, sealed],
           );
         }
+        await events.emit(
+          tx,
+          {
+            action: "workspace.created",
+            actor: accountActor(me.id),
+            workspace: id,
+            target: { type: "workspace", id, name: request.body.name.trim() },
+            details: { encryption },
+          },
+          originOf(request),
+        );
         return id;
       });
       if (outcome === undefined) {
@@ -211,7 +223,24 @@ export function registerWorkspaces(app: FastifyInstance, db: Database): void {
       if (place.role !== "owner" && place.role !== "admin") {
         return fail(reply, 403, "Only the workspace's owners and admins change its settings.");
       }
-      await db.query("UPDATE workspaces SET ai = $2 WHERE id = $1", [workspace, request.body.ai]);
+      await db.transaction(async (tx) => {
+        const { rows } = await tx.query("SELECT ai FROM workspaces WHERE id = $1 FOR UPDATE", [
+          workspace,
+        ]);
+        await tx.query("UPDATE workspaces SET ai = $2 WHERE id = $1", [workspace, request.body.ai]);
+        if (rows[0]?.ai === request.body.ai) return;
+        await events.emit(
+          tx,
+          {
+            action: "workspace.changed",
+            actor: accountActor(accountOf(request).id),
+            workspace,
+            target: { type: "workspace", id: workspace },
+            details: { ai: request.body.ai },
+          },
+          originOf(request),
+        );
+      });
       return { id: workspace, ai: request.body.ai };
     },
   );
@@ -313,11 +342,28 @@ export function registerWorkspaces(app: FastifyInstance, db: Database): void {
       if ((await membership(db, user, workspace)) === undefined) {
         return fail(reply, 404, "The workspace has no such member.");
       }
-      const { rows } = await db.query(
-        `INSERT INTO workspace_keys (workspace_id, user_id, version, sealed_key) VALUES ($1, $2, $3, $4)
-         ON CONFLICT DO NOTHING RETURNING user_id`,
-        [workspace, user, request.body.version, sealed],
-      );
+      const rows = await db.transaction(async (tx) => {
+        const given = await tx.query(
+          `INSERT INTO workspace_keys (workspace_id, user_id, version, sealed_key) VALUES ($1, $2, $3, $4)
+           ON CONFLICT DO NOTHING RETURNING user_id`,
+          [workspace, user, request.body.version, sealed],
+        );
+        // Their copy of the key is what lets them read the workspace.
+        if (given.rows.length > 0) {
+          await events.emit(
+            tx,
+            {
+              action: "member.key_granted",
+              actor: accountActor(me.id),
+              workspace,
+              target: { type: "account", id: user },
+              details: { version: request.body.version },
+            },
+            originOf(request),
+          );
+        }
+        return given.rows;
+      });
       if (rows.length === 0) return fail(reply, 409, "That member has this version of the key.");
       return reply.code(204).send();
     },
