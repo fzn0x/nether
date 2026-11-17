@@ -101,6 +101,8 @@ const app = await buildApp(
     NETHER_AI_PRIVATE: "loopback",
     // Ada signs in once a test, more often than an account may in 15 minutes.
     NETHER_SIGN_IN_TRIES_ACCOUNT: "100",
+    // And this machine signs everyone in, faster than an address may in 5 minutes.
+    NETHER_SIGN_IN_TRIES_ADDRESS: "300",
     // Single sign-on's providers may be on this machine, as Keycloak is in CI.
     NETHER_SSO_PRIVATE: "loopback",
   }),
