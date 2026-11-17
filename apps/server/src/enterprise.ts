@@ -8,6 +8,7 @@
 import type { FastifyInstance, FastifyPluginAsync, FastifyReply, FastifyRequest } from "fastify";
 import type { AiEndpoints } from "./aiEndpoints.ts";
 import type { Config } from "./config.ts";
+import type { DataPolicies } from "./dataPolicies.ts";
 import type { Database } from "./db.ts";
 import type { SecuritySettings } from "./settings.ts";
 
@@ -32,6 +33,8 @@ export interface EnterpriseServices {
   readonly security: SecuritySettings;
   /** The approved AI endpoints (ADR 0086), which the `policies` module's page reads and sets. */
   readonly aiEndpoints: AiEndpoints;
+  /** The workspaces' data policies (ADR 0088), which the `policies` module's page reads and sets. */
+  readonly dataPolicies: DataPolicies;
 }
 
 /** What a module's plugin is given. */

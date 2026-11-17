@@ -9,7 +9,12 @@ import type {
   HookHandlerDoneFunction,
 } from "fastify";
 import type { Database } from "./db.ts";
-import { type EnterpriseSwitches, isEnterpriseFeature, switchVariable } from "./enterprise.ts";
+import {
+  type EnterpriseFeature,
+  type EnterpriseSwitches,
+  isEnterpriseFeature,
+  switchVariable,
+} from "./enterprise.ts";
 import { fail } from "./http.ts";
 import { accountOf, signedIn } from "./sessions.ts";
 
@@ -24,10 +29,15 @@ export function instanceAdmin(what: string) {
   };
 }
 
+/**
+ * The routes of the enterprise features' switches. `switched` hears of each
+ * switch this server moves, for what it changes to take effect at once.
+ */
 export function registerFeatures(
   app: FastifyInstance,
   db: Database,
   switches: EnterpriseSwitches,
+  switched: (feature: EnterpriseFeature) => void = () => undefined,
 ): void {
   const account = signedIn(db);
 
@@ -60,6 +70,7 @@ export function registerFeatures(
         return fail(reply, 409, `This build of Nether has no ${feature} module.`);
       }
       await switches.set(feature, request.body.on);
+      switched(feature);
       return (await switches.states()).find((state) => state.feature === feature);
     },
   );
