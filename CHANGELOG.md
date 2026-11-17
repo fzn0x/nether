@@ -203,6 +203,16 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   web app's settings have the AI tab, and writing assist names the server
   the text goes through
   ([ADR 0070](docs/adr/0070-the-web-apps-ai-goes-through-its-server-which-seals-the-keys-and-reaches-only-what-it-may.md)).
+- Database triggers: rules in a database's schema, under `triggers`, that
+  set a row's properties when one of them becomes a value, as "when
+  Status becomes Done, set Completed to `{{date}}`", added and removed in
+  the database's Triggers panel. A rule runs when the app changes the
+  property into its value on this device: in a cell, by a card moved on a
+  board, in a row made in a column or on a day, in the row's properties,
+  or by a button. It does not run for changes that arrive by sync, from
+  another app or through the REST API, and what it sets runs no rule. The
+  Buttons plugin is now Buttons and triggers, and runs them
+  ([ADR 0072](docs/adr/0072-buttons-are-meta-bind-button-blocks-and-triggers-are-schema-rules-run-where-the-change-is-made.md)).
 
 ### Changed
 

@@ -45,7 +45,8 @@ Notion exports. Self-hosting is available for enterprise.
 > open a page to anyone with one, with no account, to read, comment on or
 > edit; [buttons](https://fzn0x.github.io/nether/buttons/) in a note, as
 > Meta Bind writes them, run commands, make notes from templates and set
-> properties; and the
+> properties, and a database's triggers set a row's properties when one
+> becomes a value; and the
 > [roadmap](docs/roadmap.md#phase-4-platform) ticks off the rest as it
 > lands.
 
@@ -81,7 +82,7 @@ Notion exports. Self-hosting is available for enterprise.
 | 1. Local-first notes | The desktop app: a vault on disk, the block and Markdown editor, links and backlinks, tags, search, templates, export | ✅ |
 | 2. Databases and structure | Databases with six views, relations, rollups, formulas, synced blocks, the graph view, importers from Obsidian and Notion | ✅ |
 | 3. Sync and collaboration | The first public release: the server, end-to-end encrypted sync, co-editing, comments, permissions, the web app, the canvas, backups | ✅ |
-| 4. Platform | Plugins in a sandbox, bring-your-own AI, publishing, the REST API, the web clipper, automations | 🚧 8 of 11 |
+| 4. Platform | Plugins in a sandbox, bring-your-own AI, publishing, the REST API, the web clipper, automations | 🚧 9 of 11 |
 | 5. Enterprise, mobile and scale | Single sign-on, SCIM, audit logs, data policies, high availability, the Helm chart, mobile apps | ❌ |
 
 Each phase ends with a gate it must pass before the next one starts; the
