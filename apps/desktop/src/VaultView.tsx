@@ -120,6 +120,7 @@ import { useSync } from "./useSync.ts";
 import { usePeople, useNotifications } from "./useNotifications.ts";
 import { queueMention } from "./notify.ts";
 import { useFolders, useNotes, useVault, useViewFiles } from "./useVault.ts";
+import type { VaultShortcut } from "./capture.ts";
 
 /** What the app's own commands do as the latest render has it. */
 interface CommandState {
@@ -201,6 +202,10 @@ const ImportDialog = lazy(() =>
 );
 const AppearanceSettings = lazy(() =>
   import("./AppearanceSettings.tsx").then(({ AppearanceSettings: tab }) => ({ default: tab })),
+);
+// Quick capture's tab, where the phone captures (ADR 0087).
+const CaptureSettings = lazy(() =>
+  import("./CaptureSettings.tsx").then(({ CaptureSettings: tab }) => ({ default: tab })),
 );
 // So does the AI tab, with the providers' code (ADR 0068).
 const AiSettings = lazy(() =>
@@ -336,9 +341,11 @@ export function VaultView(props: {
   readonly info: VaultInfo;
   /** The note to open first, by its path, as the command line names one; else the last open. */
   readonly note?: string;
+  /** A shortcut of the phone's app icon to run once the vault is open, numbered so each runs once. */
+  readonly shortcut?: { readonly id: VaultShortcut; readonly seq: number };
   readonly onClose: () => void;
 }) {
-  const { info, note: startNote, onClose } = props;
+  const { info, note: startNote, shortcut, onClose } = props;
   const state = useVault(info);
   const vault = state.status === "open" ? state.vault : undefined;
   const sync = useSync(vault);
@@ -1427,6 +1434,29 @@ export function VaultView(props: {
           : () => {
               setDialog("export");
             },
+      // The note's Markdown to the phone's share sheet, saved first, unless
+      // its workspace's policy keeps its notes (ADR 0087, ADR 0088).
+      sendCopy:
+        note === undefined || !open || backend.sendCopy === undefined
+          ? undefined
+          : () => {
+              const vault = state.vault;
+              const send = backend.sendCopy;
+              void (async () => {
+                const why = await exportPolicy.check();
+                if (why !== undefined) {
+                  setNotice({ text: why });
+                  return;
+                }
+                await noteDocuments(vault).flush();
+                const path = vault.note(note)?.path;
+                if (path === undefined || send === undefined) return;
+                const file = await vault.read(note);
+                await send({ name: path.slice(path.lastIndexOf("/") + 1), text: file.text });
+              })().catch((error: unknown) => {
+                setNotice({ text: error instanceof Error ? error.message : String(error) });
+              });
+            },
       splitRight:
         note === undefined
           ? undefined
@@ -1564,7 +1594,20 @@ export function VaultView(props: {
     sidebarPanels,
     allViews,
     canvasOpens,
+    exportPolicy,
   ]);
+
+  // A shortcut of the phone's app icon runs its command once the vault is
+  // open (ADR 0087); Search opens the drawer it is in on a phone.
+  const shortcutRan = useRef(0);
+  useEffect(() => {
+    if (shortcut === undefined || shortcut.seq === shortcutRan.current) return;
+    const action = run[shortcut.id];
+    if (action === undefined) return;
+    shortcutRan.current = shortcut.seq;
+    if (shortcut.id === "search" && phone) setDrawer(true);
+    action();
+  }, [shortcut, run, phone]);
 
   const closeDialog = () => {
     setDialog(undefined);
@@ -1585,6 +1628,19 @@ export function VaultView(props: {
         />
       ),
     },
+    ...(backend.captures === undefined
+      ? []
+      : [
+          {
+            id: "capture",
+            name: t("captureSettings"),
+            render: () => (
+              <Suspense fallback={null}>
+                <CaptureSettings vault={open} onClose={closeDialog} />
+              </Suspense>
+            ),
+          },
+        ]),
     {
       id: "appearance",
       name: t("appearance"),

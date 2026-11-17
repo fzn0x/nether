@@ -8,12 +8,20 @@
 // not as the vault is listed and its notes read for search; the plugin's own
 // tests check the hash.
 //
+// Before it starts, a text and a link are put in the App Group's inbox, as
+// the share extension's Save keeps them, for that vault: the app files each
+// as a note in the vault's Inbox, which its index then holds, and empties
+// the inbox. Then the app is started again as the Capture quick action
+// starts it, which simctl cannot choose, so the debug build takes it from
+// NETHER_SHORTCUT: the capture sheet's mark, with its time since the process
+// started, cold.
+//
 //   pnpm --filter @nether/mobile smoke:ios <path/to/App.app> [simulator UDID]
 //
 // It needs macOS with Xcode, and a booted simulator, or the UDID of one.
 import { execFileSync, spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { existsSync, mkdirSync, readdirSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { fileURLToPath } from "node:url";
@@ -77,6 +85,23 @@ try {
     join(support, "vaults.json"),
     JSON.stringify({ vaults: [{ id, name: "Smoke", folder: "Smoke" }], last: id }, null, 2),
   );
+
+  // A text and a link in the App Group's inbox, as the share extension keeps
+  // them (apps/mobile/plugin/ios/Sources/Shares/Captures.swift), for this vault.
+  const group = simctl("get_app_container", device, app, "group.io.github.fzn0x.nether");
+  const inbox = join(group, "Inbox");
+  const shares = [
+    { text: "Buy milk and eggs", files: [] },
+    { text: "", url: "https://example.org/smoke", title: "An example page", files: [] },
+  ];
+  for (const [index, shared] of shares.entries()) {
+    const capture = randomUUID();
+    mkdirSync(join(inbox, capture), { recursive: true });
+    writeFileSync(
+      join(inbox, capture, "capture.json"),
+      JSON.stringify({ id: capture, at: Date.now() + index, vault: id, ...shared }, null, 2),
+    );
+  }
 
   log = spawn("xcrun", [
     "simctl",
@@ -147,6 +172,36 @@ try {
       : undefined,
   );
   console.log("The vault opened, its note is in the index, and search finds it.");
+
+  // The shares, filed as notes in the vault's Inbox, which its index holds.
+  const read = (path) =>
+    existsSync(join(vault, path)) ? readFileSync(join(vault, path), "utf8") : undefined;
+  await until("the shared text's note", () =>
+    read("Inbox/Buy milk and eggs.md")?.includes("Buy milk and eggs\n") ? true : undefined,
+  );
+  await until("the shared link's note", () =>
+    read("Inbox/An example page.md")?.includes("source: https://example.org/smoke\n")
+      ? true
+      : undefined,
+  );
+  await until("the inbox emptied", () => (readdirSync(inbox).length === 0 ? true : undefined));
+  await until("the shares' notes in the index", () =>
+    rows("SELECT count(*) AS found FROM files WHERE path LIKE 'Inbox/%' AND note IS NOT NULL")[0]
+      ?.found === 2
+      ? true
+      : undefined,
+  );
+  console.log("The shared text and link are notes in the vault's Inbox, and in its index.");
+
+  // Started again by the Capture quick action, cold: the capture sheet's mark.
+  simctl("terminate", device, app);
+  marks.clear();
+  execFileSync("xcrun", ["simctl", "launch", device, app], {
+    encoding: "utf8",
+    env: { ...process.env, SIMCTL_CHILD_NETHER_SHORTCUT: "capture" },
+  });
+  const ready = await until("the capture sheet", () => marks.get("capture-ready"));
+  console.log(`The capture sheet was ready ${String(ready)} ms after the process started, cold.`);
 } catch (error) {
   // What the index holds, to tell a vault never listed from a note never indexed.
   if (rows !== undefined) {

@@ -1342,7 +1342,9 @@ function Database(props: DatabaseProps & { readonly entries: readonly PropertyEn
           </div>
           {exported === undefined ? null : "path" in exported ? (
             <p role="status">
-              {t("exportSaved", { path: exported.path })}
+              {exporter.shares === true
+                ? t("exportShared", { name: exported.path })
+                : t("exportSaved", { path: exported.path })}
               {exporter.reveal === undefined ? null : (
                 <button
                   type="button"

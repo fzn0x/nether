@@ -97,7 +97,7 @@ have it, needs no Kotlin toolchain in the build.
   the desktop. A Capacitor plugin of Nether's own, in `apps/mobile` and
   under the repository's license, holds:
   - `NetherVaults`: each vault's files, and the list of vaults and servers;
-  - `Inbox`: what the share sheet hands the app;
+  - `NetherInbox`: what the share sheet hands the app;
   - `SignIn`: on iOS, the system's sign-in sheet for providers, which
     `NetherVaults` opens as its `signIn` call, rather than a plugin of its
     own beside it.
@@ -268,19 +268,32 @@ development.
 
 **Shared to Nether.**
 
-- **Android**: intent filters take text, links, images and PDFs, one or
-  several. The plugin's `Inbox` copies each file from its content address
-  into the app's cache, and hands the page the items, which open the
-  capture sheet.
+- **Android**: intent filters take text, links, images, PDFs, audio and
+  video, one or several: what a note embeds. The plugin's `NetherInbox`
+  copies each file from its content address into the app's cache, and
+  hands the page the items, which open the capture sheet. Saved or
+  dropped, the app goes back to the app that shared, as share targets do.
+  Only content addresses are read: a `file:` address could name the app's
+  own files.
 - **iOS**: a share extension of Nether's own, in Swift, shows a small
   native sheet: what is shared, the vault it goes to, and Save. It loads
   no WebView, as an extension has little memory. It writes the item and
   its files to an inbox in an App Group the app and the extension share,
   and the app files the inbox as it opens or comes back. The app writes
   the vaults' names and IDs to the App Group, for the sheet to offer.
+  - It takes text, a link, and up to ten images, videos or files: iOS's
+    activation rules name kinds of file only through a predicate, so any
+    file is offered, where Android takes only what a note embeds.
+  - The App Group is `group.io.github.fzn0x.nether`, in both targets'
+    entitlements. A simulator build applies them unsigned, so CI reads and
+    files the group's inbox; on a phone the maintainer's account registers
+    the group.
+  - The inbox's format is one Swift file, `Captures.swift`, in the
+    plugin's package with its tests, which the extension compiles too.
 
 **Where a capture goes.** A capture becomes a new note in its vault's
-capture folder, `Inbox` unless the vault's settings name another.
+capture folder, `Inbox` unless the vault's settings name another, in
+`.nether/capture.json`, which the apps' settings show as Quick capture.
 
 - Its title is the shared page's title, or the text's first line, or the
   time.
@@ -295,16 +308,22 @@ actions:
 
 - **Capture** opens the capture sheet at once, before the vault's index
   loads: the sheet writes a file, which the vault indexes as it opens.
+  The page listens for the shortcut as it loads, before any vault opens.
 - **New note**, **Today's note** and **Search** open the last vault at
   those commands.
+
+The page gives the shortcuts their labels as it starts, a short and a
+long one each, from `messages.ts`, so they are translated with the rest
+of the page, in place of each platform's string files. They show from the
+app's first start, not its install.
 
 There is no widget in the first release. A widget is native interface
 twice, WidgetKit's and Android's, and the shortcuts and the share sheet
 already capture.
 
 **Shared from Nether.** `@capacitor/share` sends a note out as Markdown
-text, or as its file, under **Send a copy**, apart from the Share dialog,
-which shares with people. Exports use it too:
+text and as its file, together, under **Send a copy**, apart from the
+Share dialog, which shares with people. Exports use it too:
 
 - a ZIP of the vault, a folder or a note, which the plugin writes from the
   vault's files, as Go does on the desktop, with `java.util.zip` on
@@ -378,7 +397,11 @@ are this record's, to be confirmed by the first numbers:
 **How they are measured**: before each gate, and in each change that may
 cost time, never in CI, as
 [ADR 0017](0017-measure-performance-before-each-gate-not-in-ci.md) has
-it.
+it. One number is printed in CI as well, as a record and never a check:
+the smoke tests start the app cold by the Capture shortcut, on the
+emulator and in the simulator, and print when the capture sheet was ready,
+from the page's `capture-ready` mark. A busy runner's number shows the
+order of the steps, not a phone's speed.
 
 - `pnpm --filter @nether/perf android` drives a `perf` build over adb:
   optimized as a release, with web debugging on. On its first run it
@@ -468,8 +491,9 @@ as the app left.
   locally, which needs no account. It runs the plugin's Swift tests, and
   starts the app in a simulator with a vault, waiting for the page's marks
   until the vault's notes are read, then finds the note in the index. The
-  share extension builds too. Its App Group needs signing, so it is tried
-  on a device, with the maintainer's account. macOS runners cost more than
+  share extension builds too. The simulator applies the App Group unsigned,
+  so the smoke test files captures from the group's inbox; the extension's
+  own sheet is tried on a device, with the maintainer's account. macOS runners cost more than
   Linux's, so this runs only for changes to the app, its plugin or the page.
 - **Release builds** are unsigned until the maintainer adds the signing
   keys as secrets.
@@ -519,7 +543,17 @@ SQLCipher's binaries.
   - send the app home and force it to stop: the text is there on the next
     start;
   - force it to stop a second after typing, without leaving: the text is
-    there too.
+    there too;
+  - share a text and a link to it, as another app's share sheet does, and
+    find each note in the vault's Inbox;
+  - start it cold by the Capture shortcut's intent, and print when the
+    capture sheet was ready, as a record, not a check.
+
+  The simulator's smoke test puts a text and a link in the App Group's
+  inbox, as the extension's Save keeps them, finds the notes in the
+  vault's Inbox and its index, then starts the app as the Capture quick
+  action does. simctl cannot choose a quick action, so the debug build
+  takes one from `NETHER_SHORTCUT`.
 
 ### Accessibility and languages
 

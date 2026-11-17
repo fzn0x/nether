@@ -73,8 +73,16 @@ the app, so nothing typed is lost when the phone ends it.
 
 To sync, choose **Sign in to a server** on the first screen, then tap one
 of your workspaces: it opens as a vault on the phone, which syncs while
-Nether is open ([On a phone](../servers/#on-a-phone)). Exports through the
-share sheet come to the app next.
+Nether is open ([On a phone](../servers/#on-a-phone)).
+
+Touch and hold Nether's icon for its shortcuts: **Capture** opens a sheet
+for a quick note at once, before the vault does, and **New note**,
+**Today's note** and **Search** open your last vault at those. Text,
+links, images, PDFs, audio and video shared to Nether from another app
+open the same sheet, and **Save** files each as a new note in the vault's
+Inbox ([Quick capture](../writing/#quick-capture-on-a-phone)). Exports, and
+**Send a copy** of a note, go to the share sheet
+([On a phone](../export/#on-a-phone)).
 
 ## On iPhone and iPad
 
@@ -88,7 +96,15 @@ notes in the app's Documents, which the Files app shows under On My
 iPhone, Nether, and which works with no account. Notes another app
 changes there show when you come back to Nether. Each note is saved as
 you leave the app. Signing in to a server and opening its workspaces works
-as on Android.
+as on Android, and so do the icon's quick actions, exports and **Send a
+copy**.
+
+Nether shows in other apps' share sheets: its own sheet asks which vault a
+text, a link, images or files go to, and Nether files them as notes in the
+vault's Inbox as it opens. The share sheet and the app share the App Group
+`group.io.github.fzn0x.nether`. Built with your own team, give both the
+`App` and `ShareExtension` targets an App Group of yours, and name it in
+`apps/mobile/plugin/ios/Sources/Shares/Captures.swift`.
 
 ## From the source
 

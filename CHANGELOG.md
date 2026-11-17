@@ -457,7 +457,25 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   sends what is pending; coming back, or back online, it starts again at
   once. Release builds speak only HTTPS. Webhooks and access tokens stay on
   the desktop and the web. The emulator's smoke test signs in to a server
-  on CI's host and syncs a note each way.
+  on CI's host and syncs a note each way. Then quick capture and the share
+  sheet, which completes the apps: the icon's four shortcuts, through
+  `@capawesome/capacitor-app-shortcuts`, Android's app shortcuts and iOS's
+  Home Screen quick actions, Capture opening the capture sheet at once,
+  before the vault, and New note, Today's note and Search opening the last
+  vault at those; text, links, images and files shared from other apps,
+  through Android's intent filters, whose files the plugin's `NetherInbox`
+  copies into the app's cache, and an iOS share extension of Nether's own,
+  a native sheet that keeps each capture in the App Group's inbox, which
+  the app files as it opens or comes back. Each capture is a new note in
+  the vault's Inbox, or the folder its Quick capture settings name, titled
+  by the page's title, its first line or the time, with `source` and
+  `created`, its files beside it and shown in it. Exports, as Markdown or
+  web pages in a ZIP the plugin writes from the vault's files, and a
+  database's CSV, go to the share sheet through `@capacitor/share`, and
+  Send a copy sends a note's Markdown there. The emulator's and the
+  simulator's smoke tests share a text and a link and find the notes in
+  Inbox, and start the Capture shortcut cold, printing when the sheet was
+  ready.
 - Provisioning, first part: an account can be deactivated, which the
   server enforces whether the `scim` feature is on or off. It signs in no
   way: a password answers as a wrong one, no email code is sent, and a

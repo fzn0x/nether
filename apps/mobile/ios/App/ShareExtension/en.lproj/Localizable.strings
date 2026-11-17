@@ -1,0 +1,12 @@
+/* The share extension's sheet (ADR 0087). */
+"title" = "Save to Nether";
+"note" = "Note";
+"link" = "Link";
+"files" = "Files";
+"vault" = "Vault";
+"vault.new" = "New vault";
+"vault.new.hint" = "This phone has no vault yet: Nether makes this one.";
+"vault.default" = "Notes";
+"cancel" = "Cancel";
+"save" = "Save";
+"error.group" = "Nether cannot reach its inbox. Open Nether once, then share again.";

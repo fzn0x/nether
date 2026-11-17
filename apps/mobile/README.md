@@ -41,8 +41,27 @@ phone and its index in SQLite.
   is pending once the notes are saved; coming back, or back online, it
   starts again at once (`useSync.ts`). Release builds speak only HTTPS;
   the debug build alone reaches plain HTTP, on the emulator's host.
-- Exports through the share sheet come in the next part; the build leaves
-  them out until then.
+- **Quick capture**: the icon's four shortcuts, Capture, New note, Today's
+  note and Search, through `@capawesome/capacitor-app-shortcuts`, which the
+  page labels as it starts (`mobileCapture.ts`). Capture opens the capture
+  sheet before any vault (`apps/desktop/src/Captures.tsx`), which writes a
+  note into the vault's folder, its index reading it as the vault opens
+  (`apps/desktop/src/capture.ts`). On iOS, `App/SceneDelegate.swift` hands
+  the plugin the quick action chosen.
+- **The share sheet**: on Android, the activity's intent filters take text,
+  links, images, PDFs, audio and video, one or several, and the plugin's
+  `NetherInbox` (`NetherInboxPlugin.java`, `Inbox.java`) copies each file
+  into the app's cache, which opens the capture sheet. On iOS, the share
+  extension, `ios/App/ShareExtension`, a native sheet, keeps each capture
+  in the inbox of the App Group `group.io.github.fzn0x.nether`, in the
+  format of `plugin/ios/Sources/Shares/Captures.swift`, which the extension
+  compiles too; the app files it as it opens or comes back, and writes the
+  vaults' names there for the extension to offer. A capture's files move
+  into the vault through `NetherVaults.adopt`, never across the bridge.
+- **Exports and Send a copy** go to the share sheet through
+  `@capacitor/share`: the plugin writes a ZIP from the vault's files in the
+  app's cache (`ZipExport.java`, and ZIPFoundation in `Shares`), and a
+  CSV or a note's copy as a file there (`mobileExports.ts`).
 
 ## Build
 
@@ -73,9 +92,12 @@ xcodebuild test -scheme NetherMobilePlugin \
   -destination "platform=iOS Simulator,name=iPhone 17"  # the plugin's tests
 ```
 
-The simulator's builds are signed to run locally, with no account. To run
-on a phone, open `ios/App/App.xcodeproj` and choose your own team: no
-signing identity, team or profile is ever in the repository.
+The simulator's builds are signed to run locally, with no account, and the
+simulator applies the App Group's entitlement unsigned. To run on a phone,
+open `ios/App/App.xcodeproj` and choose your own team for the `App` and
+`ShareExtension` targets, with an App Group of yours in both, named in
+`Captures.swift` too: no signing identity, team or profile is ever in the
+repository.
 `App.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved`
 pins the Swift packages the app ships, as `pnpm-lock.yaml` pins npm's.
 
@@ -99,7 +121,12 @@ the emulator reaches as `10.0.2.2`, signs in with a password, opens the
 workspace from the first screen, and checks that the server's note comes
 to the phone, that a note typed there reaches the server, and that, ended
 and started again, the app is still signed in and gets the server's next
-note. CI runs it on an Android 15 emulator.
+note. Before the server, it shares a text and a link to the app as another
+app's share sheet does, saves each from the capture sheet and finds the
+note in the vault's Inbox through `run-as`, checks the app's shortcuts are
+published, and starts the app cold by the Capture shortcut's intent,
+printing when the capture sheet was ready, from the page's
+`capture-ready` mark. CI runs it on an Android 15 emulator.
 
 ```sh
 pnpm --filter @nether/mobile smoke:ios path/to/App.app [simulator UDID]
@@ -109,8 +136,12 @@ installs the app in a simulator with a vault of one note, the vault it had
 open last, starts it, and waits for the page's marks in the system's log:
 the vault open and its notes read. Then the vault's index, in the app's
 SQLite, holds the note with the size and time the plugin listed, and
-search finds it. CI runs it on macOS, only for changes to the app or its
-page.
+search finds it. A text and a link put in the App Group's inbox before it
+started, as the share extension keeps them, are notes in the vault's Inbox
+and its index, the inbox emptied. Then it starts the app as the Capture
+quick action does, which simctl cannot choose: the debug build takes one
+from `NETHER_SHORTCUT`, and the script prints when the capture sheet was
+ready. CI runs it on macOS, only for changes to the app or its page.
 
 `pnpm --filter @nether/perf android` measures opening to the last note and
 idle memory on a `perf` build ([tools/perf](../../tools/perf/README.md)).

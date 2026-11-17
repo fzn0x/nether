@@ -22,6 +22,8 @@
     "@capacitor/browser": "8.0.5",
     "@capacitor/core": "8.6.0",
     "@capacitor/ios": "8.6.0",
+    "@capacitor/share": "8.0.3",
+    "@capawesome/capacitor-app-shortcuts": "8.0.3",
     "@capawesome/capacitor-background-task": "8.0.3",
     "@nether/mobile-plugin": "link:./plugin"
   },

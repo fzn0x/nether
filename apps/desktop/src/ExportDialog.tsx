@@ -246,19 +246,22 @@ export function ExportDialog(props: {
         </fieldset>
         <fieldset disabled={working}>
           <legend>{t("exportAs")}</legend>
-          {formats.map((value) => (
-            <label key={value} className="field-check">
-              <input
-                type="radio"
-                name="export-format"
-                checked={format === value}
-                onChange={() => {
-                  setFormat(value);
-                }}
-              />
-              {t(`format_${value}`)}
-            </label>
-          ))}
+          {/* The phones' WebViews cannot print to a file: a PDF waits there (ADR 0087). */}
+          {(exporter.shares === true ? formats.filter((each) => each !== "pdf") : formats).map(
+            (value) => (
+              <label key={value} className="field-check">
+                <input
+                  type="radio"
+                  name="export-format"
+                  checked={format === value}
+                  onChange={() => {
+                    setFormat(value);
+                  }}
+                />
+                {t(`format_${value}`)}
+              </label>
+            ),
+          )}
           {format === "pdf" ? (
             <label className="field">
               {t("paper")}
@@ -278,7 +281,9 @@ export function ExportDialog(props: {
           <p role="status">{t("exporting", { done: status.done, total: status.total })}</p>
         ) : status.kind === "saved" ? (
           <p role="status">
-            {t("exportSaved", { path: status.path })}
+            {exporter.shares === true
+              ? t("exportShared", { name: status.path })
+              : t("exportSaved", { path: status.path })}
             {exporter.reveal === undefined ? null : (
               <button
                 type="button"

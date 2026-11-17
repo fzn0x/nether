@@ -4630,6 +4630,66 @@ kbd {
   align-self: flex-start;
 }
 
+/* The capture sheet (ADR 0087): a capture's text, what was shared, and the vault it goes to. */
+.capture-sheet {
+  align-self: flex-start;
+  /* Above the on-screen keyboard there may be no room for all of it. */
+  overflow-y: auto;
+}
+
+/* On a phone, a sheet along the bottom, above the keyboard, as every dialog is there. */
+@media (max-width: 40rem) {
+  .capture-sheet {
+    align-self: auto;
+  }
+}
+
+.capture-sheet textarea {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 7.5rem;
+  padding: 0.4rem 0.6rem;
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  /* 16 pixels or more, so iOS does not zoom in on the field. */
+  font-size: 1rem;
+  resize: vertical;
+}
+
+.capture-shared {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.875rem;
+  overflow-wrap: anywhere;
+}
+
+.capture-shared p,
+.capture-shared ul {
+  margin: 0;
+}
+
+.capture-shared ul {
+  padding-inline-start: 1.25rem;
+}
+
+/* What saving a capture says, for a moment, along the bottom. */
+.capture-status {
+  position: fixed;
+  z-index: 40;
+  inset-inline: 1rem;
+  inset-block-end: calc(1rem + env(safe-area-inset-bottom));
+  margin: 0;
+  padding: 0.5rem 0.75rem;
+  border-radius: 8px;
+  background: var(--text);
+  color: var(--bg);
+  text-align: center;
+  pointer-events: none;
+}
+
 /* A canvas in its pane (ADR 0051): the board fills it, and moves and scales within. */
 .pane-body.view-body {
   padding: 0;

@@ -96,7 +96,10 @@ sign-in, permission change, share, export and deletion, chained so a
 change shows, and send them to a SIEM by syslog or a webhook. And
 [high availability](../high-availability/) runs several server nodes,
 upgraded one at a time, on Kubernetes with the
-[Helm chart](../kubernetes/).
+[Helm chart](../kubernetes/). The [Android and iOS apps](../install/#on-android)
+keep vaults on the phone, sync while they are open, and
+[capture](../writing/#quick-capture-on-a-phone) from their icon's
+shortcuts and the share sheet.
 
 The full requirements, the architecture and the decision records live in
 the [repository](https://github.com/fzn0x/nether/tree/main/docs).

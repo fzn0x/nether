@@ -5,10 +5,11 @@
 // VITE_NETHER_TARGET=web, is its server's, so it always syncs (ADR 0053),
 // and leaves out what a page in a browser cannot do yet. The mobile apps,
 // built with VITE_NETHER_TARGET=mobile, keep vaults on the phone (ADR 0087),
-// sign in and sync as the desktop app does, and leave out what comes to
-// them in later parts, exports through the share sheet, the graph and
-// canvases; updates, which the stores give; and webhooks and access tokens,
-// which stay in the desktop and web apps.
+// sign in and sync as the desktop app does, export through the share sheet
+// and send a note's copy there, which only they do, and leave out what
+// comes to them later, the graph and canvases; updates, which the stores
+// give; and webhooks and access tokens, which stay in the desktop and web
+// apps.
 import type { CommandId } from "./commands.ts";
 
 /** What a build is made for. */
@@ -55,7 +56,6 @@ const notOnTheWeb: ReadonlySet<CommandId> = new Set(["sync", "checkUpdates", "up
  * and the web.
  */
 const notOnPhonesYet: ReadonlySet<CommandId> = new Set([
-  "export",
   "openGraph",
   "newCanvas",
   "checkUpdates",
@@ -64,10 +64,14 @@ const notOnPhonesYet: ReadonlySet<CommandId> = new Set([
   "apiTokens",
 ]);
 
+/** What only the mobile apps show: a note's copy to the system's share sheet. */
+const onlyOnPhones: ReadonlySet<CommandId> = new Set(["sendCopy"]);
+
 /** Whether a build shows a command. */
 export function shownIn(build: Build, id: CommandId): boolean {
   if (build.web && notOnTheWeb.has(id)) return false;
   if (build.mobile === true && notOnPhonesYet.has(id)) return false;
+  if (build.mobile !== true && onlyOnPhones.has(id)) return false;
   return build.sync || !syncCommands.has(id);
 }
 
