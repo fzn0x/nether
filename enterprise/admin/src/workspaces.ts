@@ -9,6 +9,7 @@ import {
   readBoolean,
   readCount,
   readText,
+  readTextOrNull,
   readTime,
 } from "@nether/server/src/db.ts";
 
@@ -59,6 +60,8 @@ export interface WorkspaceMember {
   readonly name: string;
   readonly email: string;
   readonly role: string;
+  /** Its own custom role, on `role` as its base, while advanced permissions hold. */
+  readonly customRole: { readonly id: string; readonly name: string } | null;
   readonly joinedAt: string;
   /** Whether the account is deactivated, so it signs in no way. */
   readonly deactivated: boolean;
@@ -226,31 +229,72 @@ export async function listWorkspaces(
   };
 }
 
-/** One workspace, with its members, or undefined when there is none such. */
+/**
+ * One workspace, with its members, or undefined when there is none such.
+ * While advanced permissions hold, its custom roles, and each member's own
+ * (ADR 0089), which an instance admin may give as roles are given.
+ */
 export async function workspaceWithMembers(
   db: Database,
   id: string,
-): Promise<{ workspace: WorkspaceSummary; members: WorkspaceMember[] } | undefined> {
+  customRoles: boolean,
+): Promise<
+  | {
+      workspace: WorkspaceSummary;
+      members: WorkspaceMember[];
+      customRoles: WorkspaceCustomRole[];
+    }
+  | undefined
+> {
   const { rows } = await db.query(`${summaries} WHERE w.id = $1`, [id]);
   const row = rows[0];
   if (row === undefined) return undefined;
   const members = await db.query(
     `SELECT u.id, u.name, u.email, m.role, m.created_at,
-            u.deactivated_at IS NOT NULL AS deactivated
+            u.deactivated_at IS NOT NULL AS deactivated, r.id AS role_id, r.name AS role_name
        FROM memberships m JOIN users u ON u.id = m.user_id
+       LEFT JOIN custom_roles r ON r.workspace_id = m.workspace_id AND r.id = m.custom_role
       WHERE m.workspace_id = $1
       ORDER BY lower(u.name), lower(u.email)`,
     [id],
   );
+  const roles = customRoles
+    ? (
+        await db.query(
+          "SELECT id, name, base FROM custom_roles WHERE workspace_id = $1 ORDER BY lower(name), id",
+          [id],
+        )
+      ).rows
+    : [];
   return {
     workspace: summary(row),
-    members: members.rows.map((member) => ({
-      id: readText(member, "id"),
-      name: readText(member, "name"),
-      email: readText(member, "email"),
-      role: readText(member, "role"),
-      joinedAt: readTime(member, "created_at").toISOString(),
-      deactivated: readBoolean(member, "deactivated"),
+    members: members.rows.map((member) => {
+      const roleId = readTextOrNull(member, "role_id");
+      return {
+        id: readText(member, "id"),
+        name: readText(member, "name"),
+        email: readText(member, "email"),
+        role: readText(member, "role"),
+        customRole:
+          customRoles && roleId !== null
+            ? { id: roleId, name: readText(member, "role_name") }
+            : null,
+        joinedAt: readTime(member, "created_at").toISOString(),
+        deactivated: readBoolean(member, "deactivated"),
+      };
+    }),
+    customRoles: roles.map((role) => ({
+      id: readText(role, "id"),
+      name: readText(role, "name"),
+      base: readText(role, "base"),
     })),
   };
+}
+
+/** A workspace's custom role, as the console offers it. */
+export interface WorkspaceCustomRole {
+  readonly id: string;
+  readonly name: string;
+  /** Its base: admin, member or guest. */
+  readonly base: string;
 }

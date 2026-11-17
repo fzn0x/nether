@@ -20,9 +20,9 @@ export const scimModule: EnterpriseModule = {
   feature: "scim",
   plugin: (
     app,
-    { db, config, isOn, whenOn, events, disconnect, dataPolicies, security, every },
+    { db, config, isOn, whenOn, events, disconnect, dataPolicies, security, every, permissions },
   ) => {
-    registerConsole(app, { db, config, events, security, disconnect, whenOn });
+    registerConsole(app, { db, config, events, security, disconnect, whenOn, permissions });
     registerScim(app, { db, config, events, disconnect, dataPolicies, whenOn });
 
     // Each day, on one node, the last week of a token is in the server's

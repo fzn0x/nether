@@ -16,7 +16,8 @@ import {
 } from "@nether/server/src/events.ts";
 import { instanceAdmin } from "@nether/server/src/features.ts";
 import { fail, uuidField } from "@nether/server/src/http.ts";
-import type { Role } from "@nether/server/src/members.ts";
+import { type Role, customRolesOff } from "@nether/server/src/members.ts";
+import { type Permissions, customRoleOf } from "@nether/server/src/places.ts";
 import { accountOf, signedIn, tokenHash } from "@nether/server/src/sessions.ts";
 import type { SecuritySettings } from "@nether/server/src/settings.ts";
 import {
@@ -109,7 +110,11 @@ const mappingBody = {
   type: "object",
   required: ["role"],
   additionalProperties: false,
-  properties: { role: { type: "string", enum: groupRoles } },
+  properties: {
+    role: { type: "string", enum: groupRoles },
+    // A custom role of the workspace on `role` as its base (ADR 0089).
+    customRole: { type: ["string", "null"], pattern: uuidField.pattern },
+  },
 } as const;
 
 /** Workspaces the page offers to map a group to, by name. */
@@ -159,13 +164,15 @@ export interface ConsoleContext {
     request: FastifyRequest,
     reply: FastifyReply,
   ) => Promise<FastifyReply | undefined>;
+  /** Whether advanced permissions hold, so a group may give a custom role (ADR 0089). */
+  readonly permissions: Permissions;
 }
 
 /** Days before a token ends that the page warns of it. */
 const warnDays = 30;
 
 export function registerConsole(app: FastifyInstance, context: ConsoleContext): void {
-  const { db, config, events, security, disconnect, whenOn } = context;
+  const { db, config, events, security, disconnect, whenOn, permissions } = context;
   const account = signedIn(db);
   const admins = (what: string) => ({ preHandler: [whenOn, account, instanceAdmin(what)] });
   const actorOf = (request: FastifyRequest): EventActor => accountActor(accountOf(request).id);
@@ -312,9 +319,27 @@ export function registerConsole(app: FastifyInstance, context: ConsoleContext): 
         await db.transaction(async (tx) => {
           const kept = await findDirectory(tx, id, true);
           if (kept === undefined) throw new Refused(404, "There is no such directory.");
-          // What its groups gave becomes each account's own, at the role it has.
+          // What its groups gave becomes each account's own, at the role it has,
+          // with the custom role of the group that gave it, unless one gives
+          // that role as it is built in, which gives more (ADR 0089).
           await tx.query(
-            `UPDATE memberships m SET own_role = NULL
+            `UPDATE memberships m SET own_role = NULL,
+                custom_role = CASE
+                  WHEN EXISTS (
+                    SELECT 1 FROM group_workspaces gw
+                      JOIN group_members gm ON gm.group_id = gw.group_id
+                      JOIN groups g ON g.id = gw.group_id
+                     WHERE g.directory_id = $1 AND gw.workspace_id = m.workspace_id
+                       AND gm.user_id = m.user_id AND gw.role = m.role AND gw.custom_role IS NULL)
+                  THEN NULL
+                  ELSE (
+                    SELECT gw.custom_role FROM group_workspaces gw
+                      JOIN group_members gm ON gm.group_id = gw.group_id
+                      JOIN groups g ON g.id = gw.group_id
+                     WHERE g.directory_id = $1 AND gw.workspace_id = m.workspace_id
+                       AND gm.user_id = m.user_id AND gw.role = m.role
+                     ORDER BY lower(g.name), g.id LIMIT 1)
+                END
               WHERE m.own_role IS NOT NULL
                 AND EXISTS (
                   SELECT 1 FROM group_workspaces gw
@@ -443,9 +468,14 @@ export function registerConsole(app: FastifyInstance, context: ConsoleContext): 
       const { rows } = await db.query(
         `SELECT g.id, g.name, g.external_id,
                 (SELECT count(*)::int FROM group_members gm WHERE gm.group_id = g.id) AS members,
-                coalesce((SELECT json_agg(json_build_object('id', w.id, 'name', w.name, 'role', gw.role)
+                coalesce((SELECT json_agg(json_build_object(
+                                            'id', w.id, 'name', w.name, 'role', gw.role,
+                                            'customRole', CASE WHEN r.id IS NULL THEN NULL
+                                              ELSE json_build_object('id', r.id, 'name', r.name) END)
                                           ORDER BY lower(w.name), w.id)
                             FROM group_workspaces gw JOIN workspaces w ON w.id = gw.workspace_id
+                            LEFT JOIN custom_roles r
+                              ON r.workspace_id = gw.workspace_id AND r.id = gw.custom_role
                            WHERE gw.group_id = g.id), '[]'::json) AS workspaces
            FROM groups g WHERE g.directory_id = $1
           ORDER BY lower(g.name), g.id`,
@@ -505,13 +535,32 @@ export function registerConsole(app: FastifyInstance, context: ConsoleContext): 
     });
   }
 
-  app.put<{ Params: MappingParams; Body: { readonly role: Role } }>(
+  app.put<{
+    Params: MappingParams;
+    Body: { readonly role: Role; readonly customRole?: string | null };
+  }>(
     "/api/admin/directories/:id/groups/:group/workspaces/:workspace",
     { ...admins("map groups to workspaces"), schema: { params: mappingParams, body: mappingBody } },
     (request, reply) =>
-      mapping(request, reply, (tx, changer, group, workspace) =>
-        setMapping(tx, changer, group, workspace, request.body.role),
-      ),
+      mapping(request, reply, async (tx, changer, group, workspace) => {
+        const { role } = request.body;
+        const customRole = request.body.customRole?.toLowerCase() ?? null;
+        // A custom role of the workspace, on the role as its base (ADR 0089).
+        if (customRole !== null) {
+          if (!(await permissions.on(tx))) throw new Refused(409, customRolesOff);
+          const custom = await customRoleOf(tx, workspace, customRole);
+          if (custom === undefined) {
+            throw new Refused(404, "That workspace has no such custom role.");
+          }
+          if (custom.base !== role) {
+            throw new Refused(
+              400,
+              `The role ${custom.name} is based on ${custom.base}: map the group as ${custom.base}.`,
+            );
+          }
+        }
+        return setMapping(tx, changer, group, workspace, role, customRole);
+      }),
   );
 
   app.delete<{ Params: MappingParams }>(

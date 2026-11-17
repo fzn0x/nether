@@ -42,7 +42,11 @@ const roleBody = {
   type: "object",
   required: ["role"],
   additionalProperties: false,
-  properties: { role: { type: "string", enum: roles } },
+  properties: {
+    role: { type: "string", enum: roles },
+    // A custom role of the workspace on `role` as its base (ADR 0089).
+    customRole: { type: ["string", "null"], pattern: uuidField.pattern },
+  },
 } as const;
 
 // Settings by name. The settings check each name and value themselves: a
@@ -115,7 +119,7 @@ export async function usage(db: Database): Promise<Usage> {
 /** The `admin` feature's module: its routes answer only while it is on, and to instance admins. */
 export const adminModule: EnterpriseModule = {
   feature: "admin",
-  plugin: (app, { db, whenOn, disconnect, security, events }) => {
+  plugin: (app, { db, whenOn, disconnect, security, events, permissions }) => {
     const account = signedIn(db);
     app.get(
       "/api/admin/usage",
@@ -145,12 +149,19 @@ export const adminModule: EnterpriseModule = {
       "/api/admin/workspaces/:workspace",
       { schema: { params: workspaceParams }, preHandler: [whenOn, account, seeWorkspaces] },
       async (request, reply) => {
-        const found = await workspaceWithMembers(db, request.params.workspace.toLowerCase());
+        const found = await workspaceWithMembers(
+          db,
+          request.params.workspace.toLowerCase(),
+          await permissions.on(),
+        );
         return found ?? fail(reply, 404, "The server has no such workspace.");
       },
     );
 
-    app.patch<{ Params: { workspace: string; user: string }; Body: { role: Role } }>(
+    app.patch<{
+      Params: { workspace: string; user: string };
+      Body: { role: Role; customRole?: string | null };
+    }>(
       "/api/admin/workspaces/:workspace/members/:user",
       {
         schema: { params: memberParams, body: roleBody },
@@ -159,18 +170,21 @@ export const adminModule: EnterpriseModule = {
       async (request, reply) => {
         const user = request.params.user.toLowerCase();
         const { role } = request.body;
+        const customRole = request.body.customRole?.toLowerCase() ?? null;
         const outcome = await setRole(
           db,
+          permissions,
           request.params.workspace.toLowerCase(),
           user,
           role,
           { account: accountOf(request).id, as: "instance-admin", origin: originOf(request) },
           events,
+          customRole,
         );
         if (typeof outcome !== "string") return fail(reply, outcome[0], outcome[1]);
         // As the workspace's own change does: its apps connect again, checked anew.
         if (outcome === "changed") disconnect(user);
-        return { id: user, role };
+        return { id: user, role, customRole };
       },
     );
 

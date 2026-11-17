@@ -34,24 +34,48 @@ async function mappedWorkspaces(tx: Queryable, group: string): Promise<string[]>
   return rows.map((row) => readText(row, "workspace_id"));
 }
 
-/** Settles each of the accounts' places in each workspace, and gives those whose place changed. */
-function settle(
+/**
+ * Settles each of the accounts' places in each workspace, and gives those
+ * whose place changed; and, where the group gives a custom role, all of
+ * them, as what they may do changes with their role unchanged (ADR 0089).
+ */
+async function settle(
   tx: Queryable,
   changer: GroupChanger,
   group: GroupName,
   workspaces: readonly string[],
   users: Iterable<string>,
 ): Promise<Set<string>> {
+  const accounts = [...users];
   const places: { workspace: string; user: string }[] = [];
-  for (const user of users) {
+  for (const user of accounts) {
     for (const workspace of workspaces) places.push({ workspace, user });
   }
-  return settleMemberships(
+  const changed = await settleMemberships(
     tx,
     places,
     { actor: changer.actor, origin: changer.origin, group },
     changer.events,
   );
+  if (await givesCustomRole(tx, group.id, workspaces)) {
+    for (const user of accounts) changed.add(user);
+  }
+  return changed;
+}
+
+/** Whether a group gives a custom role in any of the workspaces. */
+async function givesCustomRole(
+  tx: Queryable,
+  group: string,
+  workspaces: readonly string[],
+): Promise<boolean> {
+  if (workspaces.length === 0) return false;
+  const { rows } = await tx.query(
+    `SELECT 1 FROM group_workspaces
+      WHERE group_id = $1 AND workspace_id = ANY($2::uuid[]) AND custom_role IS NOT NULL`,
+    [group, workspaces],
+  );
+  return rows.length > 0;
 }
 
 /** Checks each member is an account the directory manages: no group, no one else's account. */
@@ -202,6 +226,8 @@ export async function deleteGroup(
     group.id,
   ]);
   const members = rows.map((row) => readText(row, "user_id")).sort();
+  // A custom role it gave goes with it, though the role may stay (ADR 0089).
+  const gaveCustom = await givesCustomRole(tx, group.id, workspaces);
   await tx.query("DELETE FROM groups WHERE id = $1", [group.id]);
   await events.emit(
     tx,
@@ -213,7 +239,15 @@ export async function deleteGroup(
     },
     origin,
   );
-  return settle(tx, changer, { id: group.id, name: group.name }, workspaces, members);
+  const closing = await settle(
+    tx,
+    changer,
+    { id: group.id, name: group.name },
+    workspaces,
+    members,
+  );
+  if (gaveCustom) for (const user of members) closing.add(user);
+  return closing;
 }
 
 /** A group locked for the rest of the transaction, so two changes to it take turns. */
@@ -240,8 +274,9 @@ export async function lockGroup(
 }
 
 /**
- * Maps a group to a workspace at a role, or changes its role there, and
- * settles its members' places there.
+ * Maps a group to a workspace at a role, or changes its role there, with
+ * the workspace's custom role on it as its base, which the caller checked
+ * (ADR 0089), and settles its members' places there.
  */
 export async function setMapping(
   tx: Queryable,
@@ -249,19 +284,32 @@ export async function setMapping(
   group: GroupRow,
   workspace: string,
   role: Role,
+  customRole: string | null = null,
 ): Promise<Set<string>> {
   const { actor, origin, events } = changer;
   const { rows } = await tx.query(
-    "SELECT role FROM group_workspaces WHERE group_id = $1 AND workspace_id = $2 FOR UPDATE",
+    `SELECT role, custom_role FROM group_workspaces
+      WHERE group_id = $1 AND workspace_id = $2 FOR UPDATE`,
     [group.id, workspace],
   );
   const before = rows[0] === undefined ? null : readText(rows[0], "role");
-  if (before === role) return new Set();
+  const customBefore = rows[0] === undefined ? null : readTextOrNull(rows[0], "custom_role");
+  if (before === role && customBefore === customRole) return new Set();
   await tx.query(
-    `INSERT INTO group_workspaces (group_id, workspace_id, role) VALUES ($1, $2, $3)
-     ON CONFLICT (group_id, workspace_id) DO UPDATE SET role = excluded.role`,
-    [group.id, workspace, role],
+    `INSERT INTO group_workspaces (group_id, workspace_id, role, custom_role)
+     VALUES ($1, $2, $3, $4)
+     ON CONFLICT (group_id, workspace_id)
+     DO UPDATE SET role = excluded.role, custom_role = excluded.custom_role`,
+    [group.id, workspace, role, customRole],
   );
+  const named = async (id: string | null) => {
+    if (id === null) return null;
+    const { rows: found } = await tx.query(
+      "SELECT name FROM custom_roles WHERE workspace_id = $1 AND id = $2",
+      [workspace, id],
+    );
+    return { id, name: readText(found[0], "name") };
+  };
   await events.emit(
     tx,
     {
@@ -269,11 +317,20 @@ export async function setMapping(
       actor,
       workspace,
       target: { type: "group", id: group.id, name: group.name },
-      details: before === null ? { role } : { from: before, role },
+      details: {
+        ...(before === null ? { role } : { from: before, role }),
+        ...(customBefore === customRole
+          ? {}
+          : { customRole: { from: await named(customBefore), to: await named(customRole) } }),
+      },
     },
     origin,
   );
-  return settle(tx, changer, group, [workspace], await groupMembers(tx, group.id));
+  const members = await groupMembers(tx, group.id);
+  const closing = await settle(tx, changer, group, [workspace], members);
+  // What its members may do changed with the custom role, their role or not.
+  if (customBefore !== customRole) for (const user of members) closing.add(user);
+  return closing;
 }
 
 /** Removes a group's mapping to a workspace, and settles its members' places there. */
@@ -285,10 +342,12 @@ export async function removeMapping(
 ): Promise<Set<string> | undefined> {
   const { actor, origin, events } = changer;
   const { rows } = await tx.query(
-    "DELETE FROM group_workspaces WHERE group_id = $1 AND workspace_id = $2 RETURNING role",
+    `DELETE FROM group_workspaces WHERE group_id = $1 AND workspace_id = $2
+     RETURNING role, custom_role`,
     [group.id, workspace],
   );
   if (rows[0] === undefined) return undefined;
+  const gaveCustom = readTextOrNull(rows[0], "custom_role") !== null;
   await events.emit(
     tx,
     {
@@ -300,7 +359,11 @@ export async function removeMapping(
     },
     origin,
   );
-  return settle(tx, changer, group, [workspace], await groupMembers(tx, group.id));
+  const members = await groupMembers(tx, group.id);
+  const closing = await settle(tx, changer, group, [workspace], members);
+  // The custom role it gave goes, their role or not.
+  if (gaveCustom) for (const user of members) closing.add(user);
+  return closing;
 }
 
 async function groupMembers(tx: Queryable, group: string): Promise<string[]> {
