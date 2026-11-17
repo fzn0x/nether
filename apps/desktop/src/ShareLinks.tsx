@@ -2,12 +2,21 @@
 // page and its subpages to anyone with it, in the web app, to read, to
 // comment on or to edit. Those with full access make one, with an expiry
 // and a password if they want, copy it again, and revoke it, which ends
-// the visits it started.
+// the visits it started. The server's data policy may let them only
+// view, or open nothing (ADR 0088): the section says so, and offers only
+// what the policy allows.
 import { type SyntheticEvent, useCallback, useEffect, useState } from "react";
 import { backend } from "./backend.ts";
 import { language, t } from "./messages.ts";
-import { type ShareLink, levelName, makeShareLink, revokeShareLink, shareLinks } from "./server.ts";
-import type { VaultLink } from "./sync.ts";
+import {
+  type LinksPolicy,
+  type ShareLink,
+  levelName,
+  makeShareLink,
+  revokeShareLink,
+  shareLinks,
+} from "./server.ts";
+import { type VaultLink, hostOf } from "./sync.ts";
 
 /** The levels a link can open its page at. */
 const linkLevels = ["view", "comment", "edit"] as const;
@@ -33,7 +42,11 @@ export function ShareLinks(props: {
   const { link, unit, onStatus, onError } = props;
   const { server, workspaceId } = link;
   const [links, setLinks] = useState<readonly ShareLink[]>([]);
+  const [policy, setPolicy] = useState<LinksPolicy>("on");
   const [level, setLevel] = useState<(typeof linkLevels)[number]>("view");
+  // The levels a new link may have, as the policy allows.
+  const levels = policy === "on" ? linkLevels : (["view"] as const);
+  const chosenLevel = levels.some((each) => each === level) ? level : "view";
   const [expires, setExpires] = useState("");
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
@@ -52,7 +65,9 @@ export function ShareLinks(props: {
   );
 
   const load = useCallback(async () => {
-    setLinks(await shareLinks(backend.serverFetch, server, await session(), workspaceId, unit));
+    const found = await shareLinks(backend.serverFetch, server, await session(), workspaceId, unit);
+    setLinks(found.links);
+    setPolicy(found.policy);
   }, [server, session, workspaceId, unit]);
 
   useEffect(() => {
@@ -78,7 +93,7 @@ export function ShareLinks(props: {
     event.preventDefault();
     act(async (token) => {
       const made = await makeShareLink(backend.serverFetch, server, token, workspaceId, unit, {
-        level,
+        level: chosenLevel,
         ...(expires === "" ? {} : { expiresAt: endOf(expires) }),
         ...(password === "" ? {} : { password }),
       });
@@ -95,6 +110,13 @@ export function ShareLinks(props: {
     <section className="share-links" aria-labelledby="share-links-title">
       <h3 id="share-links-title">{t("shareLinks")}</h3>
       <p className="hint">{t("shareLinksIntro")}</p>
+      {policy === "on" ? null : (
+        <p className="hint" id="share-links-policy">
+          {t(policy === "off" ? "shareLinksPolicyOff" : "shareLinksPolicyView", {
+            server: hostOf(server),
+          })}
+        </p>
+      )}
       {links.length === 0 ? null : (
         <ul className="plugin-list">
           {links.map((each) => (
@@ -153,49 +175,52 @@ export function ShareLinks(props: {
           ))}
         </ul>
       )}
-      <form className="share-link-new" onSubmit={make}>
-        <label className="field">
-          {t("accessLevel")}
-          <select
-            value={level}
-            onChange={(event) => {
-              const chosen = linkLevels.find((each) => each === event.target.value);
-              if (chosen !== undefined) setLevel(chosen);
-            }}
-          >
-            {linkLevels.map((each) => (
-              <option key={each} value={each}>
-                {levelName(each)}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="field">
-          {t("shareLinkExpires")}
-          <input
-            type="date"
-            value={expires}
-            min={new Date().toISOString().slice(0, 10)}
-            onChange={(event) => {
-              setExpires(event.target.value);
-            }}
-          />
-        </label>
-        <label className="field">
-          {t("shareLinkPassword")}
-          <input
-            type="password"
-            value={password}
-            autoComplete="new-password"
-            onChange={(event) => {
-              setPassword(event.target.value);
-            }}
-          />
-        </label>
-        <button type="submit" disabled={busy}>
-          {t("shareLinkMake")}
-        </button>
-      </form>
+      {policy === "off" ? null : (
+        <form className="share-link-new" onSubmit={make}>
+          <label className="field">
+            {t("accessLevel")}
+            <select
+              value={chosenLevel}
+              aria-describedby={policy === "view" ? "share-links-policy" : undefined}
+              onChange={(event) => {
+                const chosen = linkLevels.find((each) => each === event.target.value);
+                if (chosen !== undefined) setLevel(chosen);
+              }}
+            >
+              {levels.map((each) => (
+                <option key={each} value={each}>
+                  {levelName(each)}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="field">
+            {t("shareLinkExpires")}
+            <input
+              type="date"
+              value={expires}
+              min={new Date().toISOString().slice(0, 10)}
+              onChange={(event) => {
+                setExpires(event.target.value);
+              }}
+            />
+          </label>
+          <label className="field">
+            {t("shareLinkPassword")}
+            <input
+              type="password"
+              value={password}
+              autoComplete="new-password"
+              onChange={(event) => {
+                setPassword(event.target.value);
+              }}
+            />
+          </label>
+          <button type="submit" disabled={busy}>
+            {t("shareLinkMake")}
+          </button>
+        </form>
+      )}
     </section>
   );
 }
