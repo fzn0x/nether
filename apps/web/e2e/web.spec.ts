@@ -45,6 +45,18 @@ async function violations(page: Page): Promise<string[]> {
   return results.violations.map((violation) => violation.id);
 }
 
+/** Removes every provider the console lists, as a test that adds them leaves the server. */
+async function removeProviders(section: Locator) {
+  const providers = section.getByRole("list").first().getByRole("listitem");
+  while ((await providers.count()) > 0) {
+    const first = providers.first();
+    const name = (await first.getByRole("heading").textContent()) ?? "";
+    await first.getByRole("button", { name: "Remove" }).click();
+    await first.getByRole("button", { name: "Remove" }).click();
+    await expect(section.getByRole("heading", { name, exact: true })).toHaveCount(0);
+  }
+}
+
 async function signIn(page: Page, who: { email: string; password: string }) {
   await page.goto("/");
   await page.getByRole("button", { name: "Sign in" }).click();
@@ -999,6 +1011,80 @@ test("the admin console finds a workspace by a member and sets that member's rol
     await expect(workspaces.getByRole("table")).toContainText("Team");
   } finally {
     await pages.uncheck();
+  }
+  expect(problems).toEqual([]);
+});
+
+test("an instance admin adds a SAML provider in the console, and someone at its domain signs in through it", async ({
+  page,
+  browser,
+}) => {
+  const problems = problemsOf(page);
+  await signIn(page, { email: "ada@example.org", password: "a long password" });
+  await page.goto("/admin");
+  const sso = page
+    .getByRole("region", { name: "Features" })
+    .getByRole("checkbox", { name: "Single sign-on" });
+  await sso.check();
+  const section = page.getByRole("region", { name: "Single sign-on" });
+  try {
+    await expect(section).toContainText("No provider yet.");
+    await section.getByRole("button", { name: "Add a provider" }).click();
+    await section.getByLabel("Short name").fill("corp");
+    await section.getByLabel("Name, as the sign-in button shows it").fill("Corp SSO");
+    await section.getByLabel("Email domains").fill("corp.example");
+    const { xml } = await ask<{ xml: string }>("/saml-metadata");
+    await section.getByLabel("Or its metadata, pasted").fill(xml);
+    expect(await violations(page)).toEqual([]);
+    await section.getByRole("button", { name: "Add it" }).click();
+    await expect(section.getByRole("status")).toHaveText("Corp SSO added.");
+    const corp = section.getByRole("listitem").filter({ hasText: "Corp SSO" });
+    await corp.getByText("What to give the provider").click();
+    await expect(corp).toContainText("http://127.0.0.1:4175/api/sso/corp/saml/acs");
+    await expect(corp).toContainText("BEGIN CERTIFICATE");
+    expect(await violations(page)).toEqual([]);
+
+    // Someone at corp.example, with no account yet, signs in through it.
+    const theirs = await browser.newContext();
+    try {
+      // The provider's page, which signs them in and posts its answer back, as a browser does.
+      await theirs.route("https://idp.example.test/**", async (route) => {
+        const { action, fields } = await ask<{ action: string; fields: Record<string, string> }>(
+          "/saml-answer",
+          { url: route.request().url(), email: "grace@corp.example", name: "Grace Hopper" },
+        );
+        const inputs = Object.entries(fields)
+          .map(([name, value]) => `<input type="hidden" name="${name}" value="${value}">`)
+          .join("");
+        await route.fulfill({
+          contentType: "text/html",
+          body: `<!doctype html><title>Corp</title><form method="post" action="${action}">${inputs}</form><script>document.forms[0].submit()</script>`,
+        });
+      });
+      const other = await theirs.newPage();
+      const theirProblems = problemsOf(other);
+      await other.goto("/");
+      await other.getByRole("button", { name: "Sign in" }).click();
+      const dialog = other.getByRole("dialog", { name: "Account and encryption" });
+      await Promise.all([
+        theirs.waitForEvent("page"),
+        dialog.getByRole("button", { name: "Sign in with Corp SSO", exact: true }).click(),
+      ]);
+      await expect(dialog.getByRole("status")).toContainText("Signed in to");
+      await dialog.getByRole("button", { name: "Done" }).click();
+      await expect(other.getByText("Signed in as Grace Hopper, grace@corp.example")).toBeVisible();
+      expect(theirProblems).toEqual([]);
+    } finally {
+      await theirs.close();
+    }
+
+    // Removed, it is offered no more.
+    await corp.getByRole("button", { name: "Remove" }).click();
+    await corp.getByRole("button", { name: "Remove" }).click();
+    await expect(section.getByRole("status")).toHaveText("Corp SSO removed.");
+  } finally {
+    await removeProviders(section);
+    await sso.uncheck();
   }
   expect(problems).toEqual([]);
 });
