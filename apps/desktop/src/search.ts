@@ -4,7 +4,7 @@
 import type { LinkGraph } from "@nether/graph";
 import { type Filter, type SearchQuery, foldText } from "@nether/search";
 import { type NoteEntry, type Vault, matchEnd, matchStart } from "@nether/storage";
-import { lowerMatchScore } from "./noteLinks.ts";
+import { lowerMatchScore } from "./matchScore.ts";
 
 /** How many notes a search lists at most, and how many the index gives it to filter. */
 const resultLimit = 100;
