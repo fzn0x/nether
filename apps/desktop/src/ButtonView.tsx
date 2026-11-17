@@ -89,6 +89,9 @@ export function ButtonView(props: CodeBlockViewProps) {
   const [running, setRunning] = useState(false);
   const [failure, setFailure] = useState<string | undefined>();
   const [asking, setAsking] = useState<Asking | undefined>();
+  // While a click looks up whether to ask, a second does nothing; the
+  // button keeps its focus, which the question gives back when it closes.
+  const checking = useRef(false);
   if ("problem" in read) {
     return (
       <p className="note-button-problem" role="status">
@@ -138,20 +141,21 @@ export function ButtonView(props: CodeBlockViewProps) {
       run();
       return;
     }
+    if (checking.current) return;
+    checking.current = true;
     // The block's text as clicked, which a Run remembers.
-    setRunning(true);
     const asked = async () => {
       const hash = await blockHash(source);
       return { hash, ask: await mustAsk(vault.settings, note.id, hash, commands) };
     };
-    asked().then(({ hash, ask }) => {
-      if (!ask) {
-        run();
-        return;
-      }
-      setRunning(false);
-      setAsking({ commands, hash });
-    }, failed);
+    asked()
+      .then(({ hash, ask }) => {
+        if (ask) setAsking({ commands, hash });
+        else run();
+      }, failed)
+      .finally(() => {
+        checking.current = false;
+      });
   };
 
   const runAsked = (answer: Asking) => {
