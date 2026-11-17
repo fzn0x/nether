@@ -407,6 +407,7 @@ export class PluginHost {
           menu: command.menu,
           keys: command.keys.filter(canBeShortcut),
           plugin: manifest.id,
+          ...(source.kind === "frame" ? { fromVault: true } : {}),
           enabled: () => true,
           run: () => {
             void this.#run(plugin, command.id);

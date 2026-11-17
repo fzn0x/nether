@@ -340,6 +340,8 @@ for (const [name, connect] of Object.entries(connections)) {
       expect(count?.name()).toBe("Compter les mots");
       expect(count?.menu).toBe("plugins");
       expect(count?.plugin).toBe("word-count");
+      // A built-in plugin's command is the app's own, as a button asks about it.
+      expect(count?.fromVault).toBeUndefined();
       expect(registry.get("word-count:forgotten")?.menu).toBe("note");
       // Keys that cannot be a shortcut are left out.
       expect(registry.defaults()).toEqual({ "word-count:count": ["Mod+Shift+K"] });

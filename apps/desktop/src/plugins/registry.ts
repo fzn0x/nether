@@ -20,6 +20,8 @@ export interface Command {
   readonly danger?: boolean;
   /** The plugin that adds it; none for the app's own. */
   readonly plugin?: string;
+  /** Whether a plugin from the vault's folder adds it, whose code can change (ADR 0072). */
+  readonly fromVault?: boolean;
   /** Whether it can run now: one that cannot shows in its menu, greyed, and not in the palette. */
   readonly enabled: () => boolean;
   readonly run: () => void;
