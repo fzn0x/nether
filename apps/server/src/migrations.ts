@@ -711,6 +711,21 @@ export const migrations: readonly Migration[] = [
   },
   {
     version: 24,
+    name: "data policies for workspaces set apart",
+    sql: `
+      -- The data policy of a workspace an instance admin sets apart from
+      -- every workspace's, which instance_settings keeps under
+      -- policies.data (ADR 0088). Its settings are as the server reads them:
+      -- one it does not know, or that is missing, narrows nothing.
+      CREATE TABLE workspace_policies (
+        workspace_id uuid PRIMARY KEY REFERENCES workspaces (id) ON DELETE CASCADE,
+        policy jsonb NOT NULL,
+        updated_at timestamptz NOT NULL DEFAULT now()
+      );
+    `,
+  },
+  {
+    version: 25,
     name: "work that runs once across nodes, and each node's heartbeat",
     sql: `
       -- Work that runs once across the server's nodes (ADR 0082): each job's

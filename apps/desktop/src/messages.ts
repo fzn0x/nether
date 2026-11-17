@@ -998,6 +998,26 @@ export const messages = {
     "As https://llm.example.com/v1. A provider's address must be one, or under one.",
   adminEndpointsSaved: "Saved: AI goes only to these addresses.",
   adminEndpointsUnlocked: "Saved: nothing is locked.",
+  adminDataPolicies: "Data policies",
+  adminDataPoliciesIntro:
+    "How far this server's workspaces are shared in public, and whether their text leaves it by export. A workspace's owners keep their own switches; a policy only narrows them.",
+  adminEveryWorkspace: "Every workspace",
+  adminLinks: "Share links",
+  adminLinksOn: "Open at any level",
+  adminLinksView: "View only",
+  adminLinksOff: "Off",
+  adminSites: "Serve published sites",
+  adminSitesHint: "Off: no site is served or published. The sites are kept for when it is on.",
+  adminExport: "Allow export",
+  adminExportHint:
+    "Off: the public API gives no notes' text, rows or search passages, and the apps offer no export. A desktop vault's files stay on its device.",
+  adminUseEvery: "Use every workspace's",
+  adminSetApartWhich: "Set a workspace apart",
+  adminChooseWorkspace: "Choose a workspace",
+  adminSetApart: "Set apart",
+  adminPolicySaved: "Saved the policy for {name}.",
+  adminPolicySetApart: "{name} is set apart, with every workspace's policy to start from.",
+  adminPolicyJoined: "{name} uses every workspace's policy again.",
   // The console's audit log (ADR 0081).
   adminAudit: "Audit log",
   adminAuditIntro:

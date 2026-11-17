@@ -258,7 +258,8 @@ export interface SearchResult {
 /**
  * Searches the notes an account may open, in every workspace it is a member
  * of that the server can read, or in `only` that one; names the encrypted
- * ones it could not.
+ * ones it could not. `searched`, when given, leaves out each workspace it
+ * says no to.
  */
 export async function search(
   db: Queryable,
@@ -266,6 +267,7 @@ export async function search(
   text: string,
   limit = maxResults,
   only?: string,
+  searched?: (workspace: string) => Promise<boolean>,
 ): Promise<{ readonly results: SearchResult[]; readonly encrypted: string[] }> {
   const { rows: workspaces } = await db.query(
     `SELECT w.id, w.name, w.encryption FROM memberships m
@@ -283,6 +285,7 @@ export async function search(
       encrypted.push(readText(row, "name"));
       continue;
     }
+    if (searched !== undefined && !(await searched(id))) continue;
     for (const unit of (await accessible(db, userId, id)).levels.keys()) {
       pairs.push({ workspace: id, unit });
     }

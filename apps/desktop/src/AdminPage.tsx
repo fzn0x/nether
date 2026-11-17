@@ -7,7 +7,7 @@
 // page does.
 import { type ReactNode, useCallback, useEffect, useState } from "react";
 import { NodesSection } from "./AdminNodes.tsx";
-import { AiEndpointsPage } from "./AdminPolicies.tsx";
+import { AiEndpointsPage, DataPoliciesPage } from "./AdminPolicies.tsx";
 import { SecurityPage } from "./AdminSecurity.tsx";
 import { SsoPage } from "./AdminSso.tsx";
 import { WorkspacesPage } from "./AdminWorkspaces.tsx";
@@ -269,7 +269,12 @@ export function AdminPage() {
             <p className="hint">{t("adminConsoleOff")}</p>
           )}
           {ssoOn ? <SsoPage /> : null}
-          {policiesOn ? <AiEndpointsPage /> : null}
+          {policiesOn ? (
+            <>
+              <AiEndpointsPage />
+              <DataPoliciesPage />
+            </>
+          ) : null}
           {auditOn ? <AdminAudit /> : null}
         </>
       ) : null}

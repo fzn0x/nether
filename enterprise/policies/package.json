@@ -2,7 +2,7 @@
   "name": "@nether/enterprise-policies",
   "version": "0.0.0",
   "private": true,
-  "description": "Data policies, beginning with the approved AI endpoints every Nether app keeps to (ADR 0086).",
+  "description": "Data policies: the approved AI endpoints every Nether app keeps to (ADR 0086), and public sharing and export per workspace (ADR 0088).",
   "license": "AGPL-3.0-or-later",
   "type": "module",
   "exports": {
