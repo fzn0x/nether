@@ -28,6 +28,7 @@ import {
   vaultDocument,
   writesAt,
 } from "./units.ts";
+import { socketVisitToken, visitOf, visitPrefix, visitor } from "./links.ts";
 import { membership } from "./workspaces.ts";
 
 const uuid = "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}";
@@ -201,18 +202,38 @@ export async function registerSync(app: FastifyInstance, db: Database): Promise<
       // One answer for each, so a refusal tells nothing of the workspace. An
       // encrypted workspace syncs through the relay, never here, so its
       // notes are never stored in plain text.
-      if (account === undefined || name === undefined || member?.encryption !== "none") {
-        throw new Error("Sign in, as a member of this document's workspace.");
-      }
+      const refused = "Sign in, as a member of this document's workspace.";
+      if (name === undefined) throw new Error(refused);
       const unit = await unitOfDocument(db, name.workspaceId, name.document);
-      const level = (await accessible(db, account.id, name.workspaceId)).levels.get(unit);
+      if (account !== undefined && member?.encryption === "none") {
+        const level = (await accessible(db, account.id, name.workspaceId)).levels.get(unit);
+        if (level !== undefined) {
+          // A note's comments take comments from those who may comment, and edit or more.
+          const writes = isComments(name.document) ? level !== "view" : writesAt(level);
+          if (!writes) connectionConfig.readOnly = true;
+          return { userId: account.id };
+        }
+      }
+      // A share link's visit opens its page's unit alone, read-only for a
+      // view link, and not its comments (ADR 0071).
+      const visit = await visitOf(
+        db,
+        token === ""
+          ? socketVisitToken(requestHeaders)
+          : token.startsWith(visitPrefix)
+            ? token
+            : undefined,
+      );
+      if (
+        visit?.workspace === name.workspaceId &&
+        visit.unit === unit &&
+        !(isComments(name.document) && visit.level === "view")
+      ) {
+        connectionConfig.readOnly = true;
+        return { userId: visitor(visit.link) };
+      }
       // A document of a unit the account may not open is refused as one not there.
-      if (level === undefined)
-        throw new Error("Sign in, as a member of this document's workspace.");
-      // A note's comments take comments from those who may comment, and edit or more.
-      const writes = isComments(name.document) ? level !== "view" : writesAt(level);
-      if (!writes) connectionConfig.readOnly = true;
-      return { userId: account.id };
+      throw new Error(refused);
     },
 
     async onLoadDocument({ documentName, document }) {

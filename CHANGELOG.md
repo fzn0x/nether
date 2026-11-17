@@ -129,6 +129,12 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   highlights in yellow, red, blue or purple, and each recolored from the
   list. The PDF's own outline shows beside its pages, its links to its
   pages and to the web work, and Back returns from where one was followed.
+- Share links, first part: a page shared on its own gets links that open
+  it, with its subpages and their images, to anyone who has one, in the
+  web app, to read, with no account. A link can expire and have a
+  password; those with full access make, copy and revoke them in the
+  Share dialog, and revoking one ends what it opened
+  ([ADR 0071](docs/adr/0071-a-share-link-opens-one-shared-page-to-anyone-with-it-through-the-web-app.md)).
 
 ### Changed
 
