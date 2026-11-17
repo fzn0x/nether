@@ -1339,6 +1339,15 @@ export const messages = {
   phoneSidebarClose: "Close notes and menus",
   movePropertyUp: "Move {name} up",
   movePropertyDown: "Move {name} down",
+  // The mobile apps (ADR 0087).
+  mobileNewVault: "New vault",
+  mobileVaultName: "Name",
+  mobileVaultDefault: "Notes",
+  mobileNewVaultHint:
+    "A vault is a folder of Markdown notes on this phone. Opening a name again finds its notes.",
+  mobileExportLater: "Exports come to the phone with the share sheet, in a later version.",
+  mobileSignInLater: "Signing in to a server comes to the phone in a later version.",
+  mobileAiLater: "AI comes to the phone in a later version.",
   mergeNoteTitle: "Merge {name} into another note",
   mergeNoteWhat:
     "{name}'s text goes after the other note's, its properties join the other's, links to it lead to the other, and it moves to the trash.",

@@ -20,6 +20,7 @@ import { type Exporter, type VaultMedia, backend } from "./backend.ts";
 import { CodeOutput } from "./CodeOutput.tsx";
 import { PluginBlockOutput } from "./PluginBlockOutput.tsx";
 import { CommentsPanel } from "./CommentsPanel.tsx";
+import { commandShown } from "./features.ts";
 import { t } from "./messages.ts";
 import { ariaKeys, formatKeys } from "./shortcuts.ts";
 import { linkPreviews } from "./linkPreviews.ts";
@@ -417,15 +418,17 @@ export default function NoteView(props: {
               >
                 {t("sourceMode")}
               </button>
-              <button
-                type="button"
-                className="quiet"
-                aria-haspopup="dialog"
-                title={t("exportHint")}
-                onClick={onExport}
-              >
-                {t("export")}
-              </button>
+              {commandShown("export") ? (
+                <button
+                  type="button"
+                  className="quiet"
+                  aria-haspopup="dialog"
+                  title={t("exportHint")}
+                  onClick={onExport}
+                >
+                  {t("export")}
+                </button>
+              ) : null}
               <button
                 type="button"
                 className="quiet"
