@@ -29,7 +29,8 @@ test("an owner changes a role, removes a member, and invites by a link", async (
   let people = [
     { ...ada, role: "owner" },
     { id: "u2", name: "Bea", email: "bea@example.org", role: "member" },
-    { id: "u3", name: "Cal", email: "cal@example.org", role: "member" },
+    // Deactivated by the organization's directory (ADR 0085).
+    { id: "u3", name: "Cal", email: "cal@example.org", role: "member", deactivated: true },
   ];
   let waiting: object[] = [];
   const sent = await fakeServer(page, {
@@ -71,6 +72,10 @@ test("an owner changes a role, removes a member, and invites by a link", async (
   const dialog = page.getByRole("dialog", { name: "Members of Team" });
   const list = dialog.getByRole("list", { name: "Members" });
   await expect(list.getByRole("listitem")).toHaveCount(3);
+  await expect(list.getByRole("listitem").filter({ hasText: "Cal" })).toContainText("Deactivated");
+  await expect(list.getByRole("listitem").filter({ hasText: "Bea" })).not.toContainText(
+    "Deactivated",
+  );
   expect(await violations(page)).toEqual([]);
 
   await dialog.getByRole("combobox", { name: "Role of Bea" }).selectOption("guest");

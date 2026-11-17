@@ -48,6 +48,11 @@ into a heading, a list, a quote or code, moves the block up or down,
 duplicates it or deletes it. The menu works from the keyboard too: the
 arrow keys move through it, Enter picks, Escape closes it.
 
+On a phone there is no room for the handle. While you write, a bar over
+the keyboard moves the block you are in up or down, duplicates it or
+deletes it, beside its buttons for blocks, links, bold, italic, code and
+lists.
+
 Each of these has a shortcut for the block the caret is in. On a Mac, use
 Cmd for Ctrl.
 

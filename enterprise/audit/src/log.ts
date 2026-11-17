@@ -89,7 +89,9 @@ export function rowOf(row: Row): AuditRow {
     outcome: outcome === "failure" ? "failure" : "success",
     reason: readTextOrNull(row, "reason"),
     actorType:
-      actor === "visitor" || actor === "anonymous" || actor === "system" ? actor : "account",
+      actor === "visitor" || actor === "anonymous" || actor === "directory" || actor === "system"
+        ? actor
+        : "account",
     actorId: readTextOrNull(row, "actor_id"),
     actorName: readTextOrNull(row, "actor_name"),
     actorEmail: readTextOrNull(row, "actor_email"),
@@ -215,11 +217,16 @@ async function append(tx: Queryable, entry: Entry, key: ChainKey): Promise<Audit
     outcome: entry.outcome ?? "success",
     reason: entry.reason ?? null,
     actorType: actor.kind,
-    actorId: actor.kind === "account" ? actor.id : actor.kind === "visitor" ? actor.link : null,
+    actorId:
+      actor.kind === "account" || actor.kind === "directory"
+        ? actor.id
+        : actor.kind === "visitor"
+          ? actor.link
+          : null,
     actorName:
       actor.kind === "account"
         ? readTextOrNull(account, "name")
-        : actor.kind === "visitor"
+        : actor.kind === "visitor" || actor.kind === "directory"
           ? actor.name
           : null,
     actorEmail:

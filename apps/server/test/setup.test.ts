@@ -49,9 +49,15 @@ describe("migrate", () => {
       "backup_state",
       "cluster_jobs",
       "cluster_nodes",
+      "directories",
+      "directory_accounts",
+      "directory_domains",
       "document_versions",
       "documents",
       "encrypted_updates",
+      "group_members",
+      "group_workspaces",
+      "groups",
       "identities",
       "instance_settings",
       "invitations",
@@ -106,6 +112,49 @@ describe("migrate", () => {
         is_nullable: "NO",
       },
     ]);
+  });
+
+  it("keeps when an account was deactivated, and a membership's own role beside its groups'", async () => {
+    const db = await database();
+    await migrate(db);
+    const { rows } = await db.query(
+      `SELECT table_name, column_name, data_type, is_nullable FROM information_schema.columns
+        WHERE table_schema = current_schema()
+          AND ((table_name = 'users' AND column_name = 'deactivated_at')
+            OR (table_name = 'memberships' AND column_name = 'own_role'))
+        ORDER BY table_name, column_name`,
+    );
+    expect(rows).toEqual([
+      { table_name: "memberships", column_name: "own_role", data_type: "text", is_nullable: "YES" },
+      {
+        table_name: "users",
+        column_name: "deactivated_at",
+        data_type: "timestamp with time zone",
+        is_nullable: "YES",
+      },
+    ]);
+    // A row made as before keeps an empty own role, and no other value is taken.
+    const user = "00000000-0000-4000-8000-000000000001";
+    const workspace = "00000000-0000-4000-8000-000000000002";
+    await db.query("INSERT INTO users (id, email, email_key, name) VALUES ($1, $2, $2, 'A')", [
+      user,
+      "a@example.org",
+    ]);
+    await db.query("INSERT INTO workspaces (id, name) VALUES ($1, 'W')", [workspace]);
+    await db.query(
+      "INSERT INTO memberships (workspace_id, user_id, role) VALUES ($1, $2, 'member')",
+      [workspace, user],
+    );
+    expect((await db.query("SELECT own_role FROM memberships")).rows).toEqual([{ own_role: null }]);
+    await expect(db.query("UPDATE memberships SET own_role = 'viewer'")).rejects.toThrow();
+    // A group gives no guest.
+    await db.query("INSERT INTO groups (id, name) VALUES ($1, 'Staff')", [user]);
+    await expect(
+      db.query(
+        "INSERT INTO group_workspaces (group_id, workspace_id, role) VALUES ($1, $2, 'guest')",
+        [user, workspace],
+      ),
+    ).rejects.toThrow();
   });
 
   it("runs on a database a newer server migrated, unless a step since needs a newer server", async () => {

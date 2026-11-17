@@ -17,7 +17,7 @@ interface AuditEvent {
   readonly outcome: "success" | "failure";
   readonly reason: string | null;
   readonly actor: {
-    readonly type: "account" | "visitor" | "anonymous" | "system";
+    readonly type: "account" | "visitor" | "anonymous" | "directory" | "system";
     readonly id: string | null;
     readonly name: string | null;
     readonly email: string | null;
@@ -110,6 +110,9 @@ function whoOf(event: AuditEvent): string {
   if (actor.type === "system") return t("adminAuditSystem");
   if (actor.type === "visitor") return actor.name ?? t("adminAuditVisitor");
   if (actor.type === "anonymous") return actor.email ?? t("adminAuditAnonymous");
+  if (actor.type === "directory") {
+    return t("adminAuditDirectory", { name: actor.name ?? actor.id ?? "" });
+  }
   const name = actor.name ?? actor.id ?? "";
   return actor.email === null ? name : `${name} <${actor.email}>`;
 }

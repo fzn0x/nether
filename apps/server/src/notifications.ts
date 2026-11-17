@@ -186,7 +186,8 @@ export function registerNotifications(
       for (const id of people) {
         if (!(await accessible(db, id, workspaceId)).levels.has(unit)) continue;
         const { rows } = await db.query(
-          "SELECT id, name, email, email_notifications FROM users WHERE id = $1",
+          `SELECT id, name, email, email_notifications, deactivated_at IS NOT NULL AS deactivated
+             FROM users WHERE id = $1`,
           [id],
         );
         const row = rows[0];
@@ -195,7 +196,8 @@ export function registerNotifications(
           id: readText(row, "id"),
           name: readText(row, "name"),
           email: readText(row, "email"),
-          emailed: readBoolean(row, "email_notifications"),
+          // A deactivated account gets no mail (ADR 0085).
+          emailed: readBoolean(row, "email_notifications") && !readBoolean(row, "deactivated"),
         });
       }
       await db.transaction(async (tx) => {

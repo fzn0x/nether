@@ -6,6 +6,7 @@
 // changing size, closes it too.
 import { type KeyboardEvent, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { Icon } from "./icons.ts";
+import { matches, phoneQuery } from "./phone.ts";
 import { ariaKeys, formatKeys } from "./shortcuts.ts";
 
 export interface MenuItem {
@@ -56,6 +57,8 @@ export function ContextMenu(props: {
   // What had the focus when the menu opened, which has it again when Escape closes it.
   const [opener] = useState(() => document.activeElement);
   const [place, setPlace] = useState(at);
+  // On a phone, a menu is a sheet along the bottom of the window, where a thumb reaches it (ADR 0087).
+  const [sheet] = useState(() => matches(phoneQuery));
 
   const items = () => [...(menu.current?.querySelectorAll<HTMLElement>('[role="menuitem"]') ?? [])];
 
@@ -63,6 +66,10 @@ export function ContextMenu(props: {
   useLayoutEffect(() => {
     const element = menu.current;
     if (element === null) return;
+    if (sheet) {
+      items()[0]?.focus();
+      return;
+    }
     const { width, height } = element.getBoundingClientRect();
     const x = at.x + width > innerWidth ? Math.max(0, at.x - width) : at.x;
     const y = at.y + height > innerHeight ? Math.max(0, at.y - height) : at.y;
@@ -81,13 +88,14 @@ export function ContextMenu(props: {
     };
     document.addEventListener("pointerdown", outside, true);
     addEventListener("blur", close);
-    addEventListener("resize", close);
+    // A sheet stays as the on-screen keyboard comes and goes, which resizes the window.
+    if (!sheet) addEventListener("resize", close);
     return () => {
       document.removeEventListener("pointerdown", outside, true);
       removeEventListener("blur", close);
       removeEventListener("resize", close);
     };
-  }, [onClose, anchor]);
+  }, [onClose, anchor, sheet]);
 
   const closeAndReturn = () => {
     onClose();
@@ -120,10 +128,10 @@ export function ContextMenu(props: {
   return (
     <div
       ref={menu}
-      className="context-menu"
+      className={sheet ? "context-menu sheet" : "context-menu"}
       role="menu"
       aria-label={label}
-      style={{ left: place.x, top: place.y }}
+      style={sheet ? undefined : { left: place.x, top: place.y }}
       onKeyDown={onKeyDown}
       onContextMenu={(event) => {
         event.preventDefault();

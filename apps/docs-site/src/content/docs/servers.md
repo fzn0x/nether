@@ -97,6 +97,13 @@ syncs it as the desktop app does. Make a new workspace from the same page.
 - **Signing in.** Invitation links and the links in sign-in emails open
   the web app. **Account and encryption** signs out, and turns on or
   unlocks end-to-end encryption.
+- **On a phone.** One note shows at a time, under a bar: its menu button
+  opens your notes and the menus as a drawer, beside the buttons for
+  **Open a note** and the command palette. Menus and dialogs open from the
+  bottom of the screen. While you write, a bar over the keyboard inserts
+  blocks and links, makes text bold, italic or code, makes and indents
+  lists, moves, duplicates or deletes the block you are in, and undoes.
+  A property moves up or down from the menu its handle opens.
 
 What a browser keeps goes when its site data is cleared; what has synced
 stays on the server.
@@ -107,7 +114,7 @@ stays on the server.
 workspace the vault syncs with, and each one's role:
 
 - **Owners** do everything, including making other owners and admins. A
-  workspace always keeps one.
+  workspace always keeps one whose account is active.
 - **Admins** invite people and change or remove members and guests.
 - **Members** read and write every note.
 - **Guests** only read.
@@ -125,6 +132,10 @@ this vault** with the workspace to fetch its notes.
 
 **Leave the workspace** takes you out of it. The vault keeps its notes and
 stops syncing.
+
+Someone your organization's directory has deactivated shows as
+**Deactivated**. They sign in no way until it turns them back on, and keep
+their place and role meanwhile, so they come back as they were.
 
 ## Editing together
 

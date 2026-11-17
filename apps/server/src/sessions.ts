@@ -5,6 +5,8 @@
 // began that the security settings give now (ADR 0084), 30 and 90 unless
 // changed, whichever comes first. Each keeps how it began, and a guard
 // may end one that began a way its account may no longer use (ADR 0080).
+// A deactivated account starts none, and its sessions end with it (ADR
+// 0085).
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import {
@@ -32,6 +34,7 @@ import {
   originOf,
   sessionMethodOf,
 } from "./events.ts";
+import { deactivatedRefusal } from "./accounts.ts";
 import { hashPassword, verifyPassword } from "./passwords.ts";
 import type { AiEndpoints } from "./aiEndpoints.ts";
 import { type DataPolicies, appsPolicy } from "./dataPolicies.ts";
@@ -95,10 +98,11 @@ export interface NewSession {
 /**
  * Starts a session for a user, as signing in does, keeping how it began,
  * and tells of it in the same transaction (ADR 0081): through a single
- * sign-on provider, `provider` is its ID. The server's guards are asked
- * first (ADR 0080), through the same transaction: a refusal throws
- * SignInRefused and starts nothing, and the caller tells of it with
- * `refusedSignIn` once its transaction is undone.
+ * sign-on provider, `provider` is its ID. A deactivated account is
+ * refused (ADR 0085), and the server's guards are asked (ADR 0080),
+ * through the same transaction: a refusal throws SignInRefused and starts
+ * nothing, and the caller tells of it with `refusedSignIn` once its
+ * transaction is undone.
  */
 export async function startSession(
   db: Queryable,
@@ -107,7 +111,10 @@ export async function startSession(
   start: SessionStart,
 ): Promise<NewSession> {
   const { method, provider, events, guards } = start;
-  const users = await db.query("SELECT email, instance_admin FROM users WHERE id = $1", [userId]);
+  const users = await db.query(
+    "SELECT email, instance_admin, deactivated_at IS NOT NULL AS deactivated FROM users WHERE id = $1",
+    [userId],
+  );
   const attempt = {
     userId,
     email: readText(users.rows[0], "email"),
@@ -115,7 +122,10 @@ export async function startSession(
     method,
     provider: provider ?? null,
   };
-  const refusal = await guards.check(attempt, db);
+  // A deactivated account starts none, whichever way it came in.
+  const refusal = readBoolean(users.rows[0], "deactivated")
+    ? deactivatedRefusal
+    : await guards.check(attempt, db);
   if (refusal !== undefined) throw new SignInRefused(refusal, attempt);
   const token = newToken();
   const client = (request.headers["user-agent"] ?? "").slice(0, 200);
@@ -139,8 +149,9 @@ export async function startSession(
 }
 
 /**
- * Tells the server's events of a sign-in a guard refused, as a failure
- * with its reason (ADR 0081), through `db`, not the transaction undone.
+ * Tells the server's events of a sign-in a guard refused, or that a
+ * deactivated account tried, as a failure with its reason (ADR 0081),
+ * through `db`, not the transaction undone.
  */
 export async function refusedSignIn(
   db: Queryable,
@@ -169,14 +180,14 @@ export function bearerToken(header: string | undefined): string | undefined {
 }
 
 /**
- * The account a token signs in, while its session lasts and the server's
- * guards let it: one they refuse, as one begun with a password once single
- * sign-on is required, ends here.
+ * The account a token signs in, while its session lasts, its account is
+ * not deactivated, and the server's guards let it: one they refuse, as
+ * one begun with a password once single sign-on is required, ends here.
  */
 export async function sessionAccount(db: Database, token: string): Promise<Account | undefined> {
   const { rows } = await db.query(
     `SELECT s.id AS session_id, s.created_at, s.used_at, s.method, s.provider,
-            u.id, u.name, u.email, u.instance_admin
+            u.id, u.name, u.email, u.instance_admin, u.deactivated_at IS NOT NULL AS deactivated
        FROM sessions s JOIN users u ON u.id = s.user_id
       WHERE s.token_hash = $1
         AND ${lasting}`,
@@ -187,16 +198,19 @@ export async function sessionAccount(db: Database, token: string): Promise<Accou
   const sessionId = readText(row, "session_id");
   const method = sessionMethodOf(readTextOrNull(row, "method"));
   const provider = readTextOrNull(row, "provider");
-  const refusal = await signInGuards(db).check(
-    {
-      userId: readText(row, "id"),
-      email: readText(row, "email"),
-      instanceAdmin: readBoolean(row, "instance_admin"),
-      method,
-      provider,
-    },
-    db,
-  );
+  // One started as its account was deactivated ends here, as one a guard refuses.
+  const refusal = readBoolean(row, "deactivated")
+    ? deactivatedRefusal
+    : await signInGuards(db).check(
+        {
+          userId: readText(row, "id"),
+          email: readText(row, "email"),
+          instanceAdmin: readBoolean(row, "instance_admin"),
+          method,
+          provider,
+        },
+        db,
+      );
   if (refusal !== undefined) {
     await db.query("DELETE FROM sessions WHERE id = $1", [sessionId]);
     return undefined;
@@ -347,6 +361,8 @@ const passwordBody = {
 
 export const wrongPassword = "That password is not this account's.";
 
+const noMatch = "That email address and password do not match an account.";
+
 /**
  * The routes of signing in and out, of one's sessions, and of one's
  * account. The security settings give the sign-in limits; the account's
@@ -401,7 +417,7 @@ export function registerSessions(
       // tells whether the password was right.
       const refused = () =>
         required === undefined
-          ? fail(reply, 401, "That email address and password do not match an account.")
+          ? fail(reply, 401, noMatch)
           : useProvider(reply, request.body.email, required);
       if (row === undefined || hash === null || !matches) {
         // The log may say which, as only instance admins read it.
@@ -435,6 +451,8 @@ export function registerSessions(
           startSession(tx, id, request, { method: "password", events, guards }),
         );
       } catch (error) {
+        // A deactivated account answers as a wrong password does, so a
+        // password cannot be tested here.
         if (!(error instanceof SignInRefused)) throw error;
         await refusedSignIn(db, events, request, error);
         return refused();

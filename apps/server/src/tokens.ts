@@ -24,6 +24,7 @@ import {
   wrongPassword,
 } from "./sessions.ts";
 import { signInGuards } from "./signIns.ts";
+import { deactivatedRefusal } from "./accounts.ts";
 import { membership } from "./workspaces.ts";
 import { type EventActor, type ServerEvents, accountActor, originOf } from "./events.ts";
 
@@ -92,13 +93,15 @@ const tokenColumns = `t.id, t.name, t.access, t.hint, t.workspace_id, w.name AS 
   t.expires_at, t.created_at, t.used_at`;
 
 /**
- * The caller a personal access token signs in, while it lasts and the
- * server's guards let it, as they let the session that made it.
+ * The caller a personal access token signs in, while it lasts, its account
+ * is not deactivated, and the server's guards let it, as they let the
+ * session that made it.
  */
 export async function tokenCaller(db: Database, token: string): Promise<ApiCaller | undefined> {
   const { rows } = await db.query(
     `SELECT ${tokenColumns}, t.method, t.provider,
-            u.id AS user_id, u.name AS user_name, u.email, u.instance_admin
+            u.id AS user_id, u.name AS user_name, u.email, u.instance_admin,
+            u.deactivated_at IS NOT NULL AS deactivated
        FROM api_tokens t
        JOIN users u ON u.id = t.user_id
        LEFT JOIN workspaces w ON w.id = t.workspace_id
@@ -109,16 +112,19 @@ export async function tokenCaller(db: Database, token: string): Promise<ApiCalle
   if (row === undefined) return undefined;
   const info = tokenInfo(row);
   const userId = readText(row, "user_id");
-  const refusal = await signInGuards(db).check(
-    {
-      userId,
-      email: readText(row, "email"),
-      instanceAdmin: readBoolean(row, "instance_admin"),
-      method: sessionMethodOf(readTextOrNull(row, "method")),
-      provider: readTextOrNull(row, "provider"),
-    },
-    db,
-  );
+  // One made as its account was deactivated ends here, as one a guard refuses.
+  const refusal = readBoolean(row, "deactivated")
+    ? deactivatedRefusal
+    : await signInGuards(db).check(
+        {
+          userId,
+          email: readText(row, "email"),
+          instanceAdmin: readBoolean(row, "instance_admin"),
+          method: sessionMethodOf(readTextOrNull(row, "method")),
+          provider: readTextOrNull(row, "provider"),
+        },
+        db,
+      );
   if (refusal !== undefined) {
     await db.query("DELETE FROM api_tokens WHERE id = $1", [info.id]);
     return undefined;

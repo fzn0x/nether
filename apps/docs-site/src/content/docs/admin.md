@@ -70,7 +70,8 @@ part of a member's name or email address, and choose **Find**.
 Each workspace shows:
 
 - its name, and **End-to-end encrypted** when it is;
-- its **Owners**, by name;
+- its **Owners**, by name, each marked **(deactivated)** when their
+  account is;
 - how many **Members** it has, guests too;
 - its **Notes**: **Encrypted** for an encrypted workspace, whose notes the
   server cannot read;
@@ -83,12 +84,14 @@ The console never shows a note's title or text.
 ### Giving a workspace a new owner
 
 Choose a workspace's name to see its members: each one's name, email,
-role and the day they joined. Set a member's **Role** there, to owner,
+role and the day they joined, and **Deactivated** beside an account that
+signs in no way. Set a member's **Role** there, to owner,
 admin, member or guest. This is how a workspace whose owners have left
 gets a new one.
 
-- A workspace keeps at least one owner: make someone else an owner first,
-  then change the last one's role.
+- A workspace keeps at least one active owner: make someone else an owner
+  first, then change the last one's role. An owner whose account is
+  deactivated does not count.
 - The member's apps connect again at once, and work by the new role.
 - The console does not add or remove members, and does not make you one.
   A workspace's owners invite and remove people, as before.
@@ -339,9 +342,13 @@ server cannot be reached. The **Share** dialog offers only view links
 while links may only view, and says why it offers no link or site when
 they are off.
 
-The apps' trash days, and legal hold in the apps' trash, come in the
-next version: until then the apps keep each vault's own trash days. A
-desktop vault's files are on its device, the person's own: no
+The apps keep the trash to it too: a vault linked to the workspace keeps
+its trash for the policy's days in place of its own, and, on legal hold,
+deletes nothing in it for good and offers no **Delete for good** or
+**Empty trash**, saying why. The app asks your server a little after the
+vault opens, before it purges, and holds to its last answer while the
+server cannot be reached. A desktop vault's files are on its device, the
+person's own: no
 policy stops another program from reading them. Device management on your
 organization's computers is the tool for that.
 

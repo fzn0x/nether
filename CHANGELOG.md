@@ -375,6 +375,35 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   workspace on legal hold is purged, the audit log purges nothing while
   any workspace is on hold, `/api/me` gives the apps each workspace's
   trash days and hold, and each change of a policy is in the audit log.
+  The apps keep their trash to it: a vault linked to a workspace keeps its
+  trash for the policy's days, and on legal hold deletes nothing for good
+  and offers no Delete for good or Empty trash, saying why. The trash and
+  the vault's own history are purged half a minute after a vault opens,
+  not as it opens, once the app has asked the server.
+- The page laid out for phones, the mobile apps' first part, in the web
+  app first: below 40rem, one note shows under a bar with the drawer's
+  button, its title, the quick switcher and the palette; the sidebar is a
+  drawer over the note, which closes as a note opens; menus and dialogs
+  are sheets along the bottom, above the on-screen keyboard; and while
+  writing, a bar over the keyboard inserts blocks and links, formats,
+  makes and indents lists, moves, duplicates and deletes the block, and
+  undoes. On a coarse pointer every control is at least 48 by 48 pixels,
+  and a property's handle opens a menu that moves it up or down, with no
+  drag. The phone's parts load only at a phone's width
+  ([ADR 0087](docs/adr/0087-the-mobile-apps-run-the-shared-page-in-capacitor-with-each-vaults-files-and-index-on-the-phone.md)).
+- Provisioning, first part: an account can be deactivated, which the
+  server enforces whether the `scim` feature is on or off. It signs in no
+  way: a password answers as a wrong one, no email code is sent, and a
+  provider's sign-in says the account is deactivated. Its sessions, codes
+  and API tokens end with it, while it keeps its workspaces, roles, grants
+  and keys, and comes back as it was. It does not count as a workspace's
+  owner, waits for no key and gets no mail, and members' lists and the
+  console mark it **Deactivated**. The server's last active instance admin
+  is never deactivated. A membership keeps its own role beside the roles
+  its groups give, and core works it out from both; the tables of
+  directories, their accounts and their groups are in place for the SCIM
+  server and the LDAP pull that follow
+  ([ADR 0085](docs/adr/0085-a-directory-provisions-accounts-and-groups-by-scim-or-an-ldap-pull-and-deprovisioning-deactivates-before-it-removes.md)).
 
 ### Changed
 

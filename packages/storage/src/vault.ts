@@ -776,9 +776,12 @@ export class Vault {
     });
   }
 
-  /** Deletes for good what has been in the trash longer than the vault keeps it; returns how many. */
-  async purgeTrash(): Promise<number> {
-    const days = await this.trashDays();
+  /**
+   * Deletes for good what has been in the trash longer than the vault keeps
+   * it, or than `keepDays` when a policy sets them; returns how many.
+   */
+  async purgeTrash(keepDays?: number): Promise<number> {
+    const days = keepDays ?? (await this.trashDays());
     return this.emptyTrash(this.#now() - days * dayLength);
   }
 

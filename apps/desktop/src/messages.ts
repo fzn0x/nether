@@ -423,6 +423,10 @@ export const messages = {
   eraseNamed: "Delete {name} for good",
   confirmErase: "Delete {name} for good?",
   emptyTrash: "Empty trash",
+  trashHeld:
+    "{server} holds this workspace: nothing in its trash is deleted for good while the hold is on.",
+  trashKeptOnHold: "kept while the workspace is on hold",
+  trashPolicyDays: "{server} keeps this workspace's trash {count} days.",
   confirmEmpty: "Delete all {count} for good?",
   trashEmpty: "The trash is empty.",
   trashDeleted: "Deleted {when}, {left}",
@@ -997,7 +1001,7 @@ export const messages = {
   adminMembersOf: "Members of {workspace}",
   adminSizeParts: "Documents {documents}, their history {history}, attachments {attachments}.",
   adminRolesIntro:
-    "Set a member's role here when a workspace needs a new owner. It keeps at least one owner.",
+    "Set a member's role here when a workspace needs a new owner. It keeps at least one active owner.",
   adminColumnName: "Name",
   adminColumnEmail: "Email",
   adminColumnRole: "Role",
@@ -1117,6 +1121,10 @@ export const messages = {
   adminAuditChecking: "Checking the log.",
   adminAuditHolds: "Checked {count} events: every one holds.",
   adminAuditBroken: "Event {seq} does not hold: {problem}.",
+  // Accounts a directory deactivates, and the directory as who acted (ADR 0085).
+  adminAuditDirectory: "The directory {name}",
+  accountDeactivated: "Deactivated",
+  accountDeactivatedName: "{name} (deactivated)",
   signIn: "Sign in",
   emailMeCode: "Email me a code",
   signInWith: "Sign in with {name}",
@@ -1331,6 +1339,11 @@ export const messages = {
   paneLeft: "Left pane",
   paneRight: "Right pane",
   closeTab: "Close {name}",
+  // A phone's layout (ADR 0087).
+  phoneSidebar: "Notes and menus",
+  phoneSidebarClose: "Close notes and menus",
+  movePropertyUp: "Move {name} up",
+  movePropertyDown: "Move {name} down",
   mergeNoteTitle: "Merge {name} into another note",
   mergeNoteWhat:
     "{name}'s text goes after the other note's, its properties join the other's, links to it lead to the other, and it moves to the trash.",
