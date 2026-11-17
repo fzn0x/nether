@@ -1,8 +1,9 @@
 // Sessions (ADR 0032). Signing in gives a client a token, which it sends
 // back as `Authorization: Bearer <token>`. The server keeps only the
 // token's SHA-256, so its database cannot sign anyone in. A session ends
-// when its client signs out, after 30 days unused, or 90 days after it
-// began, whichever comes first.
+// when its client signs out, or after the days unused or the days since it
+// began that the security settings give now (ADR 0084), 30 and 90 unless
+// changed, whichever comes first.
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import {
@@ -25,11 +26,16 @@ import {
 } from "./http.ts";
 import { type ServerEvents, type SessionMethod, accountActor, originOf } from "./events.ts";
 import { hashPassword, verifyPassword } from "./passwords.ts";
+import { type SecuritySettings, settingSql } from "./settings.ts";
 
-/** Days a session lasts unused. */
-export const sessionIdleDays = 30;
-/** Days a session lasts however much it is used. */
-export const sessionLifetimeDays = 90;
+/**
+ * Where a session still lasts, by the security settings now: used within
+ * the days unused, and begun within the days it may last however used.
+ * `s` is the sessions table.
+ */
+const lasting = `s.used_at > now() - ${settingSql("sessionIdleDays")} * interval '1 day'
+        AND s.created_at > now() - ${settingSql("sessionLifetimeDays")} * interval '1 day'`;
+
 /** How recent a sign-in counts as signing in again, for an account without a password. */
 const freshMinutes = 10;
 
@@ -60,7 +66,8 @@ export interface NewSession {
 
 /**
  * Starts a session for a user, as signing in does, and tells of it in the
- * same transaction, by how it began (ADR 0081).
+ * same transaction, by how it began (ADR 0081): through a single sign-on
+ * provider, `provider` is its ID.
  */
 export async function startSession(
   db: Queryable,
@@ -68,18 +75,24 @@ export async function startSession(
   request: FastifyRequest,
   method: SessionMethod,
   events: ServerEvents,
+  provider?: string,
 ): Promise<NewSession> {
   const token = newToken();
   const client = (request.headers["user-agent"] ?? "").slice(0, 200);
+  // Its end as the lifetime is now; a later setting ends it sooner or later.
   const { rows } = await db.query(
     `INSERT INTO sessions (id, user_id, token_hash, client, expires_at)
-     VALUES ($1, $2, $3, $4, now() + $5 * interval '1 day')
+     VALUES ($1, $2, $3, $4, now() + ${settingSql("sessionLifetimeDays")} * interval '1 day')
      RETURNING expires_at`,
-    [randomUUID(), userId, tokenHash(token), client, sessionLifetimeDays],
+    [randomUUID(), userId, tokenHash(token), client],
   );
   await events.emit(
     db,
-    { action: "session.signed_in", actor: accountActor(userId), details: { method } },
+    {
+      action: "session.signed_in",
+      actor: accountActor(userId),
+      details: provider === undefined ? { method } : { method, provider },
+    },
     originOf(request),
   );
   return { token, expiresAt: readTime(rows[0], "expires_at").toISOString() };
@@ -97,9 +110,8 @@ export async function sessionAccount(db: Database, token: string): Promise<Accou
             u.id, u.name, u.email, u.instance_admin
        FROM sessions s JOIN users u ON u.id = s.user_id
       WHERE s.token_hash = $1
-        AND s.expires_at > now()
-        AND s.used_at > now() - $2 * interval '1 day'`,
-    [tokenHash(token), sessionIdleDays],
+        AND ${lasting}`,
+    [tokenHash(token)],
   );
   const row = rows[0];
   if (row === undefined) return undefined;
@@ -220,8 +232,17 @@ const passwordBody = {
 
 export const wrongPassword = "That password is not this account's.";
 
-/** The routes of signing in and out, of one's sessions, and of one's account. */
-export function registerSessions(app: FastifyInstance, db: Database, events: ServerEvents): void {
+/**
+ * The routes of signing in and out, of one's sessions, and of one's
+ * account. The security settings give the sign-in limits; each sign-in,
+ * and each that fails, is told of (ADR 0081).
+ */
+export function registerSessions(
+  app: FastifyInstance,
+  db: Database,
+  security: SecuritySettings,
+  events: ServerEvents,
+): void {
   const account = signedIn(db);
 
   app.post<{ Body: SignIn }>(
@@ -230,9 +251,18 @@ export function registerSessions(app: FastifyInstance, db: Database, events: Ser
       schema: { body: signInBody },
       // Per address, before the body is read; then per account, so many
       // addresses cannot guess one password together.
-      onRequest: limitByAddress(app, "sign-in", 30, "5 minutes"),
-      preHandler: limitBy(app, "sign-in-account", 10, "15 minutes", (request) =>
-        emailKey((request.body as SignIn).email),
+      onRequest: limitByAddress(
+        app,
+        "sign-in",
+        async () => (await security.values()).signInTriesAddress,
+        "5 minutes",
+      ),
+      preHandler: limitBy(
+        app,
+        "sign-in-account",
+        async () => (await security.values()).signInTriesAccount,
+        "15 minutes",
+        (request) => emailKey((request.body as SignIn).email),
       ),
     },
     async (request, reply) => {
@@ -289,10 +319,10 @@ export function registerSessions(app: FastifyInstance, db: Database, events: Ser
   app.get("/api/sessions", { preHandler: account }, async (request) => {
     const me = accountOf(request);
     const { rows } = await db.query(
-      `SELECT id, client, created_at, used_at FROM sessions
-        WHERE user_id = $1 AND expires_at > now() AND used_at > now() - $2 * interval '1 day'
-        ORDER BY created_at`,
-      [me.id, sessionIdleDays],
+      `SELECT s.id, s.client, s.created_at, s.used_at FROM sessions s
+        WHERE s.user_id = $1 AND ${lasting}
+        ORDER BY s.created_at`,
+      [me.id],
     );
     return {
       sessions: rows.map((row) => ({

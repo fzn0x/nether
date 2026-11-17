@@ -348,7 +348,7 @@ export function ServersDialog(props: {
     });
   };
 
-  const withProvider = (url: string) => {
+  const withProvider = (url: string, sso?: string) => {
     void act(async () => {
       const loopback = await backend.loopback();
       waiting.current = loopback;
@@ -358,8 +358,12 @@ export function ServersDialog(props: {
       try {
         await finish(
           url,
-          await signInWithProvider(backend.serverFetch, url, loopback, (target) =>
-            backend.openUrl(target),
+          await signInWithProvider(
+            backend.serverFetch,
+            url,
+            loopback,
+            (target) => backend.openUrl(target),
+            sso,
           ),
         );
       } catch (reason) {
@@ -846,6 +850,25 @@ export function ServersDialog(props: {
             {t("signInWith", { name: methods.oidc.name })}
           </button>
         )}
+        {methods.sso.map((provider, index) => {
+          // The first is the main way in when the server takes no password, code or provider of its own.
+          const main =
+            !methods.password && !methods.emailCode && methods.oidc === null && index === 0;
+          return (
+            <button
+              key={provider.id}
+              type="button"
+              className={main ? "primary" : "quiet"}
+              disabled={busy}
+              {...(main ? { "data-autofocus": true } : {})}
+              onClick={() => {
+                withProvider(url, provider.id);
+              }}
+            >
+              {t("signInWith", { name: provider.name })}
+            </button>
+          );
+        })}
       </fieldset>
     );
   } else {

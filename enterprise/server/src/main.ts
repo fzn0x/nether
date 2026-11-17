@@ -4,6 +4,7 @@
 // gives them to it.
 import { adminModule } from "@nether/enterprise-admin";
 import { auditModule } from "@nether/enterprise-audit";
+import { ssoModule } from "@nether/enterprise-sso";
 import { runServer } from "@nether/server/src/start.ts";
 
-runServer({ enterpriseModules: [adminModule, auditModule] });
+runServer({ enterpriseModules: [adminModule, ssoModule, auditModule] });

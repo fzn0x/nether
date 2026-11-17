@@ -2,6 +2,7 @@
 import { isIP } from "node:net";
 import { fileURLToPath } from "node:url";
 import { type EnterprisePins, enterpriseFeatures, switchVariable } from "./enterprise.ts";
+import { type SecurityPins, securityNames, securitySettings } from "./settings.ts";
 
 export const logLevels = ["fatal", "error", "warn", "info", "debug", "trace", "silent"] as const;
 export type LogLevel = (typeof logLevels)[number];
@@ -45,6 +46,12 @@ export interface Config {
    */
   readonly aiPrivate: boolean | readonly string[];
   /**
+   * Which addresses that are not public the single sign-on providers the
+   * console names may be at, as Keycloak beside the server (ADR 0080):
+   * none, all, or these addresses and ranges.
+   */
+  readonly ssoPrivate: boolean | readonly string[];
+  /**
    * The 32 bytes that seal what the server keeps secret for its accounts,
    * AI providers' keys among them, from NETHER_SECRET_KEY in base64; none,
    * and the server keeps no such secret.
@@ -71,6 +78,8 @@ export interface Config {
   readonly webApp: WebAppConfig | null;
   /** How the environment pins each enterprise feature; unset ones are the console's (ADR 0079). */
   readonly enterprise: EnterprisePins;
+  /** The security settings the environment pins; unset ones are the console's (ADR 0084). */
+  readonly security: SecurityPins;
 }
 
 export interface WebAppConfig {
@@ -131,6 +140,30 @@ function readSwitch(env: NodeJS.ProcessEnv, variable: string): boolean {
 /** A switch the environment may pin on or off, or leave unset for the console. */
 function readPin(env: NodeJS.ProcessEnv, variable: string): boolean | undefined {
   return (env[variable] ?? "").trim() === "" ? undefined : readSwitch(env, variable);
+}
+
+/** The security settings the environment pins, each in its range (ADR 0084). */
+function readSecurityPins(env: NodeJS.ProcessEnv): SecurityPins {
+  const pins: Partial<Record<keyof SecurityPins, number | boolean>> = {};
+  for (const name of securityNames) {
+    const setting: (typeof securitySettings)[keyof typeof securitySettings] =
+      securitySettings[name];
+    const text = (env[setting.variable] ?? "").trim();
+    if (text === "") continue;
+    if (setting.kind === "switch") {
+      pins[name] = readSwitch(env, setting.variable);
+      continue;
+    }
+    const value = Number(text);
+    if (!/^\d+$/.test(text) || value < setting.min || value > setting.max) {
+      throw new ConfigError(
+        setting.variable,
+        `must be a whole number from ${String(setting.min)} to ${String(setting.max)}, not "${text}"`,
+      );
+    }
+    pins[name] = value;
+  }
+  return pins as SecurityPins;
 }
 
 function readPort(env: NodeJS.ProcessEnv): number {
@@ -488,6 +521,7 @@ export function readConfig(env: NodeJS.ProcessEnv): Config {
     webhookPrivate: readPrivate(env, "NETHER_WEBHOOK_PRIVATE", "webhooks"),
     ai: readAi(env),
     aiPrivate: readPrivate(env, "NETHER_AI_PRIVATE", "the admin's AI providers"),
+    ssoPrivate: readPrivate(env, "NETHER_SSO_PRIVATE", "single sign-on providers"),
     secretKey: readSecretKey(env),
     mail: readMail(env),
     publicUrl,
@@ -498,5 +532,6 @@ export function readConfig(env: NodeJS.ProcessEnv): Config {
     backup: readBackup(env),
     webApp: readWebApp(env),
     enterprise,
+    security: readSecurityPins(env),
   };
 }

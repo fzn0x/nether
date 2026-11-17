@@ -74,6 +74,8 @@ token as `Authorization: Bearer <token>`. Every error is
 | `GET /api/admin/workspaces` | instance admin | With the `admin` feature on: 50 workspaces by name after the `after` cursor, found by `search` in their names or their members' names and emails; each with its owners, members by role, notes the server can read (`null` when encrypted), bytes of documents, history and attachments, and last change; and `next`, the cursor of the page after, or `null` (ADR 0083) |
 | `GET /api/admin/workspaces/:id` | instance admin | One workspace as the list has it, with its `members`: name, email, role and when each joined |
 | `PATCH /api/admin/workspaces/:id/members/:user` | instance admin | Sets a member's `role`, any of the four, keeping at least one owner (409 otherwise); closes the member's sync connections |
+| `GET /api/admin/security` | instance admin | With the `admin` feature on: each security setting's `name`, `value`, `pinnedBy` (its variable, or `null`) and, for a number, `min` and `max` (ADR 0084) |
+| `PUT /api/admin/security` | instance admin | Sets settings by name, all or none: 400 for one unknown or out of range, 409 for one its variable pins; gives the settings as they are then |
 | `GET /api/setup`, `POST /api/setup` | | First-run setup, above |
 | `GET /api/sign-in-methods` | | Which ways to sign in this server offers: `password`, `emailCode` when it can send email, and `oidc` with the provider's name |
 | `POST /api/sessions` | | Signs in with `email` and `password`; gives `token` and `expiresAt` |
@@ -227,7 +229,9 @@ new HocuspocusProvider({
 
 The server stores a document two seconds after it stops changing, and at
 least every ten seconds, as its merged state numbered from one sequence. A
-client back from being away asks
+workspace's stores draw their numbers in the order they commit, under a
+lock for the workspace held to the commit (ADR 0082), so a listing that
+shows a number shows every smaller one. A client back from being away asks
 `GET /api/workspaces/:id/documents?since=<the last number it saw>` and
 syncs only those. A client syncing the vault document hears of every note
 as it is stored, as the stateless message
@@ -243,8 +247,11 @@ to their public key by a member who had it.
 
 Hocuspocus refuses these workspaces' documents. They sync through
 `/api/relay`, which keeps each encrypted update in order, numbered from the
-same sequence, and sends it on. A socket sends `{"type":"auth","token"}`,
-then:
+same sequence, and sends it on. Each node reads a workspace's updates in
+the order they are numbered, after the last it read, and sends them to its
+own subscribers: when it stores one, when the bus says another node did,
+and every five seconds. It tells a pusher its number once it has read past
+it. A socket sends `{"type":"auth","token"}`, then:
 
 | Message | Answer |
 | --- | --- |
@@ -482,6 +489,11 @@ machine.
 | `NETHER_ENTERPRISE_POLICIES` | unset | Data policies and advanced permissions |
 | `NETHER_ENTERPRISE_ADMIN` | unset | The admin console's usage, workspaces and security pages |
 | `NETHER_ENTERPRISE_HA` | unset | High availability |
+| `NETHER_SESSION_IDLE_DAYS` | unset, 30 | Days a session lasts unused, from 1 to 365 |
+| `NETHER_SESSION_LIFETIME_DAYS` | unset, 90 | Days a session lasts however much it is used, from 1 to 3650 |
+| `NETHER_SIGN_IN_TRIES_ACCOUNT` | unset, 10 | Sign-in tries per account in 15 minutes, from 3 to 100 |
+| `NETHER_SIGN_IN_TRIES_ADDRESS` | unset, 30 | Sign-in tries, and email codes redeemed, per address in 5 minutes, from 5 to 1000 |
+| `NETHER_SIGN_IN_EMAIL_CODES` | unset, on | Whether a code by email signs in, where the server can send email |
 
 An enterprise feature is off until an instance admin turns it on in the
 admin console (ADR 0079). Its variable, set to `on` or `off` (or `true`,
@@ -490,6 +502,14 @@ it as set by the variable. A feature pinned on in a build without its
 module stops the server at startup with a message that names the
 variable. The image starts the server from `enterprise/server`, which
 gives it every module; `node dist/main.js` starts it with none.
+
+The five security settings, from `NETHER_SESSION_IDLE_DAYS` down, are the
+admin console's Security page's (ADR 0084), the defaults until an instance
+admin changes them. Set, a variable pins its setting, and the console
+shows it as set by the variable; a value out of its range stops the
+server at startup, naming the variable. A session lasts by the lengths as
+they are now, so a shorter one ends sessions past it at their next
+request.
 
 Set `NETHER_TRUST_PROXY` whenever the server is behind a proxy, or every
 client shares the proxy's address and its limits on signing in. Use `on`

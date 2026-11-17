@@ -6,7 +6,7 @@ import type { AddressInfo } from "node:net";
 import { HocuspocusProvider } from "@hocuspocus/provider";
 import { afterEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
-import type { Database } from "../src/db.ts";
+import type { Database, Queryable } from "../src/db.ts";
 import { type SetUp, type TestServer, bearer, setUp, signIn, startServer } from "./app.ts";
 import { freePort } from "./ports.ts";
 
@@ -291,10 +291,10 @@ describe("the relay", () => {
     // half a second, for a relay that stores a document's pushes in turn.
     let release: (() => void) | undefined;
     let armed = false;
-    const test = await start((db) => ({
-      ...db,
-      async query(text, params) {
-        const result = await db.query(text, params);
+    const gated =
+      (query: Queryable["query"]): Queryable["query"] =>
+      async (text, params) => {
+        const result = await query(text, params);
         if (!armed || !text.includes("INSERT INTO encrypted_updates")) return result;
         if (release === undefined) {
           await new Promise<void>((resolve) => {
@@ -306,7 +306,13 @@ describe("the relay", () => {
           setTimeout(() => release?.(), 100);
         }
         return result;
-      },
+      };
+    // In a transaction too, where a push is stored.
+    const test = await start((db) => ({
+      ...db,
+      query: gated((text, params) => db.query(text, params)),
+      transaction: (work) =>
+        db.transaction((tx) => work({ query: gated((text, params) => tx.query(text, params)) })),
     }));
     await keys(test, test.token);
     const workspace = await encryptedWorkspace(test, test.token);

@@ -16,6 +16,8 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { adminModule } from "../../../enterprise/admin/src/index.ts";
 import { auditModule } from "../../../enterprise/audit/src/index.ts";
+import { ssoModule } from "../../../enterprise/sso/src/index.ts";
+import { TestIdp, emailFormat } from "../../../enterprise/sso/test/idp.ts";
 import { buildApp } from "../../server/src/app.ts";
 import { DiskBlobs } from "../../server/src/blobs.ts";
 import { readConfig } from "../../server/src/config.ts";
@@ -33,6 +35,8 @@ const url = `http://127.0.0.1:${String(port)}`;
 const password = "a long password";
 
 const provider = await startProvider();
+// A SAML identity provider, for single sign-on through the console's providers (ADR 0080).
+const idp = new TestIdp();
 
 // The model: each chat completion answers "Fixed: " and the last message's
 // text between its <text> tags, streamed as an OpenAI-compatible API does.
@@ -93,6 +97,8 @@ const app = await buildApp(
     // Keys sealed at rest, and the admin's providers may reach the model here.
     NETHER_SECRET_KEY: Buffer.alloc(32, 3).toString("base64"),
     NETHER_AI_PRIVATE: "loopback",
+    // Single sign-on's providers may be on this machine, as Keycloak is in CI.
+    NETHER_SSO_PRIVATE: "loopback",
   }),
   {
     db,
@@ -101,7 +107,7 @@ const app = await buildApp(
     resolveTxt,
     blobs: new DiskBlobs(await mkdtemp(join(tmpdir(), "nether-web-e2e-"))),
     // As the image has them: each off until the console turns it on (ADR 0079).
-    enterpriseModules: [adminModule, auditModule],
+    enterpriseModules: [adminModule, ssoModule, auditModule],
   },
 );
 await app.listen({ host: "127.0.0.1", port });
@@ -181,6 +187,20 @@ const control = createServer((request, response) => {
         // A TXT record at a name, as a domain's owner adds one.
         txt.set(String(body.name), [[String(body.value)]]);
         answer = {};
+      } else if (request.url === "/saml-metadata") {
+        // The SAML provider's metadata, as its admin page would give it.
+        answer = { xml: idp.metadata() };
+      } else if (request.url === "/saml-answer") {
+        // The SAML provider's page: whom it signs in, posted back to the request's address.
+        const asked = String(body.url);
+        answer = {
+          action: idp.asked(asked).acsUrl,
+          fields: await idp.answer(asked, {
+            nameId: String(body.email),
+            format: emailFormat,
+            attributes: { email: String(body.email), displayName: String(body.name) },
+          }),
+        };
       } else if (request.url === "/fresh") {
         // The server not set up yet, and the code its log has.
         answer = { url: freshUrl, setupCode: freshCode };

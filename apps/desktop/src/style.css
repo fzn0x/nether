@@ -2642,6 +2642,49 @@ button {
   margin: 0;
 }
 
+/* The console's Single sign-on page (ADR 0080). */
+.admin-sso-providers {
+  margin: 0 0 1rem;
+  padding: 0;
+  list-style: none;
+}
+
+.admin-sso-providers > li {
+  margin-bottom: 1rem;
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+}
+
+.admin-sso-providers h3 {
+  margin: 0 0 0.5rem;
+  font-size: 1rem;
+}
+
+.admin-sso-value {
+  overflow-wrap: anywhere;
+}
+
+.admin-sso-certificate {
+  font-family: ui-monospace, "Cascadia Mono", Menlo, Consolas, monospace;
+  font-size: 0.75rem;
+}
+
+.admin-sso-form {
+  display: grid;
+  gap: 0.75rem;
+  max-width: 32rem;
+}
+
+/* Its kinds, apart enough to tap each. */
+.admin-sso-form fieldset {
+  display: grid;
+  gap: 0.75rem;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
 .admin-find {
   display: flex;
   flex-wrap: wrap;
@@ -2700,6 +2743,25 @@ button {
 
 .admin-workspace h3 {
   margin: 1rem 0 0.5rem;
+}
+
+.admin-security {
+  display: grid;
+  gap: 1rem;
+  max-width: 32rem;
+}
+
+.admin-security fieldset {
+  display: grid;
+  gap: 0.75rem;
+  margin: 0;
+  padding: 0.75rem 1rem 1rem;
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+}
+
+.admin-security button[type="submit"] {
+  justify-self: start;
 }
 
 /* The audit log (ADR 0081): its filters, and its events in a table that scrolls on its own. */

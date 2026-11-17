@@ -5,8 +5,9 @@
 // only read them. A document is kept in PostgreSQL as its state, numbered
 // from one sequence each time it is stored, so a client that was away asks
 // which documents changed since the last number it saw and syncs those
-// alone; a client syncing the vault document hears of each note as it is
-// stored. Storing a note keeps the state it replaces as a version, now and
+// alone; the numbers are drawn in the order stores commit (ADR 0082), so
+// it never reads past one; a client syncing the vault document hears of
+// each note as it is stored. Storing a note keeps the state it replaces as a version, now and
 // then (ADR 0041). Each sync unit (ADR 0042) has a vault document of its own;
 // a document opens at its unit's level for the account, read-only below edit,
 // and the list of stored documents names only those of the account's units.
@@ -17,6 +18,7 @@ import * as Y from "yjs";
 import { type Database, type Queryable, readBytes, readCount, readText } from "./db.ts";
 import { socketCookieToken } from "./cookies.ts";
 import { fail, uuidField } from "./http.ts";
+import { lockNumbers } from "./numbers.ts";
 import { hasWebhooks, keepListChanges, keepNoteChange } from "./outbox.ts";
 import { indexNote, indexPaths, pathsOf, titleOf } from "./search.ts";
 import { sessionAccount, signedIn, accountOf } from "./sessions.ts";
@@ -170,6 +172,14 @@ interface Changes {
   readonly since?: number;
 }
 
+/** A document's state, to store under its name in its workspace. */
+export interface DocumentStore {
+  readonly document: string;
+  readonly state: Uint8Array;
+  /** What storing it tells of, and who changed it, when a module listens (ADR 0081). */
+  readonly told?: StoreTold | undefined;
+}
+
 /**
  * Stores a document's state under a new number, and gives the number. For a
  * note, the state it replaces is first kept as a version when the note's
@@ -184,20 +194,70 @@ export async function storeDocument(
   state: Uint8Array,
   told?: StoreTold,
 ): Promise<number> {
+  const [seq] = await storeDocuments(db, workspaceId, [{ document, state, told }]);
+  if (seq === undefined) throw new Error(`${document} was not numbered.`);
+  return seq;
+}
+
+/**
+ * Stores documents of one workspace in one transaction, and gives their
+ * numbers in the order given. Each is written as `storeDocument` writes
+ * it, in the order of their names, so two transactions storing the same
+ * documents lock their rows in one order; then the workspace's lock is
+ * taken, once, and every number is drawn under it (ADR 0082).
+ */
+export async function storeDocuments(
+  db: Database,
+  workspaceId: string,
+  stores: readonly DocumentStore[],
+): Promise<number[]> {
+  if (new Set(stores.map((store) => store.document)).size !== stores.length) {
+    throw new Error("A transaction stores each document once.");
+  }
+  const sorted = [...stores].sort((a, b) =>
+    a.document < b.document ? -1 : a.document > b.document ? 1 : 0,
+  );
   return db.transaction(async (tx) => {
-    // A vault document's paths are compared with the state it replaces (ADR 0050).
-    const before = document.startsWith("vault")
-      ? await tx.query("SELECT state FROM documents WHERE workspace_id = $1 AND name = $2", [
-          workspaceId,
-          document,
-        ])
-      : undefined;
-    const watched = !isComments(document) && (await hasWebhooks(tx, workspaceId));
-    // Compared with the state stored, which the store replaces below.
-    if (watched && before === undefined) await keepNoteChange(tx, workspaceId, document, state);
-    if (!document.startsWith("vault") && !isComments(document)) {
-      await tx.query(
-        `INSERT INTO document_versions (workspace_id, name, state)
+    for (const store of sorted) {
+      await keep(tx, workspaceId, store.document, store.state, store.told);
+    }
+    // Last, so its numbers are in the order the stores commit, and no row
+    // lock comes after the workspace's.
+    await lockNumbers(tx, workspaceId);
+    const numbers = new Map<string, number>();
+    for (const store of sorted) {
+      const { rows } = await tx.query(
+        `UPDATE documents SET seq = nextval('document_seq')
+          WHERE workspace_id = $1 AND name = $2 RETURNING seq`,
+        [workspaceId, store.document],
+      );
+      numbers.set(store.document, readCount(rows[0], "seq"));
+    }
+    return stores.map((store) => numbers.get(store.document) ?? 0);
+  });
+}
+
+/** Writes a document's state, its version, its outbox and its index, in a transaction, unnumbered. */
+async function keep(
+  tx: Queryable,
+  workspaceId: string,
+  document: string,
+  state: Uint8Array,
+  told?: StoreTold,
+): Promise<void> {
+  // A vault document's paths are compared with the state it replaces (ADR 0050).
+  const before = document.startsWith("vault")
+    ? await tx.query("SELECT state FROM documents WHERE workspace_id = $1 AND name = $2", [
+        workspaceId,
+        document,
+      ])
+    : undefined;
+  const watched = !isComments(document) && (await hasWebhooks(tx, workspaceId));
+  // Compared with the state stored, which the store replaces below.
+  if (watched && before === undefined) await keepNoteChange(tx, workspaceId, document, state);
+  if (!document.startsWith("vault") && !isComments(document)) {
+    await tx.query(
+      `INSERT INTO document_versions (workspace_id, name, state)
          SELECT workspace_id, name, state FROM documents
          WHERE workspace_id = $1 AND name = $2 AND state <> $3
            AND NOT EXISTS (
@@ -205,37 +265,36 @@ export async function storeDocument(
              WHERE workspace_id = $1 AND name = $2
                AND created_at > now() - interval '10 minutes'
            )`,
-        [workspaceId, document, state],
-      );
-    }
-    const { rows } = await tx.query(
-      `INSERT INTO documents (workspace_id, name, state, seq)
-       VALUES ($1, $2, $3, nextval('document_seq'))
-       ON CONFLICT (workspace_id, name)
-         DO UPDATE SET state = excluded.state, seq = excluded.seq, updated_at = now()
-       RETURNING seq`,
       [workspaceId, document, state],
     );
-    // What search reads, kept with the state, so the two never disagree.
-    if (before !== undefined) {
-      const unit = document === "vault" ? general : document.slice("vault.".length);
-      const old = before.rows[0] === undefined ? undefined : readBytes(before.rows[0], "state");
-      // Each side's paths, parsed once for everything that reads them: a
-      // vault document lists every note of its unit.
-      const now = pathsOf(state);
-      const was = pathsOf(old);
-      // Read against the index's paths before it takes the new ones.
-      if (watched) await keepListChanges(tx, workspaceId, unit, now, was);
-      // Only while a module wants them, as audit logs do when on (ADR 0081).
-      if (told !== undefined && (await told.events.wanted(tx))) {
-        await tellRemoved(tx, workspaceId, unit, now, was, told);
-      }
-      await indexPaths(tx, workspaceId, unit, now, was);
-    } else if (!isComments(document)) {
-      await indexNote(tx, workspaceId, document, state);
+  }
+  // Numbered once everything else in the transaction is written.
+  await tx.query(
+    `INSERT INTO documents (workspace_id, name, state, seq)
+       VALUES ($1, $2, $3, 0)
+       ON CONFLICT (workspace_id, name)
+         DO UPDATE SET state = excluded.state, updated_at = now()`,
+    [workspaceId, document, state],
+  );
+  // What search reads, kept with the state, so the two never disagree.
+  if (before !== undefined) {
+    const unit = document === "vault" ? general : document.slice("vault.".length);
+    const old = before.rows[0] === undefined ? undefined : readBytes(before.rows[0], "state");
+    // Each side's paths, parsed once for everything that reads them: a
+    // vault document lists every note of its unit.
+    const now = pathsOf(state);
+    const was = pathsOf(old);
+    // Read against the index's paths before it takes the new ones.
+    if (watched) await keepListChanges(tx, workspaceId, unit, now, was);
+    // Only while a module wants them, as audit logs do when on (ADR 0081),
+    // here in the row work, before the workspace's lock is taken.
+    if (told !== undefined && (await told.events.wanted(tx))) {
+      await tellRemoved(tx, workspaceId, unit, now, was, told);
     }
-    return readCount(rows[0], "seq");
-  });
+    await indexPaths(tx, workspaceId, unit, now, was);
+  } else if (!isComments(document)) {
+    await indexNote(tx, workspaceId, document, state);
+  }
 }
 
 /** The headers of a Node request, as a fetch Request has them. */

@@ -255,8 +255,8 @@ export function createAuditModule(env: NodeJS.ProcessEnv = process.env): Enterpr
   const pinned = pinnedRetention(env.NETHER_AUDIT_RETENTION_DAYS);
   return {
     feature: "audit",
-    plugin: (app, { db, isOn, whenOn, events, secretKey }) => {
-      const key = chainKey(secretKey);
+    plugin: (app, { db, config, isOn, whenOn, events }) => {
+      const key = chainKey(config.secretKey);
       const stop = events.listen(
         async (event, origin, tx) => {
           if (!recordedAlways(event) && !(await isOn(tx))) return;

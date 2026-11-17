@@ -1,9 +1,12 @@
 // The admin console, in the web app at /admin (ADR 0079), for the server's
 // instance admins. Its Features page is in every build: each enterprise
 // feature's switch, with why it is set as it is. The `admin` feature adds
-// the server's usage, counted when the page asks, and its workspaces
-// (ADR 0083). Only its own code loads, as a share link's page does.
+// the server's usage, counted when the page asks, its workspaces (ADR
+// 0083) and its security settings (ADR 0084). Only its own code loads, as
+// a share link's page does.
 import { type ReactNode, useCallback, useEffect, useState } from "react";
+import { SecurityPage } from "./AdminSecurity.tsx";
+import { SsoPage } from "./AdminSso.tsx";
 import { WorkspacesPage } from "./AdminWorkspaces.tsx";
 import { AdminAudit } from "./AdminAudit.tsx";
 import { t } from "./messages.ts";
@@ -145,6 +148,8 @@ export function AdminPage() {
 
   const consoleOn =
     step.kind === "open" && step.features.some((state) => state.feature === "admin" && state.on);
+  const ssoOn =
+    step.kind === "open" && step.features.some((state) => state.feature === "sso" && state.on);
   // The audit log shows while its feature is on (ADR 0081).
   const auditOn =
     step.kind === "open" && step.features.some((state) => state.feature === "audit" && state.on);
@@ -252,10 +257,12 @@ export function AdminPage() {
             <>
               <UsagePage usage={usage} onCount={count} />
               <WorkspacesPage />
+              <SecurityPage />
             </>
           ) : (
             <p className="hint">{t("adminConsoleOff")}</p>
           )}
+          {ssoOn ? <SsoPage /> : null}
           {auditOn ? <AdminAudit /> : null}
         </>
       ) : null}

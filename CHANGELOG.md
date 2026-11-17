@@ -281,6 +281,26 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   role there, so a workspace whose owners are gone gets a new one; it keeps
   at least one owner, and the member's apps connect again at the new role
   ([ADR 0083](docs/adr/0083-the-console-lists-every-workspace-and-an-instance-admin-may-set-its-members-roles.md)).
+- The admin console's Security page: how many days a session lasts
+  unused and at most, how many sign-in tries an account and an address
+  get, and whether a code by email signs in, each set in the console or
+  pinned by its variable, such as `NETHER_SESSION_IDLE_DAYS`. The lengths
+  apply to every session at once, and the page lists the ways the server
+  signs people in now
+  ([ADR 0084](docs/adr/0084-the-consoles-security-page-sets-session-lengths-sign-in-limits-and-email-codes-unless-the-environment-does.md)).
+- Single sign-on, first part: the admin console's Single sign-on page,
+  while the feature is on, adds SAML 2.0 providers, from their metadata's
+  address or pasted, and OpenID Connect providers, from their issuer and
+  client, each trusted for the email domains it is given, and shows what
+  to give each. The apps offer each by name. SAML answers are checked by
+  `@node-saml/node-saml`: only for a request the server made, once, the
+  assertion signed and meant for this provider's address, encrypted to
+  Nether's own certificate when the provider is told to. A first sign-in
+  at a provider's domains makes an account, or links one by its address;
+  elsewhere only an OpenID Connect provider's verified address links.
+  `NETHER_SSO_PRIVATE` lets providers be on the server's own network. CI
+  signs in through Keycloak, by SAML and by OpenID Connect
+  ([ADR 0080](docs/adr/0080-single-sign-on-binds-saml-and-oidc-providers-to-email-domains-and-enforcement-refuses-other-ways-in.md)).
 - Audit logs, first part: with the `audit` feature on, every sign-in and
   its failures, permission change, share, export and deletion is recorded
   with who, what, where, when and from which address, in the same
@@ -324,12 +344,18 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- A device back from being away could skip a note stored at the same
+  moment as another, when the server's database numbered the two in one
+  order and committed them in the other. A workspace's stores now take
+  their numbers in the order they commit, and the encrypted relay reads
+  them in that order, which also holds across several server nodes
+  ([ADR 0082](docs/adr/0082-several-nodes-share-sync-through-valkey-take-their-order-from-postgresql-and-roll-out-one-at-a-time.md)).
 - In an encrypted workspace, two devices changing a note at once now each
   get the other's change. Before, when the server answered their two
   changes out of order, as PostgreSQL may, one device could miss the
-  other's change, and later syncs did not bring it. The relay now stores,
-  answers and sends a document's changes one at a time, in the order it
-  numbers them.
+  other's change, and later syncs did not bring it. The relay now tells a
+  device its change's number only after sending it every change numbered
+  before it.
 
 ## [0.1.0] - 2026-11-15
 

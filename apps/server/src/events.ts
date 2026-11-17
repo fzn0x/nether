@@ -9,8 +9,12 @@
 import type { FastifyBaseLogger, FastifyRequest } from "fastify";
 import type { Queryable } from "./db.ts";
 
-/** How a session began; the sessions' own `method` keeps the same values. */
-export const sessionMethods = ["password", "code", "oidc", "invitation", "setup"] as const;
+/**
+ * How a session began; the sessions' own `method` keeps the same values.
+ * `sso` is through a provider of the single sign-on module's, whose ID an
+ * event names beside it (ADR 0080).
+ */
+export const sessionMethods = ["password", "code", "oidc", "invitation", "setup", "sso"] as const;
 export type SessionMethod = (typeof sessionMethods)[number];
 
 /** Every event the server tells of, by its name: each fits syslog's MSGID, 32 characters. */

@@ -24,8 +24,10 @@ import { purgeNotifications, registerNotifications } from "./notifications.ts";
 import type { Mailer } from "./mail.ts";
 import { registerOidc } from "./oidc.ts";
 import { registerSessions } from "./sessions.ts";
+import { SecuritySettings } from "./settings.ts";
 import { registerSetup } from "./setup.ts";
 import { registerRelay } from "./relay.ts";
+import { type ClusterBus, ProcessBus } from "./cluster.ts";
 import { registerSync } from "./sync.ts";
 import { registerLinks } from "./links.ts";
 import { registerPublished } from "./published.ts";
@@ -95,6 +97,11 @@ export interface Services {
   readonly webhookWorker?: boolean;
   /** What resolves AI providers' hosts, for the relay's checks; the system's unless a test gives another. */
   readonly aiResolve?: Resolver;
+  /**
+   * What this node tells the server's other nodes, and hears from them
+   * (ADR 0082); a bus of this process alone unless the `ha` module gives one.
+   */
+  readonly bus?: ClusterBus;
   /** What looks up sites' domains' TXT records (ADR 0077); the system's unless a test gives another. */
   readonly resolveTxt?: TxtResolver;
 }
@@ -156,9 +163,13 @@ export async function buildApp(config: Config, services: Services): Promise<Fast
     enterprise: await switches.all(),
   }));
   registerFeatures(app, services.db, switches, events);
+  // The sessions' lengths, the sign-in limits and email codes (ADR 0084):
+  // the pinned ones written where every node and query reads them.
+  const security = new SecuritySettings(services.db, config.security);
+  await security.applyPins();
 
   registerSetup(app, services.db, services.setupCode, events);
-  registerSessions(app, services.db, events);
+  registerSessions(app, services.db, security, events);
   registerInvitations(app, services.db, events);
   registerWorkspaces(app, services.db, events);
   registerVersions(app, services.db);
@@ -231,7 +242,7 @@ export async function buildApp(config: Config, services: Services): Promise<Fast
   }
   // The relay's sockets come through the WebSocket plugin sync registers.
   const sync = await registerSync(app, services.db, events);
-  const relay = registerRelay(app, services.db);
+  const relay = registerRelay(app, services.db, services.bus ?? new ProcessBus());
   const reconnect = (userId: string) => {
     sync.disconnect(userId);
     relay.disconnect(userId);
@@ -282,21 +293,21 @@ export async function buildApp(config: Config, services: Services): Promise<Fast
     ...(services.aiResolve === undefined ? {} : { resolve: services.aiResolve }),
   });
   if (services.mailer !== undefined) {
-    registerCodes(app, services.db, services.mailer, events, config.publicUrl);
+    registerCodes(app, services.db, services.mailer, security, events, config.publicUrl);
   }
   const { oidc, publicUrl } = config;
   if (oidc !== null && publicUrl !== null) {
     registerOidc(app, services.db, oidc, publicUrl, events);
   }
   // How the app may offer to sign in on this server.
-  app.get("/api/sign-in-methods", () => ({
+  app.get("/api/sign-in-methods", async () => ({
     password: true,
-    emailCode: services.mailer !== undefined,
+    emailCode: services.mailer !== undefined && (await security.values()).emailCodes,
     oidc: oidc === null ? null : { name: oidc.name },
   }));
   await registerEnterprise(
     app,
-    { db: services.db, disconnect: reconnect, events, secretKey: config.secretKey },
+    { db: services.db, config, disconnect: reconnect, security, events },
     switches,
     modules,
   );
