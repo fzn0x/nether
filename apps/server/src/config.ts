@@ -26,6 +26,12 @@ export interface Config {
    */
   readonly nodeName: string;
   /**
+   * How long a node stopping on SIGTERM keeps serving after its readiness
+   * probe answers 503, while the load balancer takes it out (ADR 0082):
+   * NETHER_DRAIN_SECONDS, 5 unless set.
+   */
+  readonly drainSeconds: number;
+  /**
    * The Redis or Valkey server that keeps the rate limits' counts (ADR 0054),
    * as `redis://host:6379`; without one, each node keeps its own in memory.
    */
@@ -230,6 +236,19 @@ function readDatabaseUrl(env: NodeJS.ProcessEnv): string {
     throw new ConfigError("NETHER_DATABASE_URL", "must be a postgres:// address");
   }
   return value;
+}
+
+/** NETHER_DRAIN_SECONDS: 0 to 300 seconds, 5 unless set. */
+function readDrainSeconds(env: NodeJS.ProcessEnv): number {
+  const value = env.NETHER_DRAIN_SECONDS?.trim() ?? "";
+  if (value === "") return 5;
+  if (!/^\d+$/.test(value) || Number(value) > 300) {
+    throw new ConfigError(
+      "NETHER_DRAIN_SECONDS",
+      `must be a whole number of seconds from 0 to 300, not "${value}"`,
+    );
+  }
+  return Number(value);
 }
 
 /** This node's name: `NETHER_NODE_NAME`, or the machine's when unset or blank. */
@@ -566,6 +585,7 @@ export function readConfig(env: NodeJS.ProcessEnv): Config {
     logLevel: readLogLevel(env),
     databaseUrl: readDatabaseUrl(env),
     nodeName: readNodeName(env),
+    drainSeconds: readDrainSeconds(env),
     redisUrl: readRedisUrl(env),
     trustProxy: readTrustProxy(env),
     webhookPrivate: readPrivate(env, "NETHER_WEBHOOK_PRIVATE", "webhooks"),

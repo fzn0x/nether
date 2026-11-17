@@ -4,12 +4,17 @@
 // send the node work: its database answers, and it is not draining.
 // Valkey's state is in its answer but never fails it: while Valkey is away
 // every node would fail together, and taking them all out helps no one.
+// A node drains before it stops: its readiness answers 503 at once, and
+// it closes a few seconds later, once the load balancer has taken it out.
 import type { FastifyInstance } from "fastify";
 import type { Redis } from "ioredis";
 import type { Database } from "./db.ts";
 
 /** How long the database has to answer the readiness probe. */
 const answerWithin = 2_000;
+
+/** How long closing may take, after the drain's wait, before the process stops anyway. */
+const closeWithin = 30_000;
 
 /** Whether this node takes work: no longer, once it drains. */
 export class Readiness {
@@ -73,4 +78,35 @@ export function registerReadiness(
       valkey: valkey === undefined ? "none" : valkey.status === "ready" ? "up" : "down",
     });
   });
+}
+
+/**
+ * Drains this node, then closes it: the readiness probe answers 503 at
+ * once; after `seconds`, while the load balancer takes the node out, the
+ * server closes its sockets with 1012, "service restart", stores its open
+ * documents, and finishes the requests under way. Rejects when closing
+ * takes longer than half a minute.
+ */
+export async function drain(
+  app: FastifyInstance,
+  readiness: Readiness,
+  seconds: number,
+): Promise<void> {
+  readiness.drain();
+  if (seconds > 0) {
+    await new Promise((resolve) => setTimeout(resolve, seconds * 1000));
+  }
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    await Promise.race([
+      app.close(),
+      new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(() => {
+          reject(new Error("The server took over half a minute to close."));
+        }, closeWithin);
+      }),
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
 }
