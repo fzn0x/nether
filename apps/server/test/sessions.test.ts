@@ -136,7 +136,7 @@ describe("a session", () => {
 
     const old = (await signIn(test.server, admin.email, admin.password)).json<{ token: string }>();
     await test.db.query(
-      "UPDATE sessions SET expires_at = now() - interval '1 second' WHERE token_hash = $1",
+      "UPDATE sessions SET created_at = now() - interval '90 days 1 minute' WHERE token_hash = $1",
       [tokenHash(old.token)],
     );
     expect((await me(old.token)).statusCode).toBe(401);
