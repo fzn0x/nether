@@ -22,6 +22,7 @@ import { PluginHost } from "../src/plugins/host.ts";
 import { LayoutRegistry } from "../src/plugins/layouts.ts";
 import { PanelRegistry } from "../src/plugins/panels.ts";
 import { PropertyTypeRegistry } from "../src/plugins/propertyTypes.ts";
+import { PropertyChangeRegistry } from "../src/plugins/propertyChanges.ts";
 import { CommandRegistry } from "../src/plugins/registry.ts";
 import { isFolderOn } from "../src/plugins/state.ts";
 import { ViewRegistry } from "../src/plugins/views.ts";
@@ -230,6 +231,7 @@ describe("PluginHost, a plugin from a folder", () => {
         views: new ViewRegistry(),
         layouts: new LayoutRegistry(),
         propertyTypes: new PropertyTypeRegistry(),
+        propertyChanges: new PropertyChangeRegistry(),
       },
       {
         language: "en",

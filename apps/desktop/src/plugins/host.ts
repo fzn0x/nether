@@ -44,6 +44,7 @@ import type { PanelDrawing, PanelHostView, PanelRegistry } from "./panels.ts";
 import type { PaneViewDrawing, PaneViewHost, ViewRegistry } from "./views.ts";
 import type { LayoutActions, LayoutDrawing, LayoutHost, LayoutRegistry } from "./layouts.ts";
 import type { PropertyTypeDrawing, PropertyTypeRegistry } from "./propertyTypes.ts";
+import type { PropertyChange, PropertyChangeRegistry, PropertyWatcher } from "./propertyChanges.ts";
 import type { CommandRegistry } from "./registry.ts";
 import type { ViewRenderer } from "./render.ts";
 import { type VaultAccess, pluginPath, toBase64 } from "./vault.ts";
@@ -70,6 +71,13 @@ export interface AppHost {
     /** Shows a database's rows with `view`, for a layout the manifest declares. */
     view(id: string, view: LayoutHost): void;
   };
+  readonly properties: {
+    /**
+     * Runs `watcher` for each property the app changes on this device, for
+     * a plugin that watches them (ADR 0072); not for what it writes itself.
+     */
+    watch(watcher: PropertyWatcher): void;
+  };
 }
 
 /** A built-in plugin's context: the SDK's, and the host's. */
@@ -92,6 +100,11 @@ export interface BuiltinPlugin {
    * `plugin-id/board`: the built-in layouts' plugin (ADR 0056).
    */
   readonly appLayouts?: boolean;
+  /**
+   * Whether its code watches the properties the app changes, as triggers
+   * do (ADR 0072): it starts at the first change.
+   */
+  readonly watchesProperties?: boolean;
 }
 
 /**
@@ -114,6 +127,7 @@ export interface Registries {
   readonly views: ViewRegistry;
   readonly layouts: LayoutRegistry;
   readonly propertyTypes: PropertyTypeRegistry;
+  readonly propertyChanges: PropertyChangeRegistry;
 }
 
 export interface HostOptions {
@@ -166,6 +180,8 @@ interface Added {
   readonly layoutViews: Map<string, number | LayoutHost>;
   /** The property types its code attached views to, each to the callback that runs the view. */
   readonly propertyViews: Map<string, number>;
+  /** What its code runs for each property the app changes, if it watches them. */
+  watcher?: PropertyWatcher | undefined;
   /** Its connection, once its code has been asked for. */
   running?: Promise<Running> | undefined;
 }
@@ -275,6 +291,7 @@ export class PluginHost {
       manifest,
       { kind: "builtin", load: builtin.load },
       builtin.appLayouts === true,
+      builtin.watchesProperties === true,
     );
   }
 
@@ -290,7 +307,12 @@ export class PluginHost {
     return this.#add(manifest, { kind: "frame", code: folder.code, network }, false);
   }
 
-  #add(manifest: Manifest, source: Source, appLayouts: boolean): readonly string[] {
+  #add(
+    manifest: Manifest,
+    source: Source,
+    appLayouts: boolean,
+    watches = false,
+  ): readonly string[] {
     if (this.#plugins.has(manifest.id)) return [`A plugin ${manifest.id} is there already.`];
     if (!satisfies(apiVersion, manifest.api)) {
       return [`It works with API ${manifest.api}, and the app speaks ${apiVersion}.`];
@@ -415,6 +437,13 @@ export class PluginHost {
         }),
       );
     }
+    if (watches) {
+      plugin.removers.push(
+        this.#registries.propertyChanges.add(manifest.id, (change) =>
+          this.#watching(plugin, change),
+        ),
+      );
+    }
     return [];
   }
 
@@ -467,6 +496,14 @@ export class PluginHost {
     } catch (error) {
       this.#options.onError?.(plugin.manifest.id, errorText(error));
     }
+  }
+
+  /** Starts a plugin that watches the properties the app changes, and tells it of one. */
+  async #watching(plugin: Added, change: PropertyChange): Promise<void> {
+    await this.#start(plugin);
+    const watcher = plugin.watcher;
+    if (watcher === undefined) throw new Error("Its code did not watch the properties.");
+    await watcher(change);
   }
 
   /** Starts a plugin for a code block, and gives what its code attached to draw the block's language. */
@@ -917,6 +954,11 @@ export class PluginHost {
       layouts: {
         view: (layout, view) => {
           plugin.layoutViews.set(declared(layouts, "layout", layout), view);
+        },
+      },
+      properties: {
+        watch: (watcher) => {
+          plugin.watcher = watcher;
         },
       },
     };

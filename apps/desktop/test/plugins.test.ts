@@ -11,6 +11,9 @@ import {
   definePlugin,
   portTransport,
 } from "@nether/plugin-api";
+import type { NoteId } from "@nether/core";
+import { LinkGraph } from "@nether/graph";
+import type { Vault } from "@nether/storage";
 import { describe, expect, it } from "vitest";
 import { coreMenus, commandIds } from "../src/commands.ts";
 import { BlockRegistry, slashEntries } from "../src/plugins/blocks.ts";
@@ -18,6 +21,7 @@ import { PanelRegistry } from "../src/plugins/panels.ts";
 import { ViewRegistry, extensionOf } from "../src/plugins/views.ts";
 import { type LayoutActions, LayoutRegistry } from "../src/plugins/layouts.ts";
 import { PropertyTypeRegistry } from "../src/plugins/propertyTypes.ts";
+import { type PropertyChange, PropertyChangeRegistry } from "../src/plugins/propertyChanges.ts";
 import { isOn, readBuiltins, readOn } from "../src/plugins/state.ts";
 import { builtinPlugins } from "../src/plugins/builtins.ts";
 import { CodeBlockRegistry, type CodeBlockView } from "../src/plugins/codeBlocks.ts";
@@ -315,9 +319,19 @@ for (const [name, connect] of Object.entries(connections)) {
       opened: string[] = [],
       layouts = new LayoutRegistry(),
       propertyTypes = new PropertyTypeRegistry(),
+      propertyChanges = new PropertyChangeRegistry(),
     ) =>
       new PluginHost(
-        { commands: registry, codeBlocks, blocks, panels, views, layouts, propertyTypes },
+        {
+          commands: registry,
+          codeBlocks,
+          blocks,
+          panels,
+          views,
+          layouts,
+          propertyTypes,
+          propertyChanges,
+        },
         {
           language: "fr",
           direction: "ltr",
@@ -469,6 +483,57 @@ for (const [name, connect] of Object.entries(connections)) {
       await undo?.();
       await expect(render?.("x", editorBlock)).rejects.toThrow(
         "Its code did not attach forgotten code blocks.",
+      );
+      plugins.close();
+    });
+
+    it("starts a built-in plugin that watches properties at the first change, and tells it each", async () => {
+      const changes = new PropertyChangeRegistry();
+      const plugins = host(
+        new CommandRegistry(),
+        [],
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        [],
+        undefined,
+        undefined,
+        changes,
+      );
+      const told: string[] = [];
+      const { seen, load } = drawer((context) => {
+        context.host.properties.watch((change) => {
+          told.push(`${change.key} ${JSON.stringify(change.after)}`);
+          return Promise.resolve();
+        });
+      });
+      expect(plugins.add({ manifest: drawing, load, watchesProperties: true })).toEqual([]);
+      expect(changes.watched()).toBe(true);
+      expect(seen.loads).toBe(0);
+      const change: PropertyChange = {
+        vault: undefined as unknown as Vault,
+        graph: new LinkGraph(),
+        note: "row" as NoteId,
+        key: "status",
+        before: "Doing",
+        after: "Done",
+      };
+      await changes.changed(change);
+      await changes.changed({ ...change, after: "Doing" });
+      expect(told).toEqual(['status "Done"', 'status "Doing"']);
+      expect(seen.loads).toBe(1);
+      // Turned off, it watches no more.
+      plugins.remove("abc");
+      expect(changes.watched()).toBe(false);
+
+      // A plugin that does not say it watches is not told; one whose code does not watch fails.
+      plugins.add({ manifest: drawing, load: drawer().load });
+      expect(changes.watched()).toBe(false);
+      plugins.remove("abc");
+      plugins.add({ manifest: drawing, load: drawer().load, watchesProperties: true });
+      await expect(changes.changed(change)).rejects.toThrow(
+        "Its code did not watch the properties.",
       );
       plugins.close();
     });
@@ -940,9 +1005,10 @@ describe("PluginHost, adding", () => {
     views = new ViewRegistry(),
     layouts = new LayoutRegistry(),
     propertyTypes = new PropertyTypeRegistry(),
+    propertyChanges = new PropertyChangeRegistry(),
   ) =>
     new PluginHost(
-      { commands, codeBlocks, blocks, panels, views, layouts, propertyTypes },
+      { commands, codeBlocks, blocks, panels, views, layouts, propertyTypes, propertyChanges },
       { language: "en", direction: "ltr" },
     );
   const load = fixture().load;
@@ -1149,6 +1215,7 @@ describe("PluginHost, adding", () => {
         views: new ViewRegistry(),
         layouts: new LayoutRegistry(),
         propertyTypes: new PropertyTypeRegistry(),
+        propertyChanges: new PropertyChangeRegistry(),
       },
       {
         language: "en",
