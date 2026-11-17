@@ -457,6 +457,17 @@ person's own: no
 policy stops another program from reading them. Device management on your
 organization's computers is the tool for that.
 
+## Advanced permissions
+
+**Advanced permissions** will bring custom roles, groups given teamspaces
+and pages, and sharing kept to a workspace's email domains, in parts. Each
+role is already a set of what it may do: General's level, the highest
+level anything opens at, teamspaces, a private space, members, guests,
+share links, publishing, export and the workspace's own settings. The four
+built-in roles keep what they have always given, so turning the feature
+on changes nothing yet. `NETHER_ENTERPRISE_PERMISSIONS` sets it in the
+server's settings.
+
 ## Audit logs
 
 With **Audit logs** on, the server keeps a log of every sign-in, permission
