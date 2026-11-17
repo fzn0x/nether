@@ -252,7 +252,8 @@ describe("a guard", () => {
       url: "/api/sign-in-codes",
       payload: { email: admin.email },
     });
-    // Only Ada's came: Bea's was never sent.
+    // Codes go out after the answer: Ada's comes, and Bea's, asked first, never does.
+    expect((await test.mailer.next()).to).toBe(admin.email);
     expect(test.mailer.sent.map((message) => message.to)).toEqual([admin.email]);
     const redeemed = await test.server.inject({
       method: "POST",
