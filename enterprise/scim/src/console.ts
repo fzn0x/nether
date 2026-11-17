@@ -7,7 +7,7 @@
 // they are, managed by no directory.
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import type { Config } from "@nether/server/src/config.ts";
-import { type Database, type Queryable, readText } from "@nether/server/src/db.ts";
+import { type Database, type Queryable, readText, readTextOrNull } from "@nether/server/src/db.ts";
 import {
   type EventActor,
   type ServerEvents,
@@ -15,7 +15,8 @@ import {
   originOf,
 } from "@nether/server/src/events.ts";
 import { instanceAdmin } from "@nether/server/src/features.ts";
-import { fail } from "@nether/server/src/http.ts";
+import { fail, uuidField } from "@nether/server/src/http.ts";
+import type { Role } from "@nether/server/src/members.ts";
 import { accountOf, signedIn, tokenHash } from "@nether/server/src/sessions.ts";
 import type { SecuritySettings } from "@nether/server/src/settings.ts";
 import {
@@ -31,6 +32,14 @@ import {
   setDomains,
   tokenDays,
 } from "./directories.ts";
+import {
+  type GroupChanger,
+  groupRoles,
+  lockGroup,
+  removeMapping,
+  setMapping,
+} from "./groupWrites.ts";
+import type { GroupRow } from "./groups.ts";
 import { scimBase } from "./scim.ts";
 
 interface DirectoryInput {
@@ -81,6 +90,31 @@ const params = {
   properties: { id: { type: "string", minLength: 1, maxLength: 32 } },
 } as const;
 
+interface MappingParams extends Params {
+  readonly group: string;
+  readonly workspace: string;
+}
+
+const mappingParams = {
+  type: "object",
+  required: ["id", "group", "workspace"],
+  properties: {
+    id: { type: "string", minLength: 1, maxLength: 32 },
+    group: uuidField,
+    workspace: uuidField,
+  },
+} as const;
+
+const mappingBody = {
+  type: "object",
+  required: ["role"],
+  additionalProperties: false,
+  properties: { role: { type: "string", enum: groupRoles } },
+} as const;
+
+/** Workspaces the page offers to map a group to, by name. */
+const mostWorkspaces = 1000;
+
 /** An input refused, saying why. */
 class Refused extends Error {
   readonly status: number;
@@ -119,6 +153,8 @@ export interface ConsoleContext {
   readonly config: Config;
   readonly events: ServerEvents;
   readonly security: SecuritySettings;
+  /** Closes an account's connections on every node, once a change to its places commits. */
+  readonly disconnect: (userId: string) => void;
   readonly whenOn: (
     request: FastifyRequest,
     reply: FastifyReply,
@@ -129,7 +165,7 @@ export interface ConsoleContext {
 const warnDays = 30;
 
 export function registerConsole(app: FastifyInstance, context: ConsoleContext): void {
-  const { db, config, events, security, whenOn } = context;
+  const { db, config, events, security, disconnect, whenOn } = context;
   const account = signedIn(db);
   const admins = (what: string) => ({ preHandler: [whenOn, account, instanceAdmin(what)] });
   const actorOf = (request: FastifyRequest): EventActor => accountActor(accountOf(request).id);
@@ -392,5 +428,98 @@ export function registerConsole(app: FastifyInstance, context: ConsoleContext): 
         return reply.code(204).send();
       });
     },
+  );
+
+  // A directory's groups, each with its members and the workspaces it gives
+  // them places in; and every workspace, to map a group to.
+  app.get<{ Params: Params }>(
+    "/api/admin/directories/:id/groups",
+    { ...admins("see directories' groups"), schema: { params } },
+    async (request, reply) => {
+      const { id } = request.params;
+      if ((await findDirectory(db, id)) === undefined) {
+        return fail(reply, 404, "There is no such directory.");
+      }
+      const { rows } = await db.query(
+        `SELECT g.id, g.name, g.external_id,
+                (SELECT count(*)::int FROM group_members gm WHERE gm.group_id = g.id) AS members,
+                coalesce((SELECT json_agg(json_build_object('id', w.id, 'name', w.name, 'role', gw.role)
+                                          ORDER BY lower(w.name), w.id)
+                            FROM group_workspaces gw JOIN workspaces w ON w.id = gw.workspace_id
+                           WHERE gw.group_id = g.id), '[]'::json) AS workspaces
+           FROM groups g WHERE g.directory_id = $1
+          ORDER BY lower(g.name), g.id`,
+        [id],
+      );
+      const workspaces = await db.query(
+        `SELECT id, name FROM workspaces ORDER BY lower(name), id LIMIT ${String(mostWorkspaces)}`,
+      );
+      return {
+        groups: rows.map((row) => ({
+          id: readText(row, "id"),
+          name: readText(row, "name"),
+          externalId: readTextOrNull(row, "external_id"),
+          members: Number(row.members),
+          workspaces: Array.isArray(row.workspaces) ? row.workspaces : [],
+        })),
+        workspaces: workspaces.rows.map((row) => ({
+          id: readText(row, "id"),
+          name: readText(row, "name"),
+        })),
+      };
+    },
+  );
+
+  /** Runs a change to a group's places in one transaction, then closes the connections of those whose place changed. */
+  async function mapping(
+    request: FastifyRequest<{ Params: MappingParams }>,
+    reply: FastifyReply,
+    work: (
+      tx: Queryable,
+      changer: GroupChanger,
+      group: GroupRow,
+      workspace: string,
+    ) => Promise<Set<string> | undefined>,
+  ) {
+    const { id, group: groupId } = request.params;
+    const workspace = request.params.workspace.toLowerCase();
+    return refusing(reply, async () => {
+      const closing = await db.transaction(async (tx) => {
+        const group = await lockGroup(tx, id, groupId);
+        if (group === undefined) throw new Refused(404, "This directory has no such group.");
+        const found = await tx.query("SELECT 1 FROM workspaces WHERE id = $1", [workspace]);
+        if (found.rows.length === 0) throw new Refused(404, "There is no such workspace.");
+        const changer: GroupChanger = {
+          directory: id,
+          actor: actorOf(request),
+          origin: originOf(request),
+          events,
+        };
+        const changed = await work(tx, changer, group, workspace);
+        if (changed === undefined)
+          throw new Refused(404, "This group gives no place in that workspace.");
+        return changed;
+      });
+      for (const user of closing) disconnect(user);
+      return reply.code(204).send();
+    });
+  }
+
+  app.put<{ Params: MappingParams; Body: { readonly role: Role } }>(
+    "/api/admin/directories/:id/groups/:group/workspaces/:workspace",
+    { ...admins("map groups to workspaces"), schema: { params: mappingParams, body: mappingBody } },
+    (request, reply) =>
+      mapping(request, reply, (tx, changer, group, workspace) =>
+        setMapping(tx, changer, group, workspace, request.body.role),
+      ),
+  );
+
+  app.delete<{ Params: MappingParams }>(
+    "/api/admin/directories/:id/groups/:group/workspaces/:workspace",
+    { ...admins("map groups to workspaces"), schema: { params: mappingParams } },
+    (request, reply) =>
+      mapping(request, reply, (tx, changer, group, workspace) =>
+        removeMapping(tx, changer, group, workspace),
+      ),
   );
 }
