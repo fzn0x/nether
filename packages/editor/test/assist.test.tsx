@@ -290,4 +290,47 @@ describe("writing assist in the editor", () => {
     selection.focus();
     expect(editor().view.hasFocus()).toBe(true);
   });
+
+  it("asks for nothing when the assist comes, goes and comes back, only when asked", () => {
+    const document = noteDocument();
+    const container = window.document.createElement("div");
+    window.document.body.append(container);
+    const root = createRoot(container);
+    cleanups.push(() => {
+      act(() => {
+        root.unmount();
+      });
+      container.remove();
+    });
+    const asked: unknown[] = [];
+    const show = (request: number | undefined) => {
+      act(() => {
+        root.render(
+          <NoteEditor
+            document={document}
+            label="Note"
+            {...(request === undefined
+              ? {}
+              : {
+                  assist: {
+                    request,
+                    active: undefined,
+                    onAssist: (selection: AssistSelection | undefined) => asked.push(selection),
+                  },
+                })}
+          />,
+        );
+      });
+    };
+    // AI set up while the note is open, with the command asked for 3 times before.
+    show(undefined);
+    show(3);
+    expect(asked).toHaveLength(0);
+    // AI off and on again.
+    show(undefined);
+    show(3);
+    expect(asked).toHaveLength(0);
+    show(4);
+    expect(asked).toHaveLength(1);
+  });
 });

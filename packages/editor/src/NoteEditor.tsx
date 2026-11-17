@@ -242,12 +242,15 @@ export function NoteEditor(props: NoteEditorProps) {
     comment(selectionAnchor(editor.state));
   }, [editor, request]);
 
-  // The app's command assists on the selection; a request made before this editor does nothing.
+  // The app's command assists on the selection; a request made before this
+  // editor does nothing, nor does the assist going and coming back.
   const assistRequest = assist?.request;
   const handledAssist = useRef(assistRequest);
   useEffect(() => {
-    if (assistRequest === handledAssist.current) return;
+    if (assistRequest === undefined || assistRequest === handledAssist.current) return;
+    const first = handledAssist.current === undefined;
     handledAssist.current = assistRequest;
+    if (first) return;
     if (editor.isDestroyed) return;
     assisted.current?.onAssist(assistSelection(editor));
   }, [editor, assistRequest]);
