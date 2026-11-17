@@ -6,7 +6,10 @@ import { adminModule } from "@nether/enterprise-admin";
 import { auditModule } from "@nether/enterprise-audit";
 import { haModule } from "@nether/enterprise-ha";
 import { policiesModule } from "@nether/enterprise-policies";
+import { scimModule } from "@nether/enterprise-scim";
 import { ssoModule } from "@nether/enterprise-sso";
 import { runServer } from "@nether/server/src/start.ts";
 
-runServer({ enterpriseModules: [adminModule, policiesModule, ssoModule, auditModule, haModule] });
+runServer({
+  enterpriseModules: [adminModule, policiesModule, ssoModule, scimModule, auditModule, haModule],
+});

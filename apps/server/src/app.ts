@@ -190,7 +190,7 @@ export async function buildApp(config: Config, services: Services): Promise<Fast
   // Readiness: the database answers, and the node is not draining.
   registerReadiness(app, services.db, services.redis, services.readiness ?? new Readiness());
   // The data policies (ADR 0088), which hold while the `policies` feature is on.
-  const dataPolicies = new DataPolicies(services.db, () => switches.on("policies"));
+  const dataPolicies = new DataPolicies(services.db, (db) => switches.on("policies", db));
   registerFeatures(app, services.db, switches, events, (feature) => {
     if (feature === "policies") dataPolicies.switched();
   });

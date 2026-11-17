@@ -424,6 +424,16 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   directories, their accounts and their groups are in place for the SCIM
   server and the LDAP pull that follow
   ([ADR 0085](docs/adr/0085-a-directory-provisions-accounts-and-groups-by-scim-or-an-ldap-pull-and-deprovisioning-deactivates-before-it-removes.md)).
+  Then SCIM users: with **Provisioning** on, the console's Directories
+  page adds directories, each with its email domains and a bearer token
+  shown once and kept as its hash, lasting a year unless the admin picks
+  another length. Okta and Microsoft Entra ID provision accounts at
+  `/api/scim/<directory>/v2`: `/Users` with filters, paging, `PUT` and
+  `PATCH` in both providers' forms, and the discovery endpoints. A
+  directory makes accounts with no password, takes over one at its
+  domains, deactivates and reactivates them, and removes one by
+  deactivating it, taking it out of every workspace and letting it go,
+  unless a workspace it is in is on legal hold.
 
 ### Changed
 
