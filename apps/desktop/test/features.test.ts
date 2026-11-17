@@ -51,21 +51,33 @@ describe("commandShown", () => {
     expect(commandIds.filter((id) => shownIn(web, id))).toHaveLength(commandIds.length - 3);
   });
 
-  it("leaves out of the mobile apps what comes to them in later parts", () => {
-    const phone = { web: false, sync: false, mobile: true };
+  it("leaves out of the mobile apps what comes to them later, and what stays on the desktop", () => {
+    const phone = { web: false, sync: true, mobile: true };
     for (const id of [
       "export",
       "openGraph",
       "newCanvas",
       "checkUpdates",
       "updateChecks",
-      "servers",
-      "sync",
-      "share",
+      "webhooks",
+      "apiTokens",
     ] as const) {
       expect(shownIn(phone, id)).toBe(false);
     }
-    for (const id of ["newNote", "import", "search", "appearance", "closeVault"] as const) {
+    // The phones sign in and sync (ADR 0087, part 4).
+    for (const id of [
+      "newNote",
+      "import",
+      "search",
+      "appearance",
+      "closeVault",
+      "servers",
+      "sync",
+      "share",
+      "members",
+      "spaces",
+      "notifications",
+    ] as const) {
       expect(shownIn(phone, id)).toBe(true);
     }
   });

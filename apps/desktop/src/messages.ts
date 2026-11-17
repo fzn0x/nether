@@ -1637,8 +1637,13 @@ export const messages = {
   mobileNewVaultHint:
     "A vault is a folder of Markdown notes on this phone. Opening a name again finds its notes.",
   mobileExportLater: "Exports come to the phone with the share sheet, in a later version.",
-  mobileSignInLater: "Signing in to a server comes to the phone in a later version.",
   mobileAiLater: "AI comes to the phone in a later version.",
+  phoneServers: "On your servers",
+  phoneSignIn: "Sign in to a server",
+  phoneServersManage: "Servers and accounts",
+  phoneServersHint:
+    "A workspace opens as a vault on this phone, which syncs with its server while Nether is open.",
+  phoneOpenWorkspace: "Open {name}, on {server}",
   mergeNoteTitle: "Merge {name} into another note",
   mergeNoteWhat:
     "{name}'s text goes after the other note's, its properties join the other's, links to it lead to the other, and it moves to the trash.",

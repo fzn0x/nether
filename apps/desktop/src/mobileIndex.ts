@@ -4,7 +4,10 @@
 // encrypted: the phone's own encryption of the app's data covers them. Each
 // opens in WAL mode with full syncs, so a commit survives a power cut. The
 // plugin gives rows as objects by column, in the statement's order, and
-// BLOBs as arrays of numbers; it binds bytes given as a Node Buffer's JSON.
+// BLOBs as arrays of numbers; its `run` and `query` bind bytes given as a
+// Node Buffer's JSON, but its `executeSet` binds none on Android, so a set
+// of statements with bytes runs one by one in a transaction of its own.
+// Writes go one at a time, so none joins another's transaction.
 import type { Database, SqlValue, Statement } from "@nether/storage";
 
 /** What the plugin's connection does, of what the index uses. */
@@ -19,6 +22,9 @@ export interface SqliteConnection {
     set: { statement: string; values: unknown[] }[],
     transaction?: boolean,
   ): Promise<unknown>;
+  beginTransaction(): Promise<unknown>;
+  commitTransaction(): Promise<unknown>;
+  rollbackTransaction(): Promise<unknown>;
 }
 
 /** Opens, or finds open, a connection to a database by name, and lets it go. */
@@ -68,22 +74,45 @@ export async function openMobileIndex(
   // WAL keeps readers apart from the writer; FULL syncs each commit to the disk.
   await db.query("PRAGMA journal_mode = WAL");
   await db.execute("PRAGMA synchronous = FULL", false);
+  let writes: Promise<unknown> = Promise.resolve();
+  const oneAtATime = <T>(write: () => Promise<T>): Promise<T> => {
+    const done = writes.then(write, write);
+    writes = done.catch(() => undefined);
+    return done;
+  };
   return {
     execute(sql: string, params: readonly SqlValue[] = []) {
-      return db.run(sql, params.map(bound), false);
+      return oneAtATime(() => db.run(sql, params.map(bound), false));
     },
     async query(sql: string, params: readonly SqlValue[] = []) {
       const { values = [] } = await db.query(sql, params.map(bound));
       return rowsOf(values);
     },
     transaction(statements: readonly Statement[]) {
-      return db.executeSet(
-        statements.map((statement) => ({
-          statement: statement.sql,
-          values: (statement.params ?? []).map(bound),
-        })),
-        true,
-      );
+      return oneAtATime(async () => {
+        const withBytes = statements.some((statement) =>
+          (statement.params ?? []).some((value) => value instanceof Uint8Array),
+        );
+        if (!withBytes) {
+          return db.executeSet(
+            statements.map((statement) => ({
+              statement: statement.sql,
+              values: (statement.params ?? []).map(bound),
+            })),
+            true,
+          );
+        }
+        await db.beginTransaction();
+        try {
+          for (const statement of statements) {
+            await db.run(statement.sql, (statement.params ?? []).map(bound), false);
+          }
+          return await db.commitTransaction();
+        } catch (error) {
+          await db.rollbackTransaction().catch(() => undefined);
+          throw error;
+        }
+      });
     },
     async close() {
       await db.close();

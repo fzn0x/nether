@@ -145,10 +145,21 @@ function Welcome(props: { readonly onOpen: (vault: VaultInfo) => void }) {
           </ul>
         </section>
       )}
-      {build.mobile === true ? null : <p className="about">{about}</p>}
+      {build.mobile === true ? (
+        <Suspense fallback={null}>
+          <PhoneWorkspaces onOpen={onOpen} />
+        </Suspense>
+      ) : (
+        <p className="about">{about}</p>
+      )}
     </main>
   );
 }
+
+// Only the mobile apps show it, under their vaults (ADR 0087).
+const PhoneWorkspaces = lazy(() =>
+  import("./PhoneWorkspaces.tsx").then(({ PhoneWorkspaces: list }) => ({ default: list })),
+);
 
 // Only the web app shows it before a vault opens.
 const ServersDialog = lazy(() =>

@@ -98,7 +98,9 @@ have it, needs no Kotlin toolchain in the build.
   under the repository's license, holds:
   - `NetherVaults`: each vault's files, and the list of vaults and servers;
   - `Inbox`: what the share sheet hands the app;
-  - `SignIn`: on iOS, the system's sign-in sheet for providers.
+  - `SignIn`: on iOS, the system's sign-in sheet for providers, which
+    `NetherVaults` opens as its `signIn` call, rather than a plugin of its
+    own beside it.
 
   Everything else comes from maintained Capacitor plugins, listed at the
   end with their licenses. On Android the plugin is in the app's project;

@@ -67,6 +67,14 @@ function fakePlugin() {
       });
     },
     executeSet(set) {
+      // As on Android, a set binds its values as they come: a Buffer's JSON
+      // is not bytes there, and is refused.
+      for (const { values } of set) {
+        const object = values.findIndex((value) => typeof value === "object" && value !== null);
+        if (object !== -1) {
+          return Promise.reject(new Error(`ExecuteSet: Cannot bind at index ${String(object)}`));
+        }
+      }
       raw.exec("BEGIN");
       try {
         for (const { statement, values } of set) run(statement, values);
@@ -75,6 +83,18 @@ function fakePlugin() {
         raw.exec("ROLLBACK");
         return Promise.reject(error instanceof Error ? error : new Error(String(error)));
       }
+      return Promise.resolve();
+    },
+    beginTransaction() {
+      raw.exec("BEGIN");
+      return Promise.resolve();
+    },
+    commitTransaction() {
+      raw.exec("COMMIT");
+      return Promise.resolve();
+    },
+    rollbackTransaction() {
+      raw.exec("ROLLBACK");
       return Promise.resolve();
     },
   };

@@ -45,10 +45,19 @@ export type OidcError =
   | "sso_required";
 
 /**
- * Whether the browser may be sent back to an address: the app's loopback
- * address, by IP as RFC 8252 asks, on any port, or the server's own.
+ * Where the mobile apps take a provider's sign-in back (ADR 0087): a
+ * private-use scheme named after the apps' identifier, as RFC 8252 asks of
+ * an app with no loopback address, at this one path.
+ */
+export const mobileReturnAddress = "io.github.fzn0x.nether:/sign-in/provider";
+
+/**
+ * Whether the browser may be sent back to an address: the desktop app's
+ * loopback address, by IP as RFC 8252 asks, on any port; the mobile apps'
+ * own address, exactly; or the server's own.
  */
 export function mayReturnTo(redirect: string, publicUrl: string): boolean {
+  if (redirect === mobileReturnAddress) return true;
   let url: URL;
   try {
     url = new URL(redirect);

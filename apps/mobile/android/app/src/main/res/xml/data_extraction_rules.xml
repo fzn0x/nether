@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Android 12 and later (ADR 0087): the server sessions' tokens and the
+     account's private key, sealed under a key that never leaves the
+     Keystore, stay out of backups and transfers; a restored app signs in
+     again. -->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="sharedpref" path="WSSecureStorageSharedPreferences.xml" />
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="sharedpref" path="WSSecureStorageSharedPreferences.xml" />
+    </device-transfer>
+</data-extraction-rules>

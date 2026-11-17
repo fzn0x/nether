@@ -78,6 +78,34 @@ its place, and the other beside it, as `map 1.png`. Hidden folders, such as
 100 MB unless its admin sets otherwise, stays on your computer, and the
 line at the foot of the sidebar names it.
 
+## On a phone
+
+The Android and iOS apps sign in as the desktop app does: choose **Sign
+in to a server** on their first screen, or run **Servers and signing in**
+from the command palette. A password and an emailed code work as above,
+and the code's field offers the one from Mail or Messages. A provider,
+and single sign-on, opens in the system's sign-in sheet on iOS, or a
+browser tab on Android, and comes back to the app by its own address,
+`io.github.fzn0x.nether:/sign-in/provider`, which every server accepts:
+admins register nothing new.
+
+Each session's key is kept in the iPhone's Keychain, on that phone only
+and never in iCloud, or on Android sealed under a key from the phone's
+Keystore. Backups leave it out, so a phone restored from one signs in
+again.
+
+The first screen lists the workspaces of each account you are signed in
+to. Tap one to open it as a new vault on the phone, which the workspace
+fills as it syncs. **Sync this vault** links a vault already on the phone
+instead, as on a computer.
+
+A phone syncs while Nether is on screen. As you leave it, the app saves
+every open note and sends what it can in the time the system gives; as
+you come back, or when the network returns, it catches up at once. Edits
+made offline wait on the phone until then. Servers must use HTTPS: only
+a debug build reaches plain HTTP, on the emulator's host, for
+development. Webhooks and API tokens are managed from a computer.
+
 ## The web app
 
 A Nether server is also a web app: open its address in a browser, such as

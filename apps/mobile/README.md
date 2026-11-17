@@ -25,8 +25,24 @@ phone and its index in SQLite.
   time the system gives. **Coming back**, the vault looks at its folder
   again. **The back button** closes a menu, a dialog or the drawer, as
   Escape does, then puts the app away.
-- Signing in and sync, and exports through the share sheet, come in later
-  parts; the build leaves them out until then.
+- **Servers** are reached natively, through `CapacitorHttp`, outside the
+  page's CORS (`mobileHttp.ts`). The servers signed in to are listed beside
+  the vaults, in `servers.json`; each session's token and the account's
+  private key are kept by `@aparajita/capacitor-secure-storage`: in the iOS
+  Keychain, after the first unlock and on this device only, and on Android
+  sealed under a key from the Keystore, which `backup_rules.xml` and
+  `data_extraction_rules.xml` leave out of backups (`mobileServers.ts`).
+- **A provider's sign-in** comes back to the app's own scheme,
+  `io.github.fzn0x.nether:/sign-in/provider`: on iOS the plugin opens it in
+  `ASWebAuthenticationSession`, which takes the scheme back itself; on
+  Android a Custom Tab opens it, and the activity's intent filter takes the
+  scheme back (`mobileSignIn.ts`).
+- **Sync** runs while the app is on screen: leaving, the engine sends what
+  is pending once the notes are saved; coming back, or back online, it
+  starts again at once (`useSync.ts`). Release builds speak only HTTPS;
+  the debug build alone reaches plain HTTP, on the emulator's host.
+- Exports through the share sheet come in the next part; the build leaves
+  them out until then.
 
 ## Build
 
@@ -77,8 +93,13 @@ pnpm --filter @nether/mobile smoke [path/to/app-debug.apk]
 installs the APK on the device or emulator adb has, makes a vault and a
 note through the page, which Playwright drives in the app's WebView, and
 checks that what was typed is there after the app is ended: from the home
-screen, and on screen a moment after typing. CI runs it on an Android 15
-emulator.
+screen, and on screen a moment after typing. Then it starts a server on
+this machine (`scripts/sync-server.ts`, PostgreSQL in its process), which
+the emulator reaches as `10.0.2.2`, signs in with a password, opens the
+workspace from the first screen, and checks that the server's note comes
+to the phone, that a note typed there reaches the server, and that, ended
+and started again, the app is still signed in and gets the server's next
+note. CI runs it on an Android 15 emulator.
 
 ```sh
 pnpm --filter @nether/mobile smoke:ios path/to/App.app [simulator UDID]
