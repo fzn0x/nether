@@ -12,6 +12,12 @@ import { Placeholder } from "@tiptap/extensions";
 import { EditorContent, useEditor } from "@tiptap/react";
 import { useEffect, useMemo, useRef } from "react";
 import { BlockKeys } from "./actions.ts";
+import {
+  AssistHighlight,
+  type NoteAssistView,
+  assistHighlightKey,
+  assistSelection,
+} from "./assist.ts";
 import { BlockHandle } from "./BlockHandle.tsx";
 import { type BlockEntry, blockCommands, entryCommand } from "./commands.ts";
 import {
@@ -99,6 +105,8 @@ export interface NoteEditorProps {
   readonly comments?: NoteCommentsView;
   /** What plugins add to the slash menu, after the built-in blocks; it may change while the note is open. */
   readonly slashEntries?: readonly BlockEntry[];
+  /** Writing assist on the selection, with `document` (ADR 0069). */
+  readonly assist?: NoteAssistView;
 }
 
 export function NoteEditor(props: NoteEditorProps) {
@@ -118,14 +126,17 @@ export function NoteEditor(props: NoteEditorProps) {
     collaboration,
     comments,
     slashEntries,
+    assist,
   } = props;
   // The latest callbacks, so the editor need not be made again when they change.
   const changed = useRef(onChange);
   const commented = useRef(comments);
+  const assisted = useRef(assist);
   useEffect(() => {
     changed.current = onChange;
     commented.current = comments;
-  }, [onChange, comments]);
+    assisted.current = assist;
+  }, [onChange, comments, assist]);
   /** Starts a thread on an anchor, where comments are offered; whether it did. */
   const comment = (anchor: CommentAnchor | undefined): boolean => {
     const start = commented.current?.onComment;
@@ -168,6 +179,7 @@ export function NoteEditor(props: NoteEditorProps) {
                 },
                 onComment: (state) => comment(selectionAnchor(state)),
               }),
+              AssistHighlight,
             ]),
         FileDrop.configure({ files }),
         Placeholder.configure({ placeholder }),
@@ -229,6 +241,27 @@ export function NoteEditor(props: NoteEditorProps) {
     handledRequest.current = request;
     comment(selectionAnchor(editor.state));
   }, [editor, request]);
+
+  // The app's command assists on the selection; a request made before this
+  // editor does nothing, nor does the assist going and coming back.
+  const assistRequest = assist?.request;
+  const handledAssist = useRef(assistRequest);
+  useEffect(() => {
+    if (assistRequest === undefined || assistRequest === handledAssist.current) return;
+    const first = handledAssist.current === undefined;
+    handledAssist.current = assistRequest;
+    if (first) return;
+    if (editor.isDestroyed) return;
+    assisted.current?.onAssist(assistSelection(editor));
+  }, [editor, assistRequest]);
+  // The text the assist works on stays highlighted while it shows.
+  const assisting = assist?.active;
+  const highlighted = useRef<typeof assisting>(undefined);
+  useEffect(() => {
+    if (editor.isDestroyed || assisting === highlighted.current) return;
+    highlighted.current = assisting;
+    editor.view.dispatch(editor.state.tr.setMeta(assistHighlightKey, { anchor: assisting }));
+  }, [editor, assisting]);
 
   // Goes to the heading or block a link names.
   const focusKey = focus?.key;

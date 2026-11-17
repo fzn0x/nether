@@ -4,6 +4,34 @@ import { call, type Channel } from "mygo-runtime";
 
 // ---- Types ----
 
+/** AIProvider is a provider set up on this device, without its key. */
+export interface AIProvider {
+  /** ID names the provider here, and its key in the keychain. */
+  id: string;
+  /** Name is what the user calls it, as "Ollama" or "Work's Claude". */
+  name: string;
+  /**
+   * Kind is how it is spoken to: "openai" for an OpenAI-compatible
+   * endpoint, "anthropic" for Anthropic's Messages API.
+   */
+  kind: string;
+  /** URL is its API's address, as http://localhost:11434/v1. */
+  url: string;
+  /** Model is the model to chat with, as the provider names it. */
+  model: string;
+  /** HasKey says whether the keychain holds a key for it. */
+  hasKey: boolean;
+}
+
+/**
+ * AISettings are the providers set up on this device, and the one vaults
+ * use unless they choose another.
+ */
+export interface AISettings {
+  providers: AIProvider[];
+  default: string;
+}
+
 /** AppInfo describes the running app. */
 export interface AppInfo {
   /** Name is the app's name, as its users see it. */
@@ -552,5 +580,48 @@ export const Servers = {
    */
   wait(id: string): Promise<Record<string, string>> {
     return call("Servers.Wait", id);
+  },
+} as const;
+
+/**
+ * AI keeps the AI providers the user has set up on this device (ADR 0068):
+ * each provider's address and model in ai.json beside the list of vaults,
+ * and its key in the system's keychain, as server tokens are kept, never
+ * in a file or a vault. The page reads a key when it sends a request, and
+ * Go's fetch sends it, so any address works, a local model's included.
+ */
+export const AI = {
+  /** Key returns a provider's key; empty when the keychain has none. */
+  key(id: string): Promise<string> {
+    return call("AI.Key", id);
+  },
+  /** List returns the providers set up on this device and the default one. */
+  list(): Promise<AISettings> {
+    return call("AI.List");
+  },
+  /**
+   * Remove forgets a provider, and its key leaves the keychain. When it was
+   * the default, the first left takes its place.
+   */
+  remove(id: string): Promise<void> {
+    return call("AI.Remove", id);
+  },
+  /**
+   * Save adds a provider, or changes one with its ID, and returns it as kept.
+   * A new provider gets an ID, and is the default when it is the first.
+   */
+  save(provider: AIProvider): Promise<AIProvider> {
+    return call("AI.Save", provider);
+  },
+  /** SetDefault makes a provider the one vaults use unless they choose another. */
+  setDefault(id: string): Promise<void> {
+    return call("AI.SetDefault", id);
+  },
+  /**
+   * SetKey keeps a provider's key in the keychain; an empty key removes it,
+   * for a local model that needs none.
+   */
+  setKey(id: string, key: string): Promise<void> {
+    return call("AI.SetKey", id, key);
   },
 } as const;

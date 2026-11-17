@@ -148,6 +148,38 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   add, edit, turn off and on, give a new secret, test and remove a
   workspace's webhooks, with their recent events. Webhooks also refuse
   IPv4-translated addresses as not public.
+- AI from a provider you bring, first part: `@nether/ai`, streamed chat
+  and embeddings from any OpenAI-compatible endpoint (OpenAI, Ollama,
+  vLLM, LM Studio) or Anthropic's Messages API, over fetch, with no
+  vendor's SDK. The desktop app's settings have an AI tab, where
+  providers are set up, each key kept in the system's keychain, and where
+  a vault uses the default, one of its own, or none; an end-to-end
+  encrypted workspace's vault uses none until one is chosen for it. A
+  workspace's owners and admins turn AI off for it, which the app asks
+  before each request. Until a vault has a provider, nothing of AI shows.
+  Writing assist, Ctrl or Cmd and J, rewrites, fixes the grammar of,
+  summarizes, translates or continues the selection, beside the note,
+  naming where the text goes first; the reply streams into a preview and
+  goes into the note as one edit that one undo takes out
+  ([ADR 0068](docs/adr/0068-ai-comes-from-the-users-own-provider-reached-from-their-device.md),
+  [ADR 0069](docs/adr/0069-writing-assist-streams-into-a-preview-and-goes-in-as-one-edit.md)).
+- PDFs embedded in notes are drawn by pdf.js in the note, on every system,
+  once they come near the screen and not before
+  ([ADR 0067](docs/adr/0067-pdf-embeds-draw-with-pdf-js-when-on-screen-and-an-area-is-pdf-plus-plus-rect.md)):
+  the whole PDF in a box, at `#page=` and `#height=`, with Open to its
+  tab; a passage or PDF++'s `&rect=` box alone; and above a highlight's
+  embed, its passage. An area of a page is highlighted by a drag or from
+  the keyboard, written as PDF++'s `&rect=`. Every view and embed of a PDF
+  shares one loaded copy.
+- The web clipper, `apps/clipper`, a Manifest V3 extension for Chrome and
+  Firefox: its button saves the selection, or the whole page as a reader
+  view shows it, as Markdown the importer would write, to edit before it
+  goes; as a new note with its `source`, `clipped` and `author`, added to
+  a note found by search, read again if it changed meanwhile, or as a
+  database row. It signs in with a write token, kept in the browser's own
+  storage, and reaches the person's server alone
+  ([ADR 0066](docs/adr/0066-the-web-clipper-is-a-manifest-v3-extension-that-sends-clips-to-the-users-own-server-alone.md)).
+  The build makes a ZIP of each for its store.
 
 ### Changed
 

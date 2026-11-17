@@ -12,6 +12,7 @@ import {
   request,
   serverAddress,
   setUpServer,
+  setWorkspaceAi,
   setupNeeded,
   signInMethods,
   signInWithProvider,
@@ -139,20 +140,43 @@ describe("request", () => {
           user,
           workspaces: [
             { id: "w1", name: "Team", role: "owner", encryption: "none" },
-            { id: "w2", name: "Secret", role: "member", encryption: "end-to-end" },
+            { id: "w2", name: "Secret", role: "member", encryption: "end-to-end", ai: false },
           ],
         }),
     });
+    // A server from before AI's switch says nothing of it: AI is on there.
     await expect(account(fetcher, base, "t0k")).resolves.toEqual({
       user,
       workspaces: [
-        { id: "w1", name: "Team", role: "owner", encrypted: false },
-        { id: "w2", name: "Secret", role: "member", encrypted: true },
+        { id: "w1", name: "Team", role: "owner", encrypted: false, ai: true },
+        { id: "w2", name: "Secret", role: "member", encrypted: true, ai: false },
       ],
     });
     const odd = fakeFetch({ "GET /api/me": () => json(200, { user: { id: 7 } }) });
     await expect(account(odd.fetcher, base, "t0k")).rejects.toThrow(
       "https://nether.example.org gave an answer Nether cannot read.",
+    );
+  });
+});
+
+describe("a workspace's AI switch", () => {
+  it("is turned off and on by a request its owners and admins may make", async () => {
+    const { fetcher, sent } = fakeFetch({
+      "PATCH /api/workspaces/w1": (request) => json(200, { id: "w1", ...(request.body as object) }),
+    });
+    await setWorkspaceAi(fetcher, base, "t0k", "w1", false);
+    expect(sent[0]).toMatchObject({
+      method: "PATCH",
+      url: `${base}/api/workspaces/w1`,
+      headers: { authorization: "Bearer t0k" },
+      body: { ai: false },
+    });
+    const refused = fakeFetch({
+      "PATCH /api/workspaces/w1": () =>
+        json(403, { message: "Only the workspace's owners and admins change its settings." }),
+    });
+    await expect(setWorkspaceAi(refused.fetcher, base, "t0k", "w1", true)).rejects.toThrow(
+      "Only the workspace's owners and admins change its settings.",
     );
   });
 });

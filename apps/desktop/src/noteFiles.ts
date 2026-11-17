@@ -6,6 +6,7 @@ import type { NoteId } from "@nether/core";
 import type { NoteFiles } from "@nether/editor";
 import type { Vault } from "@nether/storage";
 import type { VaultMedia } from "./backend.ts";
+import { pdfEmbed } from "./PdfEmbed.tsx";
 
 /** The folder, from the vault's, that pasted and dropped files go in. */
 export const attachmentsFolder = "attachments";
@@ -48,6 +49,8 @@ export function noteFiles(
   media: VaultMedia,
   id: NoteId,
   report: (error: unknown) => void,
+  /** Opens a file a view opens, as a PDF, at a place; false when none does. */
+  openFile?: (path: string, part?: string) => boolean,
 ): NoteFiles {
   const from = () => vault.note(id)?.path ?? "";
   const find = (link: string) => vault.resolveFile(link, from());
@@ -67,6 +70,23 @@ export function noteFiles(
         return undefined;
       }
     },
+  };
+  // PDFs the app draws itself, once on screen (ADR 0067).
+  files.pdf = (link, part) => {
+    const path = find(link);
+    return path === undefined
+      ? null
+      : pdfEmbed({
+          vault,
+          path,
+          part,
+          onOpen:
+            openFile === undefined
+              ? undefined
+              : (place) => {
+                  openFile(path, place);
+                },
+        });
   };
   const { open, reveal } = media;
   if (open !== undefined) {
