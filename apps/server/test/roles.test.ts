@@ -1,7 +1,8 @@
 // What each built-in role may do (ADR 0089): every route that a role
 // decides, asked by an owner, an admin, a member and a guest, as one table.
 // The table was written before the server's checks read a role's settings,
-// and holds the same after.
+// and holds the same after, but that a guest who edits a page now sends
+// its files.
 import { createHash, randomUUID } from "node:crypto";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -181,7 +182,8 @@ const table: readonly {
         "content-type": "application/octet-stream",
       });
     },
-    answers: { owner: "ok", admin: "ok", member: "ok", guest: 403 },
+    // The guest edits a page, and so adds its images (ADR 0089).
+    answers: { owner: "ok", admin: "ok", member: "ok", guest: "ok" },
   },
 ];
 
