@@ -338,6 +338,9 @@ importers:
         specifier: workspace:*
         version: link:../../apps/server
     devDependencies:
+      '@nether/enterprise-admin':
+        specifier: workspace:*
+        version: link:../admin
       '@types/node':
         specifier: ^24.19.2
         version: 24.19.2

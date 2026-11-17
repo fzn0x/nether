@@ -14,6 +14,7 @@ import {
   signIn,
   startServer,
 } from "@nether/server/test/app.ts";
+import { adminModule } from "@nether/enterprise-admin";
 import { afterEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
 import {
@@ -41,7 +42,10 @@ async function start(
   env: Record<string, string> = { NETHER_ENTERPRISE_AUDIT: "on" },
   moduleEnv: Record<string, string> = {},
 ): Promise<Test> {
-  const server = await startServer({ env, enterpriseModules: [createAuditModule(moduleEnv)] });
+  const server = await startServer({
+    env,
+    enterpriseModules: [createAuditModule(moduleEnv), adminModule],
+  });
   const set = await setUp(server);
   const { rows: counted } = await server.db.query("SELECT count(*) AS count FROM audit_events");
   running = { ...server, ...set, since: Number(counted[0]?.count ?? 0) };
@@ -255,6 +259,40 @@ describe("the audit log", () => {
       details: { path: "Plans.md", via: "api" },
     });
     expect(by("token.revoked")).toMatchObject({ targetId: apiToken.id, targetName: "Script" });
+  });
+
+  it("records a role an instance admin sets from the console, as theirs", async () => {
+    const test = await start({ NETHER_ENTERPRISE_AUDIT: "on", NETHER_ENTERPRISE_ADMIN: "on" });
+    const invited = await test.server.inject({
+      method: "POST",
+      url: `/api/workspaces/${test.workspaceId}/invitations`,
+      headers: bearer(test.token),
+      payload: { role: "member" },
+    });
+    const accepted = await test.server.inject({
+      method: "POST",
+      url: "/api/invitations/accept",
+      payload: {
+        token: invited.json<{ token: string }>().token,
+        name: "Bea",
+        email: "bea@example.org",
+        password: "another long password",
+      },
+    });
+    const bea = accepted.json<{ user: { id: string } }>().user.id;
+    const set = await test.server.inject({
+      method: "PATCH",
+      url: `/api/admin/workspaces/${test.workspaceId}/members/${bea}`,
+      headers: bearer(test.token),
+      payload: { role: "owner" },
+    });
+    expect(set.statusCode).toBe(200);
+    expect((await rows(test)).at(-1)).toMatchObject({
+      action: "member.role_changed",
+      actorId: test.userId,
+      targetId: bea,
+      details: { from: "member", to: "owner", as: "instance-admin" },
+    });
   });
 
   it("keeps a chain that checks, and shows a row changed or missing", async () => {
