@@ -870,6 +870,7 @@ export const messages = {
   adminFeatureAdmin: "The console's usage, workspaces and security pages",
   adminFeatureHa: "High availability",
   adminPinned: "Set by {variable}, in the server's environment.",
+  adminPinnedAtStart: "Set by {variable}, in the server's environment, read as it starts.",
   adminUnavailable: "Not in this server's build of Nether yet.",
   adminTurnedOn: "{feature}: on.",
   adminTurnedOff: "{feature}: off.",
