@@ -17,6 +17,9 @@ import {
 } from "@nether/storage";
 import { Channel, isCallError, isMyGo } from "mygo-runtime";
 import {
+  AI,
+  type AIProvider,
+  type AISettings,
   Desktop,
   type ExportEntry,
   Exports,
@@ -151,6 +154,22 @@ export interface Backend {
   saveServerKey(url: string, key: Uint8Array): Promise<void>;
   /** Waits on a loopback address for the browser to come back from a provider. */
   loopback(): Promise<LoopbackWait>;
+  /** The AI providers set up on this device, without their keys (ADR 0068). */
+  aiSettings(): Promise<AISettings>;
+  /** Adds an AI provider, or changes one with its ID; gives it as kept. */
+  saveAiProvider(provider: AIProvider): Promise<AIProvider>;
+  /** Keeps an AI provider's key in the system's keychain; an empty key removes it. */
+  setAiKey(id: string, key: string): Promise<void>;
+  /** An AI provider's key, read when a request is sent; undefined when it has none. */
+  aiKey(id: string): Promise<string | undefined>;
+  removeAiProvider(id: string): Promise<void>;
+  setDefaultAiProvider(id: string): Promise<void>;
+  /**
+   * fetch for AI providers: Go makes the request in the desktop app, so any
+   * address works, a local model's included, and the browser does in the
+   * preview.
+   */
+  readonly aiFetch: typeof fetch;
   /**
    * The WebSocket class sync opens its connection with: Go's in the desktop
    * app, outside the page's mixed-content rules, and the browser's in the
@@ -281,6 +300,16 @@ const desktop: Backend = {
     const { id, redirect } = await Servers.listen();
     return { redirect, wait: () => Servers.wait(id), close: () => Servers.close(id) };
   },
+  aiSettings: () => AI.list(),
+  saveAiProvider: (provider) => AI.save(provider),
+  setAiKey: (id, key) => AI.setKey(id, key),
+  async aiKey(id) {
+    const key = await AI.key(id);
+    return key === "" ? undefined : key;
+  },
+  removeAiProvider: (id) => AI.remove(id),
+  setDefaultAiProvider: (id) => AI.setDefault(id),
+  aiFetch: goFetch,
   updateSettings: () => Updates.settings(),
   mark(name) {
     void Desktop.mark(name);
@@ -465,6 +494,87 @@ interface PreviewHooks {
   loopback?: () => LoopbackWait;
 }
 
+/**
+ * AI providers kept in memory, as the preview keeps them, with their keys,
+ * checked as the Go service checks them; forgotten when the page closes.
+ */
+function memoryAi(): Pick<
+  Backend,
+  | "aiSettings"
+  | "saveAiProvider"
+  | "setAiKey"
+  | "aiKey"
+  | "removeAiProvider"
+  | "setDefaultAiProvider"
+> {
+  let settings: AISettings = { providers: [], default: "" };
+  const keys = new Map<string, string>();
+  const find = (id: string) => {
+    const at = settings.providers.findIndex((provider) => provider.id === id);
+    if (at < 0) throw new Error(`No provider ${id} is set up here.`);
+    return at;
+  };
+  return {
+    aiSettings: () => Promise.resolve(structuredClone(settings)),
+    saveAiProvider(given) {
+      const provider = { ...given, name: given.name.trim(), model: given.model.trim() };
+      let url: URL | undefined;
+      try {
+        url = new URL(provider.url);
+      } catch {
+        url = undefined;
+      }
+      if (
+        provider.name === "" ||
+        provider.model === "" ||
+        !["openai", "anthropic"].includes(provider.kind) ||
+        url === undefined ||
+        !["http:", "https:"].includes(url.protocol)
+      ) {
+        return Promise.reject(new Error("That is not a provider."));
+      }
+      let providers = [...settings.providers];
+      if (provider.id === "") {
+        provider.id = crypto.randomUUID();
+        provider.hasKey = false;
+        providers.push(provider);
+      } else {
+        const at = find(provider.id);
+        provider.hasKey = providers[at]?.hasKey ?? false;
+        providers = providers.map((each, index) => (index === at ? provider : each));
+      }
+      const fallback = providers.some((each) => each.id === settings.default);
+      settings = { providers, default: fallback ? settings.default : provider.id };
+      return Promise.resolve({ ...provider });
+    },
+    setAiKey(id, key) {
+      const at = find(id);
+      if (key === "") keys.delete(id);
+      else keys.set(id, key);
+      settings = {
+        ...settings,
+        providers: settings.providers.map((each, index) =>
+          index === at ? { ...each, hasKey: key !== "" } : each,
+        ),
+      };
+      return Promise.resolve();
+    },
+    aiKey: (id) => Promise.resolve(keys.get(id)),
+    removeAiProvider(id) {
+      keys.delete(id);
+      const providers = settings.providers.filter((each) => each.id !== id);
+      const kept = providers.some((each) => each.id === settings.default);
+      settings = { providers, default: kept ? settings.default : (providers[0]?.id ?? "") };
+      return Promise.resolve();
+    },
+    setDefaultAiProvider(id) {
+      find(id);
+      settings = { ...settings, default: id };
+      return Promise.resolve();
+    },
+  };
+}
+
 /** The servers signed in to in the preview, which forgets them when the page closes. */
 const previewServers = new Map<string, { account: ServerAccount; token: string }>();
 /** The private keys of the preview's accounts, as the keychain keeps them in the app. */
@@ -507,6 +617,9 @@ const preview: Backend = {
       ? Promise.reject(new Error(t("providerNeedsApp")))
       : Promise.resolve(loopback);
   },
+  ...memoryAi(),
+  // The end-to-end tests stand in for providers with routes of the page.
+  aiFetch: (input, init) => fetch(input, init),
   // A page in a browser updates with its server.
   updateSettings: () => Promise.resolve({ available: false, automatic: false }),
   setAutomaticUpdates: () => Promise.resolve(),
