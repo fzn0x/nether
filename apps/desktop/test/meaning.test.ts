@@ -4,13 +4,8 @@
 // search that finds the note closest in meaning and lets its signs go.
 import { MemoryFiles, MemoryStore, Vault } from "@nether/storage";
 import { describe, expect, it } from "vitest";
-import {
-  type Embed,
-  MeaningIndexer,
-  MeaningSearch,
-  meaningChoice,
-  setMeaningChoice,
-} from "../src/meaning.ts";
+import { type Embed, MeaningIndexer, MeaningSearch } from "../src/meaning.ts";
+import { meaningChoice, setMeaningChoice } from "../src/meaningChoice.ts";
 
 /** Topics a fake model knows: each is a number of its vector, counting the topic's words. */
 const topics = [
@@ -90,7 +85,13 @@ describe("MeaningIndexer", () => {
     expect(sent).toHaveLength(1);
     expect(sent[0]).toHaveLength(4);
     expect(sent[0]).toContain("Garden > Beds\n\nTurn the soil before the seeds go in.");
-    expect(indexer.progress).toMatchObject({ done: 3, total: 3, running: false, error: undefined });
+    expect(indexer.progress).toMatchObject({
+      done: 3,
+      total: 3,
+      running: false,
+      passed: true,
+      error: undefined,
+    });
     expect(seen.at(-1)).toBe(3);
     const garden = await vault.meaning.notePassages(idOf(vault, "Garden"));
     expect(garden.map((passage) => passage.heading)).toEqual(["Beds", "Tools"]);

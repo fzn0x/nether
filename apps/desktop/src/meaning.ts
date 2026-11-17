@@ -16,86 +16,10 @@ import {
   unitVector,
 } from "@nether/search";
 import type { MeaningFile, MeaningPassage, NoteEntry, StoredPassage, Vault } from "@nether/storage";
-
-/** The provider and model a vault's notes are embedded with, when search by meaning is on. */
-export interface MeaningChoice {
-  /** The ID of one of this device's providers. */
-  readonly provider: string;
-  /** The embedding model, as the provider names it. */
-  readonly model: string;
-}
-
-/** What the vault's kept passages were embedded with, and their vectors' length once known. */
-interface MeaningRecord extends MeaningChoice {
-  readonly dimensions: number | undefined;
-}
+import { type MeaningChoice, keepRecord, meaningRecord } from "./meaningChoice.ts";
 
 /** Sends texts to the provider's embedding model: one vector each, in their order. */
 export type Embed = (inputs: readonly string[], signal: AbortSignal) => Promise<number[][]>;
-
-const choiceKey = "ai.meaning";
-const recordKey = "ai.meaning.index";
-const encoder = new TextEncoder();
-const decoder = new TextDecoder();
-
-function readJson(bytes: Uint8Array | undefined): unknown {
-  if (bytes === undefined) return undefined;
-  try {
-    return JSON.parse(decoder.decode(bytes)) as unknown;
-  } catch {
-    return undefined;
-  }
-}
-
-function choiceOf(value: unknown): MeaningChoice | undefined {
-  const kept = value as Partial<MeaningChoice> | undefined;
-  return typeof kept?.provider === "string" &&
-    kept.provider !== "" &&
-    typeof kept.model === "string" &&
-    kept.model !== ""
-    ? { provider: kept.provider, model: kept.model }
-    : undefined;
-}
-
-/** The vault's search by meaning, on this device: its provider and model, or none while it is off. */
-export async function meaningChoice(vault: Vault): Promise<MeaningChoice | undefined> {
-  return choiceOf(readJson(await vault.settings.setting(choiceKey)));
-}
-
-/**
- * Turns search by meaning on with a provider and model, or off. Another
- * provider or model than the kept passages came from forgets them, so the
- * vault is embedded again; turning it off keeps them, for turning it on again.
- */
-export async function setMeaningChoice(
-  vault: Vault,
-  choice: MeaningChoice | undefined,
-): Promise<void> {
-  await vault.settings.setSetting(
-    choiceKey,
-    choice === undefined ? undefined : encoder.encode(JSON.stringify(choice)),
-  );
-  if (choice === undefined) return;
-  const record = await meaningRecord(vault);
-  if (record?.provider === choice.provider && record.model === choice.model) return;
-  await vault.meaning.clearPassages();
-  await keepRecord(vault, { ...choice, dimensions: undefined });
-}
-
-async function meaningRecord(vault: Vault): Promise<MeaningRecord | undefined> {
-  const value = readJson(await vault.settings.setting(recordKey));
-  const choice = choiceOf(value);
-  if (choice === undefined) return undefined;
-  const dimensions = (value as { dimensions?: unknown }).dimensions;
-  return {
-    ...choice,
-    dimensions: typeof dimensions === "number" && dimensions > 0 ? dimensions : undefined,
-  };
-}
-
-async function keepRecord(vault: Vault, record: MeaningRecord): Promise<void> {
-  await vault.settings.setSetting(recordKey, encoder.encode(JSON.stringify(record)));
-}
 
 /** How far the vault's embedding has come, and the provider's last error while it waits. */
 export interface MeaningProgress {
@@ -104,6 +28,8 @@ export interface MeaningProgress {
   readonly total: number;
   /** Whether a pass is going on now. */
   readonly running: boolean;
+  /** Whether a pass has looked at every note since it started. */
+  readonly passed: boolean;
   /** Why the provider refused the last request, until one succeeds. */
   readonly error: string | undefined;
 }
@@ -162,7 +88,13 @@ export class MeaningIndexer {
   readonly #stored = new Set<() => void>();
   #files: Map<NoteId, MeaningFile> | undefined;
   #dimensions: number | undefined;
-  #progress: MeaningProgress = { done: 0, total: 0, running: false, error: undefined };
+  #progress: MeaningProgress = {
+    done: 0,
+    total: 0,
+    running: false,
+    passed: false,
+    error: undefined,
+  };
   #running = false;
   #again = false;
   #stopped = false;
@@ -248,6 +180,7 @@ export class MeaningIndexer {
         this.#again = false;
         await this.#pass();
       } while (this.#wanted() && !this.#ended());
+      if (!this.#ended()) this.#emit({ passed: true });
     } catch (error) {
       // Stopped mid-request, what was kept stays; any other failure shows, and the next change tries again.
       if (!this.#stopped)
