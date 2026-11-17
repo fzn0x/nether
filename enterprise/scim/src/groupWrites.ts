@@ -303,6 +303,73 @@ export async function removeMapping(
   return settle(tx, changer, group, [workspace], await groupMembers(tx, group.id));
 }
 
+/** A workspace and an account whose membership there is to be settled. */
+export interface Place {
+  readonly workspace: string;
+  readonly user: string;
+}
+
+/**
+ * Puts an account in exactly these of its directory's groups, in the
+ * caller's transaction, as an LDAP run reads them, telling of each it
+ * joins and leaves. Gives how many, and the places to settle: each
+ * workspace a group it joined or left is mapped to. The caller settles
+ * them, a batch at once, in the order `settleMemberships` keeps.
+ */
+export async function setAccountGroups(
+  tx: Queryable,
+  changer: GroupChanger,
+  user: string,
+  groups: ReadonlyMap<string, string>,
+): Promise<{ readonly added: number; readonly removed: number; readonly places: Place[] }> {
+  const { directory, actor, origin, events } = changer;
+  const { rows } = await tx.query(
+    `SELECT g.id, g.name FROM group_members gm JOIN groups g ON g.id = gm.group_id
+      WHERE g.directory_id = $1 AND gm.user_id = $2`,
+    [directory, user],
+  );
+  const before = new Map(rows.map((row) => [readText(row, "id"), readText(row, "name")]));
+  const added = [...groups.keys()].filter((id) => !before.has(id)).sort();
+  const removed = [...before.keys()].filter((id) => !groups.has(id)).sort();
+  for (const group of added) {
+    await tx.query("INSERT INTO group_members (group_id, user_id) VALUES ($1, $2)", [group, user]);
+  }
+  if (removed.length > 0) {
+    await tx.query("DELETE FROM group_members WHERE user_id = $1 AND group_id = ANY($2::uuid[])", [
+      user,
+      removed,
+    ]);
+  }
+  for (const [action, ids, names] of [
+    ["group.member_added", added, groups],
+    ["group.member_removed", removed, before],
+  ] as const) {
+    for (const id of ids) {
+      await events.emit(
+        tx,
+        {
+          action,
+          actor,
+          target: { type: "account", id: user },
+          details: { group: { id, name: names.get(id) ?? "" } },
+        },
+        origin,
+      );
+    }
+  }
+  const changed = [...added, ...removed];
+  if (changed.length === 0) return { added: 0, removed: 0, places: [] };
+  const mapped = await tx.query(
+    "SELECT DISTINCT workspace_id FROM group_workspaces WHERE group_id = ANY($1::uuid[])",
+    [changed],
+  );
+  return {
+    added: added.length,
+    removed: removed.length,
+    places: mapped.rows.map((row) => ({ workspace: readText(row, "workspace_id"), user })),
+  };
+}
+
 async function groupMembers(tx: Queryable, group: string): Promise<string[]> {
   const { rows } = await tx.query(
     "SELECT user_id FROM group_members WHERE group_id = $1 ORDER BY user_id",
