@@ -376,6 +376,32 @@ describe("signing in with a provider", () => {
     expect(wait.closed).toBe(true);
   });
 
+  it("opens the provider through the wait itself, where it has its own way, as a phone's", async () => {
+    const { fetcher, sent } = fakeFetch({
+      "POST /api/oidc/flows": () => json(201, { url: "https://login.example.org/authorize" }),
+      "POST /api/oidc/redeem": () => json(201, { token: "session", expiresAt: "", user }),
+    });
+    const sheet: string[] = [];
+    const browser: string[] = [];
+    const wait = {
+      ...loopback({ code: "handoff" }),
+      redirect: "io.github.fzn0x.nether:/sign-in/provider",
+      open(url: string) {
+        sheet.push(url);
+        return Promise.resolve();
+      },
+    };
+    await signInWithProvider(fetcher, base, wait, (url) => {
+      browser.push(url);
+      return Promise.resolve();
+    });
+    expect(sheet).toEqual(["https://login.example.org/authorize"]);
+    expect(browser).toEqual([]);
+    expect((sent[0]?.body as { redirect: string }).redirect).toBe(
+      "io.github.fzn0x.nether:/sign-in/provider",
+    );
+  });
+
   it("says why the provider's sign-in failed, and stops waiting", async () => {
     const { fetcher } = fakeFetch({
       "POST /api/oidc/flows": () => json(201, { url: "https://login.example.org/authorize" }),
