@@ -197,7 +197,7 @@ describe("signing in with a provider", () => {
     expect(replay.body).toContain("Start again from the app");
   });
 
-  it("sends the browser back only to the app's loopback address or the server's own", async () => {
+  it("sends the browser back only to the app's loopback address, the phones' or the server's own", async () => {
     const test = await start();
     test.provider.person = ada;
     const challenge = pkceChallenge(randomBytes(32).toString("base64url"));
@@ -214,15 +214,38 @@ describe("signing in with a provider", () => {
       "http://127.0.0.1:43123/#fragment",
       "http://user:secret@127.0.0.1:43123/",
       "not an address",
+      // The phones' scheme, at its one path only (ADR 0087).
+      "io.github.fzn0x.nether:/sign-in/elsewhere",
+      "io.github.fzn0x.nether://sign-in/provider",
+      "io.github.fzn0x.nether:/sign-in/provider?next=elsewhere",
+      "io.github.fzn0x.nether:/sign-in/provider#fragment",
+      "io.github.fzn0x.other:/sign-in/provider",
     ]) {
       expect((await flow(redirect)).statusCode, redirect).toBe(400);
     }
-    for (const redirect of ["http://[::1]:43123/signed-in", `${publicUrl}/sign-in/done`]) {
+    for (const redirect of [
+      "http://[::1]:43123/signed-in",
+      `${publicUrl}/sign-in/done`,
+      "io.github.fzn0x.nether:/sign-in/provider",
+    ]) {
       expect((await flow(redirect)).statusCode, redirect).toBe(201);
     }
     const web = await signInWithProvider(test, { redirect: `${publicUrl}/sign-in/done` });
     expect(web.landed.origin).toBe(publicUrl);
     expect(web.landed.searchParams.has("code")).toBe(true);
+    // A phone's sign-in comes back to its scheme with the code, which the app redeems.
+    const phone = await signInWithProvider(test, {
+      redirect: "io.github.fzn0x.nether:/sign-in/provider",
+    });
+    expect(phone.landed.protocol + phone.landed.pathname).toBe(
+      "io.github.fzn0x.nether:/sign-in/provider",
+    );
+    const signedIn = await redeem(
+      test,
+      phone.landed.searchParams.get("code") ?? "",
+      phone.verifier,
+    );
+    expect(signedIn.statusCode).toBe(201);
   });
 
   it("says when the provider cannot be reached, and how the app may sign in", async () => {
