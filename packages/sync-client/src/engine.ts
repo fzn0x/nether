@@ -169,7 +169,7 @@ export interface SyncStatus {
   readonly pending: number;
   /** The last failure, until the next success. */
   readonly error?: string;
-  /** Files the server would not take, larger than it allows or sent by a guest; sent again once changed. */
+  /** Files the server would not take, larger than it allows or from one who edits nowhere; sent again once changed. */
   readonly refused?: readonly string[];
 }
 
@@ -826,7 +826,7 @@ export class VaultSync {
       headers: { "content-type": "application/octet-stream" },
       body: data.slice(),
     });
-    // Larger than the server takes, or from a guest, who only reads.
+    // Larger than the server takes, or from one who edits nowhere in the workspace.
     if (sent.status === 413 || sent.status === 403) return undefined;
     if (!sent.ok) throw new Error(`The server answered ${String(sent.status)} for ${path}.`);
     return blob;
