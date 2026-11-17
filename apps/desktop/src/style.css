@@ -3963,6 +3963,116 @@ kbd {
   border-radius: 6px;
 }
 
+/* Asking your notes (ADR 0075), in the sidebar: questions and their answers,
+   each citation a link to its passage, then the question's box. */
+.ask-panel {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 0.5rem;
+  min-height: 0;
+  padding: 0.5rem 0;
+}
+
+.ask-panel p {
+  margin: 0;
+}
+
+.ask-turns {
+  display: grid;
+  flex: 1;
+  gap: 1rem;
+  align-content: start;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.ask-question {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.ask-answer {
+  margin-top: 0.25rem;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.ask-cite {
+  padding: 0 0.125rem;
+  border: 0;
+  border-radius: 3px;
+  border-block-end: 1px solid var(--accent);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.8125rem;
+  cursor: pointer;
+}
+
+.ask-unverified {
+  color: var(--muted);
+  text-decoration: underline dotted;
+}
+
+.ask-sources {
+  margin-top: 0.375rem;
+  font-size: 0.8125rem;
+}
+
+.ask-sources summary {
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.ask-sources ol {
+  margin: 0.25rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ask-sources button {
+  padding: 0.125rem 0;
+  border: 0;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+
+/* The passages the answer cites, stronger than those it only read. */
+.ask-sources button.cited {
+  font-weight: 600;
+}
+
+.ask-status {
+  min-block-size: 1.25rem;
+  color: var(--muted);
+  font-size: 0.8125rem;
+}
+
+.ask-form textarea {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 0.375rem 0.5rem;
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  resize: vertical;
+}
+
+.ask-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.375rem;
+}
+
 /* Mentions (ADR 0045): the people offered as @ is typed in a comment, the
    people a comment mentions, this person's own more strongly, and the
    notifications that tell of them. */

@@ -231,6 +231,17 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   at its heading; filters work as by words. Only changed passages are sent
   again, and nothing of it is in memory until a search runs
   ([ADR 0074](docs/adr/0074-search-by-meaning-keeps-passages-vectors-on-the-device-and-loads-them-only-to-search.md)).
+- Asking your notes: the sidebar's Ask tab, while the vault has an AI
+  provider, answers a question from passages of the notes the vault's own
+  search finds by its words, one search a word, fused by rank, with search
+  by meaning's ranking added once it is on. At most eight passages go, with
+  the question and the three turns before it; the tab says where first, and
+  lists what was read after. Each citation, `[2]`, links to its passage and
+  opens the note there; one that names no passage sent shows unverified.
+  Words no note has send nothing. The conversation saves as a note, its
+  citations links by heading. It runs through the server's relay in the
+  web app, and on the desktop alone for an encrypted workspace
+  ([ADR 0075](docs/adr/0075-asking-your-notes-answers-from-passages-the-vaults-search-finds-each-citation-checked.md)).
 
 ### Changed
 

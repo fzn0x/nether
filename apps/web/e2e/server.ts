@@ -50,11 +50,17 @@ const model = createServer((request, response) => {
     const content = messages.at(-1)?.content;
     const last = typeof content === "string" ? content : "";
     const asked = /<text>\n([\s\S]*)\n<\/text>/.exec(last)?.[1] ?? "";
+    // A question asked of the notes (ADR 0075) gets its first passage back, cited.
+    const passage = /<passage>\n([\s\S]*?)\n<\/passage>/.exec(last)?.[1];
     const chunk = (content: string) =>
       `data: ${JSON.stringify({ choices: [{ index: 0, delta: { content }, finish_reason: null }] })}\n\n`;
+    const answer =
+      passage === undefined
+        ? `${chunk("Fixed: ")}${chunk(asked.replace("Teh", "The"))}`
+        : `${chunk("Your notes say: ")}${chunk(passage.split("\n").at(-1) ?? "")}${chunk(" [1]")}`;
     response
       .writeHead(200, { "content-type": "text/event-stream" })
-      .end(`${chunk("Fixed: ")}${chunk(asked.replace("Teh", "The"))}data: [DONE]\n\n`);
+      .end(`${answer}data: [DONE]\n\n`);
   });
 });
 model.listen(modelPort, "127.0.0.1");

@@ -9,7 +9,8 @@ import { errorsOf, openSample, violations } from "./helpers.ts";
 
 /** Topics the fake model knows: each number of its vectors counts one topic's words. */
 const topics = [
-  ["markdown", "files", "plain"],
+  // "documents" is in no sample note: only meaning finds a note by it.
+  ["markdown", "files", "plain", "documents"],
   ["phase", "scope", "server", "account", "roadmap"],
   ["answer", "number", "const", "integral"],
 ];
@@ -139,5 +140,66 @@ test("search by meaning sends nothing until turned on, then finds a note by what
   await expect(
     page.getByRole("list", { name: "Notes found" }).locator(".note-title"),
   ).toContainText(["Roadmap"]);
+  expect(errors).toEqual([]);
+});
+
+/** A reply as an OpenAI-compatible endpoint streams it. */
+function streamed(text: string): string {
+  return [
+    `data: ${JSON.stringify({ choices: [{ index: 0, delta: { content: text }, finish_reason: null }] })}\n\n`,
+    "data: [DONE]\n\n",
+  ].join("");
+}
+
+test("asking your notes finds notes by meaning too, and says where the question goes", async ({
+  page,
+  baseURL,
+}) => {
+  const errors = errorsOf(page);
+  await fakeEmbeddings(page);
+  const asked: Request[] = [];
+  await page.route("**/fake-ai/v1/chat/completions", async (route) => {
+    asked.push(route.request());
+    await route.fulfill({
+      status: 200,
+      contentType: "text/event-stream",
+      body: streamed("They are plain files in a folder you choose [1]."),
+    });
+  });
+  await openSample(page);
+
+  const settings = await openSettingsAt(page, "AI");
+  const tab = settings.getByRole("tabpanel", { name: "AI" });
+  await tab.getByRole("button", { name: "Add a provider" }).click();
+  await tab.getByLabel("Name", { exact: true }).fill("Local");
+  await tab.getByLabel("Address").fill(`${baseURL ?? ""}/fake-ai/v1`);
+  await tab.getByLabel("Model", { exact: true }).fill("chat-model");
+  await tab.getByRole("button", { name: "Save" }).click();
+  const meaning = tab.getByRole("region", { name: "Search by meaning" });
+  await meaning.getByLabel("Embedding model").fill("embed-model");
+  await meaning.getByRole("button", { name: "Turn on" }).click();
+  await expect(meaning.getByRole("status")).toHaveText(
+    "On, with embed-model on Local: the vault is embedded.",
+    { timeout: 20_000 },
+  );
+  await settings.getByRole("button", { name: "Close" }).click();
+
+  await page.locator(".sidebar-tabs").getByRole("button", { name: "Ask" }).click();
+  const panel = page.getByRole("region", { name: "Ask your notes" });
+  await expect(panel).toContainText(
+    "Search by meaning also sends the question to embed-model on Local, to find the notes it is about.",
+  );
+  // No note has these words: meaning alone finds the welcome note.
+  await panel
+    .getByRole("textbox", { name: "Your question" })
+    .fill("Where are my documents stored?");
+  await page.keyboard.press("Enter");
+  const answer = panel.locator(".ask-answer").last();
+  await expect(answer).toContainText("They are plain files in a folder you choose");
+  await expect(answer.getByRole("button", { name: /^\[1\] 1\. Welcome/ })).toBeVisible();
+  expect(asked).toHaveLength(1);
+  const body = asked[0]?.postDataJSON() as { messages: { content: string }[] };
+  expect(body.messages.at(-1)?.content).toContain('From "Welcome"');
+  expect(await violations(page)).toEqual([]);
   expect(errors).toEqual([]);
 });
