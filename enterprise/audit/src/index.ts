@@ -159,6 +159,12 @@ function registerAudit(
     },
   );
 
+  // The workspaces the console's filter offers.
+  app.get("/api/audit/workspaces", { preHandler: [whenOn, account, admin] }, async () => {
+    const { rows } = await db.query("SELECT id, name FROM workspaces ORDER BY lower(name), id");
+    return { workspaces: rows.map((row) => ({ id: String(row.id), name: String(row.name) })) };
+  });
+
   app.get("/api/audit/settings", { preHandler: [whenOn, account, admin] }, async () => {
     const { rows } = await db.query("SELECT count(*) AS count, max(seq) AS head FROM audit_events");
     return {
