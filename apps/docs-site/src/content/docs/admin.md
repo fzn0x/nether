@@ -257,11 +257,18 @@ A change holds at once on the server you saved it on, and within five
 seconds on the others. Turning **Data policies** off narrows nothing, and
 keeps what you set for when it is on again.
 
-The apps' own export, and the Share dialog saying why a control is gone,
-come in a later version, as do how long history and the trash are kept
-and legal hold. A desktop vault's files are on its device, the person's
-own: no policy stops another program from reading them. Device management
-on your organization's computers is the tool for that.
+The apps keep to it too. With export off, a vault linked to the
+workspace offers no export: the **Export** dialog and a database's
+**Export CSV** say that your server's policy keeps its notes. The app asks
+your server as an export starts, and holds to its last answer while the
+server cannot be reached. The **Share** dialog offers only view links
+while links may only view, and says why it offers no link or site when
+they are off.
+
+How long history and the trash are kept, and legal hold, come in a later
+version. A desktop vault's files are on its device, the person's own: no
+policy stops another program from reading them. Device management on your
+organization's computers is the tool for that.
 
 ## Audit logs
 
