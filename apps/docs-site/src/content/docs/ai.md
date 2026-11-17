@@ -1,6 +1,6 @@
 ---
 title: AI
-description: How to bring your own AI provider to Nether, an OpenAI-compatible endpoint such as Ollama or OpenAI, or Anthropic, use writing assist on what you select, and search notes by meaning.
+description: How to bring your own AI provider to Nether, an OpenAI-compatible endpoint such as Ollama or OpenAI, or Anthropic, use writing assist on what you select, ask your notes, search them by meaning, and build databases, templates and plans from a description.
 ---
 
 Nether's AI uses a provider you choose, with your own key: any
