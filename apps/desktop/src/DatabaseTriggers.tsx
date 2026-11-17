@@ -3,8 +3,17 @@
 // can be removed, and a form that adds one. A rule with the same property
 // and value as one there sets its property beside the others. Values are
 // read by the property's type: a checkbox's as true or false, a number's
-// as a number, and nothing as none.
-import type { JsonValue, PropertyDefinition, PropertyType, Trigger } from "@nether/core";
+// as a number, and nothing as none. A rule the database keeps and does not
+// run, as one naming a property it no longer has, shows as not running,
+// with why, and can be removed.
+import type {
+  JsonObject,
+  JsonValue,
+  PropertyDefinition,
+  PropertyType,
+  SkippedTrigger,
+  Trigger,
+} from "@nether/core";
 import { useId, useState } from "react";
 import { t } from "./messages.ts";
 
@@ -34,6 +43,19 @@ export function triggerText(trigger: Trigger): string {
   return t("triggerText", { when: trigger.when, is: valueText(trigger.is), set });
 }
 
+function isObject(value: JsonValue | undefined): value is JsonObject {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/** A rule kept and not run, as a sentence when it reads as one, or else as written. */
+export function skippedText(rule: SkippedTrigger): string {
+  const { value } = rule;
+  if (isObject(value) && typeof value.when === "string" && isObject(value.set)) {
+    return triggerText({ when: value.when, is: value.is ?? null, set: value.set });
+  }
+  return JSON.stringify(value);
+}
+
 /** The triggers with a new rule: beside one of the same property and value, or last. */
 export function withTrigger(
   triggers: readonly Trigger[],
@@ -53,11 +75,13 @@ export function withTrigger(
 export function DatabaseTriggers(props: {
   readonly properties: readonly PropertyDefinition[];
   readonly triggers: readonly Trigger[];
+  /** The rules it keeps and does not run, each with why. */
+  readonly skipped: readonly SkippedTrigger[];
   /** Whether a plugin runs them: the Buttons and triggers plugin is on. */
   readonly running: boolean;
-  readonly onChange: (triggers: readonly Trigger[]) => void;
+  readonly onChange: (triggers: readonly Trigger[], skipped: readonly SkippedTrigger[]) => void;
 }) {
-  const { properties, triggers, running, onChange } = props;
+  const { properties, triggers, skipped, running, onChange } = props;
   const written = properties.filter((property) => !workedOut.includes(property.type));
   const [chosenWhen, setWhen] = useState<string | undefined>();
   const [is, setIs] = useState("");
@@ -74,7 +98,7 @@ export function DatabaseTriggers(props: {
   return (
     <div className="database-triggers" role="group" aria-label={t("triggers")}>
       {running ? null : <p className="hint">{t("triggersOff")}</p>}
-      {triggers.length === 0 ? (
+      {triggers.length === 0 && skipped.length === 0 ? (
         <p className="hint">{t("triggersNone")}</p>
       ) : (
         <ul>
@@ -88,7 +112,32 @@ export function DatabaseTriggers(props: {
                   className="quiet"
                   aria-label={t("triggerRemove", { trigger: text })}
                   onClick={() => {
-                    onChange(triggers.filter((_, at) => at !== index));
+                    onChange(
+                      triggers.filter((_, at) => at !== index),
+                      skipped,
+                    );
+                  }}
+                >
+                  {t("triggerRemoveButton")}
+                </button>
+              </li>
+            );
+          })}
+          {skipped.map((rule, index) => {
+            const text = skippedText(rule);
+            return (
+              <li key={`skipped ${String(index)} ${text}`} className="database-trigger-skipped">
+                <span>{text}</span>
+                <span className="hint">{t("triggerSkipped", { problem: rule.problem })}</span>
+                <button
+                  type="button"
+                  className="quiet"
+                  aria-label={t("triggerRemove", { trigger: text })}
+                  onClick={() => {
+                    onChange(
+                      triggers,
+                      skipped.filter((_, at) => at !== index),
+                    );
                   }}
                 >
                   {t("triggerRemoveButton")}
@@ -114,6 +163,7 @@ export function DatabaseTriggers(props: {
                 sets.key,
                 typedValue(sets.type, value),
               ),
+              skipped,
             );
             setIs("");
             setTyped(undefined);

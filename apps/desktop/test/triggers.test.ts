@@ -172,6 +172,33 @@ describe("runTriggers", () => {
     });
   });
 
+  it("runs the rules that are right beside one that names a property the database has not", async () => {
+    const stale = database.replace(
+      "  triggers:\n",
+      "  triggers:\n    - when: Gone\n      is: Done\n      set:\n        archived: true\n",
+    );
+    const { vault, graph, text, id } = await setUp({
+      "Projects.md": stale,
+      "Projects/Launch.md": "---\nstatus: Done\n---\n",
+    });
+    await runTriggers(
+      {
+        vault,
+        graph,
+        note: id("Projects/Launch.md"),
+        key: "status",
+        before: "Doing",
+        after: "Done",
+      },
+      friday,
+    );
+    await vi.waitFor(async () => {
+      expect(await text("Projects/Launch.md")).toBe(
+        "---\nstatus: Done\ncompleted: 2026-11-06\nstage: Closed\n---\n",
+      );
+    });
+  });
+
   it("sets nothing for a change that stays, one of another note, or of a database it cannot read", async () => {
     const { vault, graph, text, id } = await setUp({
       "Projects.md": database,

@@ -1172,6 +1172,7 @@ export const messages = {
   triggerEmpty: "empty",
   triggerRemove: "Remove the trigger: {trigger}",
   triggerRemoveButton: "Remove",
+  triggerSkipped: "Not running: {problem}",
   triggerNeedsProperty: "A trigger needs a property of the database to watch and set.",
   triggerNew: "New trigger",
   triggerWhen: "When",

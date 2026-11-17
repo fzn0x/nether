@@ -768,6 +768,8 @@ function Database(props: DatabaseProps & { readonly entries: readonly PropertyEn
   const schema = read.schema;
   if (schema === undefined) return null;
   const view = schema.views.find((item) => item.name === chosen) ?? schema.views[0];
+  // Its rules, those that run and those kept that do not.
+  const ruleCount = (schema.triggers?.length ?? 0) + (schema.skippedTriggers?.length ?? 0);
 
   const saveSchema = (next: DatabaseSchema) => {
     const value = writeDatabase(next, linkToNote(graph));
@@ -1308,9 +1310,7 @@ function Database(props: DatabaseProps & { readonly entries: readonly PropertyEn
                 setPanel(panel === "triggers" ? undefined : "triggers");
               }}
             >
-              {(schema.triggers?.length ?? 0) === 0
-                ? t("triggers")
-                : t("triggersCount", { count: schema.triggers?.length ?? 0 })}
+              {ruleCount === 0 ? t("triggers") : t("triggersCount", { count: ruleCount })}
             </button>
             <button
               type="button"
@@ -1471,9 +1471,10 @@ function Database(props: DatabaseProps & { readonly entries: readonly PropertyEn
             <DatabaseTriggers
               properties={schema.properties}
               triggers={schema.triggers ?? []}
+              skipped={schema.skippedTriggers ?? []}
               running={running}
-              onChange={(triggers) => {
-                saveSchema({ ...schema, triggers });
+              onChange={(triggers, skippedTriggers) => {
+                saveSchema({ ...schema, triggers, skippedTriggers });
               }}
             />
           ) : null}
