@@ -161,6 +161,10 @@ from the same file, such as:
   as Ollama beside the server; accounts' own providers reach public
   addresses only. `NETHER_AI=admin` leaves only your providers, and
   `NETHER_AI=off` turns AI through the server off. See [AI](../ai/).
+- **AI locked to your own endpoints**: with **Data policies** on,
+  `NETHER_AI_ENDPOINTS=https://llm.example.com/v1` keeps every Nether app
+  to that address for your server's workspaces, or the admin console sets
+  the list. See [the admin console](../admin/#ai-endpoints).
 - **Enterprise features**, each off until you turn it on in the
   [admin console](../admin/): `NETHER_ENTERPRISE_AUDIT=on`, or `off`, sets
   that feature here instead, and the console shows it as set by its

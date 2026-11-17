@@ -160,7 +160,7 @@ One feature per pull request, in this order:
 - [ ] SCIM and LDAP: users and groups provisioned and deprovisioned.
 - [ ] Advanced permissions: custom roles, group-based access and domain-restricted sharing.
 - [ ] Data policies: retention rules, legal hold, and public sharing and export restricted per workspace.
-- [ ] Private AI endpoint enforcement: an admin locks AI to an approved internal endpoint for the whole organization.
+- [x] Private AI endpoint enforcement: an admin locks AI to an approved internal endpoint for the whole organization. An instance admin lists the approved addresses in the console, or pins them with `NETHER_AI_ENDPOINTS`; while the `policies` feature is on, the relay neither keeps nor uses a provider elsewhere, and the apps, told in `/api/me`, use only a provider at or under one, asking again before each request ([ADR 0086](adr/0086-ai-is-locked-to-the-endpoints-an-instance-admin-approves-in-the-apps-and-the-relay.md)).
 - [ ] High availability and the Helm chart: several server nodes with documented failover and zero-downtime upgrades, the sync service scaled out.
 - [ ] The mobile apps, for iOS and Android: offline editing, quick capture and the share sheet.
 - [ ] Integrations as plugins: GitHub, Slack, and Google Drive and Calendar through CalDAV and ICS first, with the admin's own OAuth credentials.

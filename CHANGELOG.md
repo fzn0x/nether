@@ -288,6 +288,15 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   apply to every session at once, and the page lists the ways the server
   signs people in now
   ([ADR 0084](docs/adr/0084-the-consoles-security-page-sets-session-lengths-sign-in-limits-and-email-codes-unless-the-environment-does.md)).
+- AI locked to approved endpoints, the `policies` feature's first part: an
+  instance admin lists the addresses AI may go to, in the console's AI
+  endpoints section or with `NETHER_AI_ENDPOINTS`, and for every workspace
+  on the server the desktop and web apps then use only a provider at one
+  of them, or under one, for writing assist, asking the notes, building
+  with AI and search by meaning. The AI tab shows the approved addresses
+  and marks a provider elsewhere; the server refuses to keep or relay to
+  one
+  ([ADR 0086](docs/adr/0086-ai-is-locked-to-the-endpoints-an-instance-admin-approves-in-the-apps-and-the-relay.md)).
 
 ### Changed
 
