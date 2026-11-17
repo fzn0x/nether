@@ -21,6 +21,8 @@ import { registerSetup } from "./setup.ts";
 import { registerRelay } from "./relay.ts";
 import { registerSync } from "./sync.ts";
 import { registerLinks } from "./links.ts";
+import { registerPublished } from "./published.ts";
+import { registerSites } from "./sites.ts";
 import { registerTokens } from "./tokens.ts";
 import { registerUnits } from "./units.ts";
 import { purgeVersions, registerVersions } from "./versions.ts";
@@ -208,6 +210,9 @@ export async function buildApp(config: Config, services: Services): Promise<Fast
       sync.disconnect(userId);
     },
   });
+  // Published sites, drawn for anyone at /p/<name>/ (ADR 0076).
+  const published = registerPublished(app, services.db, { blobs: services.blobs });
+  registerSites(app, services.db, { publicUrl: config.publicUrl, changed: published.changed });
   // The public API, for personal access tokens (ADR 0059).
   registerTokens(app, services.db);
   const api = registerApi(app, services.db, sync);
