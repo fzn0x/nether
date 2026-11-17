@@ -46,7 +46,9 @@ describe("readConfig", () => {
       ai: "on",
       aiPrivate: false,
       ssoPrivate: false,
+      ssoEnforce: true,
       secretKey: null,
+      setupCode: null,
       mail: null,
       publicUrl: null,
       oidc: null,
@@ -263,6 +265,15 @@ describe("readConfig", () => {
       "NETHER_ENTERPRISE_ADMIN",
       "NETHER_ENTERPRISE_HA",
     ]);
+  });
+
+  it("leaves single sign-on's enforcement to the console unless NETHER_SSO_ENFORCE pins it off", () => {
+    expect(readConfig(database).ssoEnforce).toBe(true);
+    expect(readConfig({ ...database, NETHER_SSO_ENFORCE: "on" }).ssoEnforce).toBe(true);
+    expect(readConfig({ ...database, NETHER_SSO_ENFORCE: "off" }).ssoEnforce).toBe(false);
+    expect(() => readConfig({ ...database, NETHER_SSO_ENFORCE: "sometimes" })).toThrow(
+      'NETHER_SSO_ENFORCE must be on or off, not "sometimes"',
+    );
   });
 });
 

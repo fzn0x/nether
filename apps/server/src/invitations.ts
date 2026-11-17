@@ -28,8 +28,10 @@ import {
   signedIn,
   startSession,
   tokenHash,
+  useProvider,
 } from "./sessions.ts";
 import { type EventOrigin, type ServerEvents, accountActor, originOf } from "./events.ts";
+import { SignInRefused, signInGuards } from "./signIns.ts";
 
 /** Days an invitation can be accepted in. */
 export const invitationDays = 7;
@@ -218,6 +220,7 @@ export function registerInvitations(
   events: ServerEvents,
 ): void {
   const account = signedIn(db);
+  const guards = signInGuards(db);
 
   /** Why an account may not manage a workspace's invitations, or undefined if it may. */
   async function refusal(
@@ -430,72 +433,100 @@ export function registerInvitations(
       ) {
         return fail(reply, 400, "Give a name, an email address and a password for the account.");
       }
+      // An address whose domain signs in through a provider joins through it.
+      const required =
+        me === undefined && body.email !== undefined
+          ? await guards.requiredFor(body.email)
+          : undefined;
       // Hashed before the transaction, which a slow hash would hold.
       const passwordHash =
         me === undefined && body.password !== undefined
           ? await hashPassword(body.password)
           : undefined;
 
-      const outcome = await db.transaction(async (tx) => {
-        const invitation = await openInvitation(tx, tokenHash(body.token));
-        if (invitation === undefined) return { status: 404, message: noInvitation } as const;
-        const email = me?.email ?? body.email ?? "";
-        if (!invites(invitation, email)) return { status: 403, message: otherAddress } as const;
+      const outcome = await db
+        .transaction(async (tx) => {
+          const invitation = await openInvitation(tx, tokenHash(body.token));
+          if (invitation === undefined) return { status: 404, message: noInvitation } as const;
+          const email = me?.email ?? body.email ?? "";
+          if (!invites(invitation, email)) return { status: 403, message: otherAddress } as const;
 
-        let user = me && {
-          id: me.id,
-          name: me.name,
-          email: me.email,
-          instanceAdmin: me.instanceAdmin,
-        };
-        if (user === undefined) {
-          const taken = await tx.query("SELECT 1 FROM users WHERE email_key = $1", [
-            emailKey(email),
-          ]);
-          if (taken.rows.length > 0) {
-            return {
-              status: 409,
-              message: "An account has this email address already: sign in, then accept.",
-            } as const;
-          }
-          user = {
-            id: randomUUID(),
-            name: (body.name ?? "").trim(),
-            email: email.trim(),
-            instanceAdmin: false,
+          let user = me && {
+            id: me.id,
+            name: me.name,
+            email: me.email,
+            instanceAdmin: me.instanceAdmin,
           };
-          await tx.query(
-            "INSERT INTO users (id, email, email_key, name, password_hash) VALUES ($1, $2, $3, $4, $5)",
-            [user.id, user.email, emailKey(email), user.name, passwordHash],
-          );
-          await events.emit(
+          if (user === undefined) {
+            const taken = await tx.query("SELECT 1 FROM users WHERE email_key = $1", [
+              emailKey(email),
+            ]);
+            if (taken.rows.length > 0) {
+              return {
+                status: 409,
+                message: "An account has this email address already: sign in, then accept.",
+              } as const;
+            }
+            user = {
+              id: randomUUID(),
+              name: (body.name ?? "").trim(),
+              email: email.trim(),
+              instanceAdmin: false,
+            };
+            await tx.query(
+              "INSERT INTO users (id, email, email_key, name, password_hash) VALUES ($1, $2, $3, $4, $5)",
+              [user.id, user.email, emailKey(email), user.name, passwordHash],
+            );
+            await events.emit(
+              tx,
+              {
+                action: "account.created",
+                actor: accountActor(user.id),
+                target: { type: "account", id: user.id, name: user.name },
+                details: { by: "invitation" },
+              },
+              originOf(request),
+            );
+          }
+
+          const workspace = await acceptInvitation(
             tx,
-            {
-              action: "account.created",
-              actor: accountActor(user.id),
-              target: { type: "account", id: user.id, name: user.name },
-              details: { by: "invitation" },
-            },
+            invitation,
+            user.id,
+            events,
             originOf(request),
           );
-        }
-
-        const workspace = await acceptInvitation(
-          tx,
-          invitation,
-          user.id,
-          events,
-          originOf(request),
-        );
-        const session =
-          me === undefined
-            ? await startSession(tx, user.id, request, "invitation", events)
-            : undefined;
-        return {
-          status: me === undefined ? 201 : 200,
-          body: { ...session, user, workspace },
-        } as const;
-      });
+          const session =
+            me === undefined
+              ? await startSession(tx, user.id, request, { method: "invitation", events, guards })
+              : undefined;
+          return {
+            status: me === undefined ? 201 : 200,
+            body: { ...session, user, workspace },
+          } as const;
+        })
+        .catch(async (error: unknown) => {
+          // Refused, the account it made is not kept; the attempt is told of.
+          if (!(error instanceof SignInRefused)) throw error;
+          await events.attempt(
+            db,
+            {
+              action: "session.signed_in",
+              outcome: "failure",
+              reason: error.refusal.reason,
+              actor: { kind: "anonymous", email: (body.email ?? "").slice(0, 320) },
+              details: { method: "invitation" },
+            },
+            originOf(request),
+            request.log,
+          );
+          return "refused" as const;
+        });
+      if (outcome === "refused") {
+        return required === undefined
+          ? fail(reply, 403, "This server signs people in through a provider: join with it.")
+          : useProvider(reply, body.email ?? "", required);
+      }
       if ("message" in outcome) return fail(reply, outcome.status, outcome.message);
       return reply.code(outcome.status).send(outcome.body);
     },

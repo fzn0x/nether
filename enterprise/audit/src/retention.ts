@@ -120,3 +120,21 @@ export async function checkpoint(
     return reached;
   });
 }
+
+/**
+ * The hourly upkeep: the purge, unless a workspace is on legal hold (ADR
+ * 0088), then a checkpoint. Gives how many events went, or null when the
+ * hold kept them all, and the checkpoint.
+ */
+export async function keepUp(
+  db: Database,
+  key: ChainKey,
+  pinned: number | undefined,
+  held: () => Promise<boolean>,
+): Promise<{
+  readonly purged: number | null;
+  readonly head: { readonly seq: number; readonly hash: string } | undefined;
+}> {
+  const purged = (await held()) ? null : await purge(db, await retentionDays(db, pinned), key);
+  return { purged, head: await checkpoint(db, key) };
+}

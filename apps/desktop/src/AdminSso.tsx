@@ -1,7 +1,9 @@
 // The console's Single sign-on page (ADR 0080), while the `sso` feature is
 // on: the server's SAML and OpenID Connect providers, the email domains
 // each is trusted for, what to give each provider, and a form to add or
-// change one. Secrets go to the server, sealed there, and never come back.
+// change one; and what single sign-on requires: each provider's domains,
+// everyone, and instance admins too. Secrets go to the server, sealed
+// there, and never come back.
 import { type SyntheticEvent, useCallback, useEffect, useState } from "react";
 import { t } from "./messages.ts";
 import { webFetch, webServer } from "./web.ts";
@@ -35,6 +37,7 @@ interface ProviderView {
   readonly kind: "saml" | "oidc";
   readonly name: string;
   readonly makeAccounts: boolean;
+  readonly required: boolean;
   readonly domains: readonly string[];
   readonly saml?: SamlView;
   readonly oidc?: OidcView;
@@ -46,6 +49,16 @@ interface SsoState {
   readonly secretKey: boolean;
   readonly privateSetting: string;
   readonly environment: { readonly name: string; readonly issuer: string } | null;
+  readonly enforcement: Enforcement;
+}
+
+interface Enforcement {
+  readonly everyone: boolean;
+  readonly admins: boolean;
+  /** The variable that pins enforcement off, when it does. */
+  readonly pinnedBy: string | null;
+  /** Whether an instance admin has a password, or the server sends codes. */
+  readonly adminWayIn: boolean;
 }
 
 async function messageOf(answer: Response): Promise<string> {
@@ -91,6 +104,7 @@ function ProviderForm(props: {
   const [name, setName] = useState(provider?.name ?? "");
   const [domains, setDomains] = useState(provider?.domains.join("\n") ?? "");
   const [makeAccounts, setMakeAccounts] = useState(provider?.makeAccounts ?? true);
+  const [required, setRequired] = useState(provider?.required ?? false);
   const [metadataUrl, setMetadataUrl] = useState(provider?.saml?.metadataUrl ?? "");
   const [metadataXml, setMetadataXml] = useState("");
   const [requireEncryption, setRequireEncryption] = useState(
@@ -110,6 +124,7 @@ function ProviderForm(props: {
       name: name.trim(),
       domains: domainList(domains),
       makeAccounts,
+      required,
     };
     if (kind === "saml") {
       const keptUrl = provider?.saml?.metadataUrl ?? "";
@@ -229,6 +244,16 @@ function ProviderForm(props: {
           }}
         />
         {t("adminSsoMakeAccounts")}
+      </label>
+      <label className="field-check">
+        <input
+          type="checkbox"
+          checked={required}
+          onChange={(event) => {
+            setRequired(event.target.checked);
+          }}
+        />
+        {t("adminSsoRequire")}
       </label>
       {kind === "saml" ? (
         <>
@@ -358,6 +383,7 @@ function ProviderDetails(props: { readonly provider: ProviderView }) {
   const rows: [string, string][] = [
     [t("adminSsoDomains"), provider.domains.join(", ") || t("adminSsoNoDomains")],
     [t("adminSsoMakeAccounts"), t(provider.makeAccounts ? "adminSsoYes" : "adminSsoNo")],
+    [t("adminSsoRequired"), t(provider.required ? "adminSsoYes" : "adminSsoNo")],
   ];
   if (provider.saml !== undefined) {
     const { saml } = provider;
@@ -425,6 +451,77 @@ function ProviderDetails(props: { readonly provider: ProviderView }) {
         </details>
       )}
     </>
+  );
+}
+
+/** What single sign-on requires beside each provider: everyone, and instance admins too. */
+function EnforcementForm(props: {
+  readonly enforcement: Enforcement;
+  readonly busy: boolean;
+  readonly onSave: (body: { everyone: boolean; admins: boolean }) => void;
+}) {
+  const { enforcement, busy, onSave } = props;
+  const [everyone, setEveryone] = useState(enforcement.everyone);
+  const [admins, setAdmins] = useState(enforcement.admins);
+  const pinned = enforcement.pinnedBy !== null;
+  return (
+    <form
+      className="admin-sso-form"
+      aria-labelledby="admin-sso-enforcement"
+      onSubmit={(event) => {
+        event.preventDefault();
+        onSave({ everyone, admins });
+      }}
+    >
+      <h3 id="admin-sso-enforcement">{t("adminSsoEnforcement")}</h3>
+      <p className="hint">{t("adminSsoEnforcementIntro")}</p>
+      {enforcement.pinnedBy === null ? null : (
+        <p role="note">{t("adminSsoPinned", { variable: enforcement.pinnedBy })}</p>
+      )}
+      <div className="field">
+        <label className="field-check">
+          <input
+            type="checkbox"
+            disabled={pinned}
+            aria-describedby="admin-sso-everyone-hint"
+            checked={everyone}
+            onChange={(event) => {
+              setEveryone(event.target.checked);
+            }}
+          />
+          {t("adminSsoEveryone")}
+        </label>
+        <p className="hint" id="admin-sso-everyone-hint">
+          {t("adminSsoEveryoneHint")}
+        </p>
+      </div>
+      <div className="field">
+        <label className="field-check">
+          <input
+            type="checkbox"
+            disabled={pinned}
+            aria-describedby="admin-sso-admins-hint"
+            checked={admins}
+            onChange={(event) => {
+              setAdmins(event.target.checked);
+            }}
+          />
+          {t("adminSsoAdmins")}
+        </label>
+        <p className="hint" id="admin-sso-admins-hint">
+          {t("adminSsoAdminsHint")}
+        </p>
+      </div>
+      {enforcement.admins ? <p role="note">{t("adminSsoAdminsCovered")}</p> : null}
+      {!enforcement.admins && !enforcement.adminWayIn ? (
+        <p role="note">{t("adminSsoNoAdminWayIn")}</p>
+      ) : null}
+      <div className="dialog-actions">
+        <button type="submit" disabled={busy || pinned}>
+          {t("adminSsoSave")}
+        </button>
+      </div>
+    </form>
   );
 }
 
@@ -610,6 +707,24 @@ export function SsoPage() {
               {t("adminSsoAddProvider")}
             </button>
           )}
+          <EnforcementForm
+            // Made again from what the server keeps after each save.
+            key={JSON.stringify(state.enforcement)}
+            enforcement={state.enforcement}
+            busy={busy}
+            onSave={(body) => {
+              act(async () => {
+                const answer = await send("/api/admin/sso/enforcement", "PUT", body);
+                const { ended } = (await answer.json()) as {
+                  readonly ended: { readonly sessions: number; readonly tokens: number };
+                };
+                return t("adminSsoEnforcementSaved", {
+                  sessions: ended.sessions,
+                  tokens: ended.tokens,
+                });
+              });
+            }}
+          />
         </>
       )}
       {status === undefined ? null : <p role="status">{status}</p>}

@@ -29,8 +29,9 @@ import { SecuritySettings } from "./settings.ts";
 import { AiEndpoints } from "./aiEndpoints.ts";
 import { DataPolicies } from "./dataPolicies.ts";
 import { registerSetup } from "./setup.ts";
+import { signInGuards } from "./signIns.ts";
 import { registerRelay } from "./relay.ts";
-import { type ClusterBus, ProcessBus } from "./cluster.ts";
+import { type ClusterBus, ProcessBus, shareDisconnects } from "./cluster.ts";
 import { ClusterJobs } from "./jobs.ts";
 import { purgeNodes, registerNodes, startHeartbeat } from "./nodes.ts";
 import { registerSync } from "./sync.ts";
@@ -196,7 +197,9 @@ export async function buildApp(config: Config, services: Services): Promise<Fast
   // Versions older than the admin keeps them, old notifications and
   // deliveries, and nodes gone without saying so: once an hour.
   const purge = async () => {
-    await purgeVersions(services.db, config.historyDays).catch((error: unknown) => {
+    // Each workspace's history as its data policy keeps it, if one holds (ADR 0088).
+    const policies = await dataPolicies.all().catch(() => undefined);
+    await purgeVersions(services.db, config.historyDays, policies).catch((error: unknown) => {
       app.log.error({ err: error }, "Could not delete the versions kept too long");
     });
     await purgeNotifications(services.db).catch((error: unknown) => {
@@ -271,20 +274,37 @@ export async function buildApp(config: Config, services: Services): Promise<Fast
   }
   // The relay's sockets come through the WebSocket plugin sync registers.
   const sync = await registerSync(app, services.db, events, dataPolicies);
-  const relay = registerRelay(app, services.db, services.bus ?? new ProcessBus());
-  const reconnect = (userId: string) => {
-    sync.disconnect(userId);
-    relay.disconnect(userId);
-  };
-  registerMembers(app, services.db, reconnect, events);
-  registerUnits(app, services.db, reconnect, sync, events);
+  const bus = services.bus ?? new ProcessBus();
+  const relay = registerRelay(app, services.db, bus);
+  // An account's sockets, or a share-link visitor's, closed on every node,
+  // so its apps connect again and are checked anew (ADR 0082).
+  const sockets = shareDisconnects(
+    bus,
+    node.id,
+    {
+      disconnect(userId) {
+        sync.disconnect(userId);
+        relay.disconnect(userId);
+      },
+      *open() {
+        yield* sync.sockets();
+        yield* relay.sockets();
+      },
+    },
+    app.log,
+  );
+  app.addHook("onClose", (_instance, done) => {
+    sockets.stop();
+    done();
+  });
+  const { disconnect } = sockets;
+  registerMembers(app, services.db, disconnect, events);
+  registerUnits(app, services.db, disconnect, sync, events);
   // Share links, which open a shared page to anyone with one (ADR 0071).
   registerLinks(app, services.db, {
     publicUrl: config.publicUrl,
     webApp: config.webApp !== null,
-    disconnect: (userId) => {
-      sync.disconnect(userId);
-    },
+    disconnect,
     events,
     policies: dataPolicies,
   });
@@ -343,9 +363,10 @@ export async function buildApp(config: Config, services: Services): Promise<Fast
     {
       db: services.db,
       config,
-      disconnect: reconnect,
+      disconnect,
       security,
       aiEndpoints,
+      guards: signInGuards(services.db),
       every: jobs.every,
       events,
       dataPolicies,

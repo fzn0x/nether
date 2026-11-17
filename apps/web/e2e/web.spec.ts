@@ -1066,7 +1066,7 @@ test("the admin console's security page sets how long sessions last, and email c
   expect(problems).toEqual([]);
 });
 
-test("an instance admin adds a SAML provider in the console, and someone at its domain signs in through it", async ({
+test("an instance admin adds a SAML provider in the console, someone at its domain signs in through it, and it is required there", async ({
   page,
   browser,
 }) => {
@@ -1095,39 +1095,89 @@ test("an instance admin adds a SAML provider in the console, and someone at its 
     await expect(corp).toContainText("BEGIN CERTIFICATE");
     expect(await violations(page)).toEqual([]);
 
-    // Someone at corp.example, with no account yet, signs in through it.
-    const theirs = await browser.newContext();
-    try {
-      // The provider's page, which signs them in and posts its answer back, as a browser does.
-      await theirs.route("https://idp.example.test/**", async (route) => {
-        const { action, fields } = await ask<{ action: string; fields: Record<string, string> }>(
-          "/saml-answer",
-          { url: route.request().url(), email: "grace@corp.example", name: "Grace Hopper" },
-        );
-        const inputs = Object.entries(fields)
-          .map(([name, value]) => `<input type="hidden" name="${name}" value="${value}">`)
-          .join("");
-        await route.fulfill({
-          contentType: "text/html",
-          body: `<!doctype html><title>Corp</title><form method="post" action="${action}">${inputs}</form><script>document.forms[0].submit()</script>`,
+    /**
+     * Signs someone in by their address, which goes straight to its
+     * domain's provider, whose page signs them in and posts its answer
+     * back, as a browser does.
+     */
+    const byAddress = async (email: string, name: string) => {
+      const theirs = await browser.newContext();
+      try {
+        await theirs.route("https://idp.example.test/**", async (route) => {
+          const { action, fields } = await ask<{
+            action: string;
+            fields: Record<string, string>;
+          }>("/saml-answer", { url: route.request().url(), email, name });
+          const inputs = Object.entries(fields)
+            .map(([field, value]) => `<input type="hidden" name="${field}" value="${value}">`)
+            .join("");
+          await route.fulfill({
+            contentType: "text/html",
+            body: `<!doctype html><title>Corp</title><form method="post" action="${action}">${inputs}</form><script>document.forms[0].submit()</script>`,
+          });
         });
+        const other = await theirs.newPage();
+        const theirProblems = problemsOf(other);
+        await other.goto("/");
+        await other.getByRole("button", { name: "Sign in" }).click();
+        const dialog = other.getByRole("dialog", { name: "Account and encryption" });
+        await dialog.getByRole("textbox", { name: "Email address" }).fill(email);
+        expect(await violations(other)).toEqual([]);
+        await Promise.all([
+          theirs.waitForEvent("page"),
+          dialog.getByRole("button", { name: "Continue" }).click(),
+        ]);
+        await expect(dialog.getByRole("status")).toContainText("Signed in to");
+        await dialog.getByRole("button", { name: "Done" }).click();
+        await expect(other.getByText(`Signed in as ${name}, ${email}`)).toBeVisible();
+        expect(theirProblems).toEqual([]);
+      } finally {
+        await theirs.close();
+      }
+    };
+
+    // Someone at corp.example, with no account yet, signs in through it.
+    await byAddress("grace@corp.example", "Grace Hopper");
+
+    // Bea, at corp.example with a password, has a session it began.
+    const bea = await ask<{ email: string; password: string }>("/person", {
+      name: "Bea",
+      email: `bea-${String(Date.now())}@corp.example`,
+    });
+    const hers = await browser.newContext();
+    try {
+      const signedIn = await hers.request.post("/api/sessions", {
+        headers: { "x-nether-session": "cookie" },
+        data: bea,
       });
-      const other = await theirs.newPage();
-      const theirProblems = problemsOf(other);
-      await other.goto("/");
-      await other.getByRole("button", { name: "Sign in" }).click();
-      const dialog = other.getByRole("dialog", { name: "Account and encryption" });
-      await Promise.all([
-        theirs.waitForEvent("page"),
-        dialog.getByRole("button", { name: "Sign in with Corp SSO", exact: true }).click(),
-      ]);
-      await expect(dialog.getByRole("status")).toContainText("Signed in to");
-      await dialog.getByRole("button", { name: "Done" }).click();
-      await expect(other.getByText("Signed in as Grace Hopper, grace@corp.example")).toBeVisible();
-      expect(theirProblems).toEqual([]);
+      expect(signedIn.status()).toBe(201);
+      expect((await hers.request.get("/api/me")).status()).toBe(200);
+
+      // Required at its domains, the provider ends that session as the page saves.
+      await corp.getByRole("button", { name: "Change" }).click();
+      await corp
+        .getByLabel("Require it: accounts at these domains sign in through it alone")
+        .check();
+      await corp.getByRole("button", { name: "Save" }).click();
+      await expect(section.getByRole("status")).toHaveText("Corp SSO saved.");
+      expect((await hers.request.get("/api/me")).status()).toBe(401);
+      const refused = await hers.request.post("/api/sessions", { data: bea });
+      expect(refused.status()).toBe(403);
+      expect(await refused.json()).toMatchObject({ sso: { id: "corp", name: "Corp SSO" } });
     } finally {
-      await theirs.close();
+      await hers.close();
     }
+    // Her address takes her to the provider, which finds her account by it.
+    await byAddress(bea.email, "Bea");
+
+    // What single sign-on requires beside each provider; the admin, exempt, stays signed in.
+    await page.reload();
+    const requires = section.getByRole("form", { name: "What single sign-on requires" });
+    await expect(
+      requires.getByRole("checkbox", { name: "Everyone signs in through a provider" }),
+    ).not.toBeChecked();
+    await expect(requires.getByRole("checkbox", { name: "Instance admins too" })).not.toBeChecked();
+    expect(await violations(page)).toEqual([]);
 
     // Removed, it is offered no more.
     await corp.getByRole("button", { name: "Remove" }).click();
@@ -1261,6 +1311,8 @@ test("the admin console sets data policies for every workspace, and for one set 
     await expect(team.getByRole("combobox", { name: "Share links" })).toHaveValue("view");
     await expect(team.getByRole("checkbox", { name: "Allow export" })).not.toBeChecked();
     await team.getByRole("combobox", { name: "Share links" }).selectOption("Off");
+    await team.getByRole("spinbutton", { name: "Keep history, in days" }).fill("90");
+    await team.getByRole("checkbox", { name: "Legal hold" }).check();
     await save("Team").click();
     await expect(section.getByRole("status")).toHaveText("Saved the policy for Team.");
     expect(await violations(page)).toEqual([]);
@@ -1268,7 +1320,10 @@ test("the admin console sets data policies for every workspace, and for one set 
     // Read again, as another visit to the console finds them.
     await page.reload();
     await expect(team.getByRole("combobox", { name: "Share links" })).toHaveValue("off");
+    await expect(team.getByRole("spinbutton", { name: "Keep history, in days" })).toHaveValue("90");
+    await expect(team.getByRole("checkbox", { name: "Legal hold" })).toBeChecked();
     await expect(every.getByRole("combobox", { name: "Share links" })).toHaveValue("view");
+    await expect(every.getByRole("spinbutton", { name: "Keep history, in days" })).toHaveValue("");
   } finally {
     // Every workspace open again, as the other tests expect.
     const join = section.getByRole("button", { name: "Use every workspace's" });
@@ -1283,6 +1338,83 @@ test("the admin console sets data policies for every workspace, and for one set 
     await save("Every workspace").click();
     await expect(section.getByRole("status")).toHaveText("Saved the policy for Every workspace.");
     await policies.uncheck();
+  }
+  expect(problems).toEqual([]);
+});
+
+test("a data policy keeps a workspace's export and narrows its sharing, and the apps say why", async ({
+  page,
+}) => {
+  const problems = problemsOf(page);
+  await signIn(page, { email: "ada@example.org", password: "a long password" });
+  await page.goto("/admin");
+  const feature = page.getByRole("checkbox", { name: "Data policies" });
+  await feature.check();
+  const section = page.getByRole("region", { name: "Data policies" });
+  const every = section.getByRole("group", { name: "Every workspace" });
+  const save = section
+    .locator("form")
+    .filter({ has: page.getByRole("group", { name: "Every workspace" }) })
+    .getByRole("button", { name: "Save" });
+  try {
+    await every.getByRole("combobox", { name: "Share links" }).selectOption("View only");
+    await every.getByRole("checkbox", { name: "Serve published sites" }).uncheck();
+    await every.getByRole("checkbox", { name: "Allow export" }).uncheck();
+    await save.click();
+    await expect(section.getByRole("status")).toHaveText("Saved the policy for Every workspace.");
+
+    await page.goto("/");
+    await openTeam(page);
+    const title = `Kept notes ${String(Date.now())}`;
+    await newNote(page, title, "Kept on the server.");
+    await expect.poll(() => fileText(page, `${title}.md`)).toBe("Kept on the server.\n");
+
+    // Export says why it is off, and offers nothing.
+    await page.keyboard.press("Control+p");
+    await page.keyboard.type("Export…");
+    await page.keyboard.press("Enter");
+    const exporting = page.getByRole("dialog", { name: "Export" });
+    await expect(exporting.getByRole("alert")).toHaveText(
+      "127.0.0.1:4175's policy keeps this workspace's notes from being exported.",
+    );
+    await expect(exporting.getByRole("radio")).toHaveCount(0);
+    expect(await violations(page)).toEqual([]);
+    await exporting.getByRole("button", { name: "Close" }).click();
+
+    // Links may only view, and nothing is published.
+    await page.keyboard.press("Control+p");
+    await page.keyboard.type("Share this page");
+    await page.keyboard.press("Enter");
+    const share = page.getByRole("dialog", { name: `Share ${title}` });
+    await share.getByRole("button", { name: "Share it on its own, with its subpages" }).click();
+    await expect(share.getByRole("status")).toHaveText(`${title} is shared on its own.`);
+    const links = share.getByRole("region", { name: "Anyone with the link" });
+    await expect(
+      links.getByText(
+        "127.0.0.1:4175's policy lets this workspace's links only view, whatever they were made to do.",
+      ),
+    ).toBeVisible();
+    await expect(links.getByRole("combobox", { name: "Access" }).getByRole("option")).toHaveCount(
+      1,
+    );
+    const publishing = share.getByRole("region", { name: "Publish to the web" });
+    await expect(
+      publishing.getByText(
+        "127.0.0.1:4175's policy publishes nothing of this workspace. Its sites open nothing until it allows them.",
+      ),
+    ).toBeVisible();
+    await expect(publishing.getByRole("button", { name: "Publish this page" })).toHaveCount(0);
+    expect(await violations(page)).toEqual([]);
+    await share.getByRole("button", { name: "Close" }).click();
+  } finally {
+    // Every workspace open again, as the other tests expect.
+    await page.goto("/admin");
+    await every.getByRole("combobox", { name: "Share links" }).selectOption("Open at any level");
+    await every.getByRole("checkbox", { name: "Serve published sites" }).check();
+    await every.getByRole("checkbox", { name: "Allow export" }).check();
+    await save.click();
+    await expect(section.getByRole("status")).toHaveText("Saved the policy for Every workspace.");
+    await feature.uncheck();
   }
   expect(problems).toEqual([]);
 });

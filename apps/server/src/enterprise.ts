@@ -13,6 +13,7 @@ import type { Database, Queryable } from "./db.ts";
 import type { ServerEvents } from "./events.ts";
 import type { Every } from "./jobs.ts";
 import type { SecuritySettings } from "./settings.ts";
+import type { SignInGuards } from "./signIns.ts";
 
 export const enterpriseFeatures = ["sso", "scim", "audit", "policies", "admin", "ha"] as const;
 
@@ -27,14 +28,22 @@ export interface EnterpriseServices {
   /** The server's configuration, as its environment set it: its public address and secret key among them. */
   readonly config: Config;
   /**
-   * Closes an account's open sync connections, so its apps connect again
-   * and every document is checked anew, as a change of its role does.
+   * Closes an account's open sync and relay connections on every node, so
+   * its apps connect again and every document is checked anew, as a change
+   * of its role does (ADR 0082). This node's close at once; the others'
+   * are asked through the bus, fire and forget, so callers never wait.
    */
   readonly disconnect: (userId: string) => void;
   /** The security settings (ADR 0084), which the console's Security page reads and sets. */
   readonly security: SecuritySettings;
   /** The approved AI endpoints (ADR 0086), which the `policies` module's page reads and sets. */
   readonly aiEndpoints: AiEndpoints;
+  /**
+   * The guards the server asks before it looks an account up by its
+   * address, when a session starts and each time one is used (ADR 0080):
+   * a module adds its own, as single sign-on does to require a provider.
+   */
+  readonly guards: SignInGuards;
   /**
    * Runs work once in each period across the server's nodes, claimed in
    * the database (ADR 0082), as a daily refresh or an hourly purge.

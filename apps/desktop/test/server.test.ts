@@ -6,6 +6,7 @@ import {
   type LoopbackWait,
   ServerError,
   account,
+  findProvider,
   invitationLink,
   pkce,
   readInvitationLink,
@@ -14,6 +15,7 @@ import {
   setUpServer,
   setWorkspaceAi,
   setupNeeded,
+  shareLinks,
   signInMethods,
   signInWithProvider,
   ssoProviders,
@@ -146,15 +148,36 @@ describe("request", () => {
         }),
     });
     // A server from before AI's switch says nothing of it: AI is on there,
-    // and one from before the lock locks nothing (ADR 0086).
+    // and one from before the lock locks nothing (ADR 0086), nor one from
+    // before data policies keeps export (ADR 0088).
     await expect(account(fetcher, base, "t0k")).resolves.toEqual({
       user,
       workspaces: [
-        { id: "w1", name: "Team", role: "owner", encrypted: false, ai: true },
-        { id: "w2", name: "Secret", role: "member", encrypted: true, ai: false },
+        { id: "w1", name: "Team", role: "owner", encrypted: false, ai: true, exportAllowed: true },
+        {
+          id: "w2",
+          name: "Secret",
+          role: "member",
+          encrypted: true,
+          ai: false,
+          exportAllowed: true,
+        },
       ],
       aiEndpoints: null,
     });
+    const policed = fakeFetch({
+      "GET /api/me": () =>
+        json(200, {
+          user,
+          workspaces: [
+            { id: "w1", name: "Team", role: "owner", policies: { export: false } },
+            { id: "w2", name: "Open", role: "owner", policies: { export: true } },
+            { id: "w3", name: "Unset", role: "owner", policies: null },
+          ],
+        }),
+    });
+    const kept = await account(policed.fetcher, base, "t0k");
+    expect(kept.workspaces.map((each) => each.exportAllowed)).toEqual([false, true, true]);
     const locked = fakeFetch({
       "GET /api/me": () =>
         json(200, { user, workspaces: [], aiEndpoints: ["https://llm.corp.example/v1"] }),
@@ -166,6 +189,34 @@ describe("request", () => {
     await expect(account(odd.fetcher, base, "t0k")).rejects.toThrow(
       "https://nether.example.org gave an answer Nether cannot read.",
     );
+  });
+});
+
+describe("a page's share links", () => {
+  it("come with what the workspace's data policy lets them do", async () => {
+    const link = {
+      id: "l1",
+      url: `${base}/s#nether_link_x`,
+      level: "edit",
+      password: false,
+      expiresAt: null,
+      createdBy: "Ada",
+    };
+    const viewOnly = fakeFetch({
+      "GET /api/workspaces/w1/units/u1/links": () => json(200, { links: [link], policy: "view" }),
+    });
+    await expect(shareLinks(viewOnly.fetcher, base, "t0k", "w1", "u1")).resolves.toEqual({
+      links: [link],
+      policy: "view",
+    });
+    // A server from before data policies lets links do anything (ADR 0088).
+    const older = fakeFetch({
+      "GET /api/workspaces/w1/units/u1/links": () => json(200, { links: [] }),
+    });
+    await expect(shareLinks(older.fetcher, base, "t0k", "w1", "u1")).resolves.toEqual({
+      links: [],
+      policy: "on",
+    });
   });
 });
 
@@ -325,18 +376,70 @@ describe("signing in with a provider", () => {
     const methods = { password: true, emailCode: false, oidc: null };
     const on = fakeFetch({
       "GET /api/sign-in-methods": () => json(200, methods),
-      "GET /api/sso": () => json(200, { providers: [{ id: "corp", name: "Corp SSO" }, { id: 7 }] }),
+      "GET /api/sso": () =>
+        json(200, { providers: [{ id: "corp", name: "Corp SSO" }, { id: 7 }], everyone: true }),
     });
     expect(await signInMethods(on.fetcher, base)).toEqual({
       ...methods,
       sso: [{ id: "corp", name: "Corp SSO" }],
+      ssoEveryone: true,
     });
     const off = fakeFetch({
       "GET /api/sign-in-methods": () => json(200, methods),
       "GET /api/sso": () => json(404, { message: "Route GET:/api/sso not found" }),
     });
-    expect((await signInMethods(off.fetcher, base)).sso).toEqual([]);
+    expect(await signInMethods(off.fetcher, base)).toMatchObject({ sso: [], ssoEveryone: false });
     expect(await ssoProviders(fakeFetch({}).fetcher, base)).toEqual([]);
+  });
+
+  it("finds an address's provider, and none on a server without single sign-on", async () => {
+    const { fetcher, sent } = fakeFetch({
+      "POST /api/sso/find": () =>
+        json(200, { provider: { id: "corp", name: "Corp SSO" }, required: true }),
+    });
+    expect(await findProvider(fetcher, base, " grace@corp.example ")).toEqual({
+      provider: { id: "corp", name: "Corp SSO" },
+      required: true,
+    });
+    expect(sent[0]?.body).toEqual({ email: "grace@corp.example" });
+    const off = fakeFetch({
+      "POST /api/sso/find": () => json(404, { message: "Route POST:/api/sso/find not found" }),
+    });
+    expect(await findProvider(off.fetcher, base, "ada@example.org")).toEqual({
+      provider: undefined,
+      required: false,
+    });
+  });
+
+  it("keeps the provider a refusal names, and carries an invitation through a provider", async () => {
+    const { fetcher, sent } = fakeFetch({
+      "POST /api/sessions": () =>
+        json(403, {
+          statusCode: 403,
+          message: "Addresses at corp.example sign in with Corp SSO.",
+          sso: { id: "corp", name: "Corp SSO" },
+        }),
+      "POST /api/sso/corp/flows": () => json(201, { url: "https://idp.example.org/sso" }),
+      "POST /api/sso/redeem": () => json(201, { token: "session", expiresAt: "", user }),
+    });
+    const refused = await request(fetcher, base, "/api/sessions", { body: {} }).catch(
+      (error: unknown) => error,
+    );
+    expect(refused).toBeInstanceOf(ServerError);
+    expect((refused as ServerError).sso).toEqual({ id: "corp", name: "Corp SSO" });
+    await signInWithProvider(
+      fetcher,
+      base,
+      loopback({ code: "handoff" }),
+      () => Promise.resolve(),
+      "corp",
+      "invitation-token",
+    );
+    expect(sent[1]?.body).toMatchObject({ invitation: "invitation-token" });
+    const sso = loopback({ error: "sso_required" });
+    await expect(
+      signInWithProvider(fetcher, base, sso, () => Promise.resolve(), "corp"),
+    ).rejects.toThrow("This account signs in through another provider.");
   });
 
   it("makes a verifier of 43 characters, and a challenge from it", async () => {

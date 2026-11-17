@@ -45,7 +45,11 @@ name, and signs you in as the server's admin. Then invite the others from
 **Workspace members**, as the [servers guide](../servers/) shows.
 
 The code works once. Only someone who can read the server's log can set it
-up, so a new server cannot be claimed by whoever finds it first. Without
+up, so a new server cannot be claimed by whoever finds it first. To choose
+the code yourself, set `NETHER_SETUP_CODE` in the server's environment, as
+`openssl rand -hex 12` makes one; the log then says only that the server
+waits for setup. A server of several nodes needs it, so each accepts the
+same code. Without
 an app at hand, `POST /api/setup` does the same:
 
 ```sh
@@ -150,7 +154,9 @@ from the same file, such as:
   [admin console](../admin/#single-sign-on), which needs
   `NETHER_SECRET_KEY` too. They reach public addresses only:
   `NETHER_SSO_PRIVATE=loopback`, or an address or range, lets them be on
-  your own network, as Keycloak beside the server.
+  your own network, as Keycloak beside the server. Where the console
+  requires single sign-on and a provider breaks,
+  `NETHER_SSO_ENFORCE=off` lets everyone in another way again.
 - **Attachments in an S3-compatible bucket** instead of the volume:
   `NETHER_STORAGE=s3` with `NETHER_S3_ENDPOINT`, `NETHER_S3_BUCKET`,
   `NETHER_S3_ACCESS_KEY` and `NETHER_S3_SECRET_KEY`.

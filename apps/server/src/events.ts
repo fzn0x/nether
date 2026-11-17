@@ -17,6 +17,13 @@ import type { Queryable } from "./db.ts";
 export const sessionMethods = ["password", "code", "oidc", "invitation", "setup", "sso"] as const;
 export type SessionMethod = (typeof sessionMethods)[number];
 
+/** A method as kept, or null for none, or one this server does not know. */
+export function sessionMethodOf(text: string | null): SessionMethod | null {
+  return text !== null && (sessionMethods as readonly string[]).includes(text)
+    ? (text as SessionMethod)
+    : null;
+}
+
 /** Every event the server tells of, by its name: each fits syslog's MSGID, 32 characters. */
 export const serverActions = [
   // Sign-ins and their failures.
@@ -46,6 +53,10 @@ export const serverActions = [
   "workspace.changed",
   "token.created",
   "instance.feature_changed",
+  // Data policies (ADR 0088): a setting changed, and legal hold set or taken off.
+  "policy.changed",
+  "policy.hold_set",
+  "policy.hold_removed",
   // Shares.
   "share_link.created",
   "share_link.revoked",

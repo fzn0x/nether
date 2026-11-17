@@ -153,7 +153,10 @@ function visitAgain(test: Test, visit: string) {
 
 async function me(test: Test) {
   return (await call(test, "GET", "/api/me", test.token)).json<{
-    workspaces: { id: string; policies: { export: boolean } | null }[];
+    workspaces: {
+      id: string;
+      policies: { export: boolean; trashDays: number | null; legalHold: boolean } | null;
+    }[];
   }>().workspaces[0]?.policies;
 }
 
@@ -168,14 +171,23 @@ describe("data policies", () => {
 
   it("are told to the apps in /api/me, with each workspace", async () => {
     const test = await start();
-    expect(await me(test)).toEqual({ export: true });
-    await test.policies.setEvery(policy({ export: false }));
-    expect(await me(test)).toEqual({ export: false });
+    const told = (narrowed: object) => ({
+      export: true,
+      trashDays: null,
+      legalHold: false,
+      ...narrowed,
+    });
+    expect(await me(test)).toEqual(told({}));
+    await test.policies.setEvery(policy({ export: false, trashDays: 14, legalHold: true }));
+    expect(await me(test)).toEqual(told({ export: false, trashDays: 14, legalHold: true }));
+    expect(await test.policies.anyHold()).toBe(true);
     // A workspace set apart has its own.
     await test.policies.setApart(test.workspaceId, openPolicy);
-    expect(await me(test)).toEqual({ export: true });
+    expect(await me(test)).toEqual(told({}));
     await test.policies.removeApart(test.workspaceId);
-    expect(await me(test)).toEqual({ export: false });
+    expect(await me(test)).toEqual(told({ export: false, trashDays: 14, legalHold: true }));
+    await test.policies.setEvery(openPolicy);
+    expect(await test.policies.anyHold()).toBe(false);
   });
 });
 

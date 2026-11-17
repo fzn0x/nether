@@ -19,7 +19,9 @@ export type SignInError =
   | "no_address"
   | "invitation"
   | "other_address"
-  | "provider_error";
+  | "provider_error"
+  /** The account signs in through another provider, as single sign-on requires. */
+  | "sso_required";
 
 export type Outcome =
   | { readonly userId: string; readonly workspaceId: string | null }
