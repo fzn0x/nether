@@ -1072,6 +1072,10 @@ export const messages = {
   adminAuditChecking: "Checking the log.",
   adminAuditHolds: "Checked {count} events: every one holds.",
   adminAuditBroken: "Event {seq} does not hold: {problem}.",
+  // Accounts a directory deactivates, and the directory as who acted (ADR 0085).
+  adminAuditDirectory: "The directory {name}",
+  accountDeactivated: "Deactivated",
+  accountDeactivatedName: "{name} (deactivated)",
   signIn: "Sign in",
   emailMeCode: "Email me a code",
   signInWith: "Sign in with {name}",
