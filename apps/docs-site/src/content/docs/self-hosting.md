@@ -81,6 +81,10 @@ published on `127.0.0.1` alone, as it is by default, since only the proxy
 on this machine reaches it then. The proxy passes WebSocket connections
 through, which sync uses, on the same port.
 
+[Published sites](../publishing/) are served at the same address, under
+`/p/`, so the proxy needs nothing more for them, and `NETHER_PUBLIC_URL`
+is the address the app copies for them.
+
 ## Settings
 
 Settings go in the `.env` file beside `docker-compose.yml`, one

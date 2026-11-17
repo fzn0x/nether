@@ -37,12 +37,14 @@ COPY tools/stubs/elkjs/ tools/stubs/elkjs/
 COPY apps/server/package.json apps/server/
 # The workspace packages the server runs: @nether/search, the editor's
 # document code with @nether/core and @nether/markdown for the public API
-# (ADR 0059), and @nether/ai's paths and headers for the AI relay (ADR 0070).
+# (ADR 0059), @nether/ai's paths and headers for the AI relay (ADR 0070),
+# and @nether/storage's link reading for published sites (ADR 0076).
 COPY packages/ai/package.json packages/ai/
 COPY packages/core/package.json packages/core/
 COPY packages/editor/package.json packages/editor/
 COPY packages/markdown/package.json packages/markdown/
 COPY packages/search/package.json packages/search/
+COPY packages/storage/package.json packages/storage/
 RUN --mount=type=cache,id=pnpm-store,target=/root/.local/share/pnpm/store \
     pnpm install --prod --frozen-lockfile --ignore-scripts --filter "@nether/server..."
 
@@ -63,6 +65,7 @@ COPY --from=build /src/packages/core/src/ packages/core/src/
 COPY --from=build /src/packages/editor/src/ packages/editor/src/
 COPY --from=build /src/packages/markdown/src/ packages/markdown/src/
 COPY --from=build /src/packages/search/src/ packages/search/src/
+COPY --from=build /src/packages/storage/src/ packages/storage/src/
 COPY --from=build /src/apps/server/dist/ apps/server/dist/
 COPY --from=build /src/apps/web/dist/ apps/web/dist/
 COPY LICENSE ./

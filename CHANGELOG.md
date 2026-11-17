@@ -8,6 +8,16 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Publishing: a page with its subpages, or the folder it is in, published
+  from its Share dialog as a site anyone opens at the server's
+  `/p/<name>/`, with no account. The server draws each page from its note
+  as it is now, as HTML with no script, under a policy that runs nothing;
+  a site shows the notes its publisher has full access to, leaves out
+  those with `publish: false`, links only between its own pages and
+  serves the images they show by hash. Unpublishing takes it down at once;
+  a workspace's owners and admins turn publishing off, and an encrypted
+  workspace publishes nothing
+  ([ADR 0076](docs/adr/0076-a-published-site-is-a-note-or-a-folder-drawn-by-the-server-as-it-is-now-linking-only-to-its-own-pages.md)).
 - The plugin API's first part, `@nether/plugin-api`, under the MIT
   license: a plugin's manifest, `definePlugin`, and the messages between a
   plugin and the app, within the page or through a port. Commands a

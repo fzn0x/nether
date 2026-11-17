@@ -99,6 +99,11 @@ token as `Authorization: Bearer <token>`. Every error is
 | `PATCH /api/workspaces/:id/pages/:unit` | full | Restricts it, or not |
 | `DELETE /api/workspaces/:id/pages/:unit` | full, and edit where it sits | Shares it no longer on its own: its notes and inner pages go back where it sits |
 | `PUT /api/workspaces/:id/notes/:note/unit` | edit in both | Moves a note into `unit`, or `general` |
+| `GET /api/workspaces/:id/sites` | member | The workspace's published sites the account may change, whether `publishing` is on, and whether it `manages` the switch |
+| `POST /api/workspaces/:id/sites` | full where it is | Publishes a `note` with its subpages, or a `folder`, as a site at `/p/<name>/`, with a `title`; gives its `url` |
+| `PATCH /api/workspaces/:id/sites/:site` | full where it is; owner, admin | Renames it, which moves its address, or changes its `title` |
+| `DELETE /api/workspaces/:id/sites/:site` | full where it is; owner, admin | Unpublishes it |
+| `PUT /api/workspaces/:id/publishing` | owner, admin | Turns publishing on or off for the workspace, with `enabled` |
 | `POST /api/workspaces` | yes | Makes a workspace the account owns, with `name`; `encryption: "end-to-end"` and the maker's `sealedKey` make it encrypted |
 | `PUT /api/me/keys`, `GET /api/me/keys` | yes | The account's `publicKey`, and its private key in a `recoveryBox` only its recovery phrase opens; kept once |
 | `GET /api/workspaces/:id/key` | member | The account's own sealed copy of an encrypted workspace's key, at its latest `version` |
@@ -359,6 +364,25 @@ A restore refuses a database that has data, so a backup never overwrites
 one. A backup made by an older server of the same major release restores
 into a newer one, migrated as it is restored; one made by a newer server
 is refused. CI runs these steps on every change, against PostgreSQL.
+
+## Published sites
+
+A page with its subpages, or a folder, of a workspace the server can read
+is published as a site at `/p/<name>/`
+([ADR 0076](../../docs/adr/0076-a-published-site-is-a-note-or-a-folder-drawn-by-the-server-as-it-is-now-linking-only-to-its-own-pages.md)),
+for anyone, with no session. Each page is drawn when it is asked for,
+from its note as stored, as HTML with no script: the notes under the root
+its publisher has full access to then, without those whose frontmatter
+says `publish: false`. A link leads to a page only of the same site; any
+other is its text. A page's images and files are served by their hash at
+`/p/<name>/.files/<hash>/<file name>`, only once one of its pages showed
+them, as attachments are. What a site has is kept five seconds, and
+forgotten when it changes. Pages share `/p/.nether/site.css`, and every
+answer under `/p/` has a policy of its own: nothing runs, nothing is
+framed or sent, and only images, media and that stylesheet load. A
+publisher who leaves the workspace takes their sites; an owner or an
+admin turns publishing off, and an encrypted workspace publishes nothing.
+Each address may ask for 600 pages and files a minute.
 
 ## The web app
 
