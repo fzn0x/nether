@@ -1,0 +1,12 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Nether</string>
+    <string name="title_activity_main">Nether</string>
+    <string name="package_name" translatable="false">io.github.fzn0x.nether</string>
+    <string name="custom_url_scheme" translatable="false">io.github.fzn0x.nether</string>
+    <!-- When the phone's WebView is older than the page's build needs (ADR 0087). -->
+    <string name="webview_old_title">Update Android System WebView</string>
+    <string name="webview_old_message">Nether needs Android System WebView %1$d or later, and this phone has %2$d. Update it, then open Nether again.</string>
+    <string name="webview_update">Update</string>
+    <string name="webview_later">Not now</string>
+</resources>

@@ -30,7 +30,8 @@ import { NewFolderDialog } from "./NewFolderDialog.tsx";
 import { TextPromptDialog } from "./TextPromptDialog.tsx";
 import { myName, setMyName } from "./people.ts";
 import { DeleteFolderDialog } from "./DeleteFolderDialog.tsx";
-import { commandShown, shownEntries } from "./features.ts";
+import { build, commandShown, shownEntries } from "./features.ts";
+import { noteDocuments } from "./noteDocuments.ts";
 import { SidebarResizer, useSidebarWidth } from "./SidebarResizer.tsx";
 import { builtInTheme } from "./appearance.ts";
 import {
@@ -345,6 +346,12 @@ export function VaultView(props: {
   const ai = useAi(vault, sync.link);
   // Whether the workspace's data policy lets its notes be exported (ADR 0088).
   const exportPolicy = useExportPolicy(vault, sync.link);
+  // In the mobile apps, every open note is saved as the app leaves the
+  // screen, before the system may end it (ADR 0087).
+  useEffect(() => {
+    if (vault === undefined || backend.onBackground === undefined) return;
+    return backend.onBackground(() => noteDocuments(vault).flush());
+  }, [vault]);
   // The trash and the vault's own history purged once it has settled, unless its workspace is on hold.
   usePurgeAsPolicySays(vault, sync.link);
   // Search by meaning, when it is on for the vault (ADR 0074).
@@ -1603,22 +1610,26 @@ export function VaultView(props: {
     },
     // Where AI is set up, the one place it shows before it is: on this
     // device in the desktop app (ADR 0068), on the server in the web app
-    // (ADR 0070).
-    {
-      id: "ai",
-      name: t("aiTab"),
-      render: () => (
-        <Suspense fallback={null}>
-          <AiSettings
-            ai={ai}
-            encrypted={sync.link?.encrypted === true}
-            server={sync.link?.server}
-            meaning={meaning}
-            onClose={closeDialog}
-          />
-        </Suspense>
-      ),
-    },
+    // (ADR 0070). The mobile apps have none yet (ADR 0087).
+    ...(build.mobile === true
+      ? []
+      : [
+          {
+            id: "ai",
+            name: t("aiTab"),
+            render: () => (
+              <Suspense fallback={null}>
+                <AiSettings
+                  ai={ai}
+                  encrypted={sync.link?.encrypted === true}
+                  server={sync.link?.server}
+                  meaning={meaning}
+                  onClose={closeDialog}
+                />
+              </Suspense>
+            ),
+          },
+        ]),
     ...(pluginState.state === undefined
       ? []
       : (() => {

@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- The page's background, light and dark, as style.css has it, shown as the app starts. -->
+    <color name="launch_background">#F7F5F0</color>
+</resources>

@@ -75,8 +75,9 @@ What the apps start from:
 
 **`apps/mobile` is a Capacitor 8 project**, `@nether/mobile`, with the
 desktop app's identifier, `io.github.fzn0x.nether`. It holds the Android
-project in Kotlin and the iOS project in Swift, both committed, as
-Capacitor expects.
+project in Java and the iOS project in Swift, both committed, as
+Capacitor expects. Java, as Capacitor's template and the SQLite plugin
+have it, needs no Kotlin toolchain in the build.
 
 - **It runs on iOS 16.4 and Android 7 or later.** iOS 16.4 is the oldest
   the page's build runs on. On Android the page runs in the system's
@@ -92,10 +93,10 @@ Capacitor expects.
   - The build leaves out the web backend and SQLite's WebAssembly.
   - The page's content security policy is the web app's, with sockets
     allowed to any `wss:` address, since servers are the user's to name.
-- **Swift and Kotlin keep to what only the phone can do**, as Go does on
+- **Swift and Java keep to what only the phone can do**, as Go does on
   the desktop. A Capacitor plugin of Nether's own, in `apps/mobile` and
   under the repository's license, holds:
-  - `Vaults`: each vault's files, and the list of vaults and servers;
+  - `NetherVaults`: each vault's files, and the list of vaults and servers;
   - `Inbox`: what the share sheet hands the app;
   - `SignIn`: on iOS, the system's sign-in sheet for providers.
 
@@ -114,7 +115,7 @@ SQLite**, as on the desktop.
   app's own files, which only the app reads. The list of vaults, each with
   its ID, name and folder, is a file in the app's support folder, outside
   every vault.
-- **Files through `Vaults`.** The plugin does what the desktop's Go
+- **Files through `NetherVaults`.** The plugin does what the desktop's Go
   service does, behind `VaultFiles`:
   - A write goes to a temporary file in the same folder, is synced to the
     disk, and is renamed over the note in one step. The note holds the old
@@ -176,7 +177,7 @@ its pages.
 | `Backend` | Desktop | Web | Mobile |
 | --- | --- | --- | --- |
 | `kind` | `desktop` | `web` | `mobile`, new |
-| A vault's files | Go's `Vaults` | `OpfsFiles` | the plugin's `Vaults` |
+| A vault's files | Go's `Vaults` | `OpfsFiles` | `DeviceFiles` over the plugin's `NetherVaults` |
 | Its index | MyGO's SQLite plugin | SQLite's WebAssembly build in a worker | `@capacitor-community/sqlite` |
 | `choose` and `open` | a folder the user picks | a workspace | `choose` gives null; the welcome screen asks for a name, and `open` makes that vault |
 | `serverFetch` | Go's fetch | the browser's, with the cookie | `CapacitorHttp`'s native requests, given back as a `Response` |
@@ -374,10 +375,10 @@ cost time, never in CI, as
 [ADR 0017](0017-measure-performance-before-each-gate-not-in-ci.md) has
 it.
 
-- `tools/perf/android.mjs` drives a `perf` build over adb: optimized,
-  profileable, with web debugging on. Built with `VITE_NETHER_REFERENCE`,
-  it writes the reference vault into the app's storage on its first start,
-  with `@nether/vault-generator`.
+- `pnpm --filter @nether/perf android` drives a `perf` build over adb:
+  optimized as a release, with web debugging on. On its first run it
+  writes the reference vault from `@nether/vault-generator` into the app
+  through the app's own plugin.
 - Opening is timed from the process's start to the page's marks:
   `backend.mark` writes each one to the system log with the time since
   the process started, where the harness reads it.
@@ -494,7 +495,7 @@ SQLCipher's binaries.
   - leaving the screen: every note saved before the background task ends.
 - **The server's tests** for `mayReturnTo`: the app's address, and only
   at that path.
-- **The plugin's native tests**, in Kotlin on the JVM and in Swift on the
+- **The plugin's native tests**, in Java on the JVM and in Swift on the
   simulator, run the cases of the `MemoryFiles` and `OpfsFiles` tests, and
   a write cut short at each step, which must leave the old text or the
   new.
@@ -551,13 +552,14 @@ and updates the guide, the roadmap and the README as it goes.
    part 2, where the app owns it: a web page's back gesture leaves it.
 2. **The Android app, with vaults on the phone.** `apps/mobile` and its
    Android project; the mobile backend's vaults, with the plugin's
-   `Vaults` in Kotlin and the SQLite adapter; saving as the app leaves and
+   `NetherVaults` in Java and the SQLite adapter; saving as the app leaves and
    looking again as it returns; imports and media. CI's debug APK, the
    Gradle license check and the emulator smoke test, and
-   `tools/perf/android.mjs`, with its first numbers in the pull request.
+   the Android harness in `tools/perf`, with its first numbers in the pull
+   request.
    An offline notes app on Android, installed from CI's APK.
 3. **The iOS app, with vaults on the phone.** The iOS project, the
-   plugin's `Vaults` in Swift, vaults in Files, the Swift packages'
+   plugin's `NetherVaults` in Swift, vaults in Files, the Swift packages'
    license check, and CI's simulator build and start. The same app on
    iOS, in the simulator.
 4. **Signing in and sync, on both.** Native requests; tokens and keys in
@@ -580,7 +582,7 @@ is ticked when part 5 merges, saying so.
 
 | Package | Version | License | For | Kept by |
 | --- | --- | --- | --- | --- |
-| `@capacitor/core`, `cli`, `android` and `ios` | 8.6.2, 2026-11-12 | MIT | The apps | Ionic, part of OutSystems |
+| `@capacitor/core`, `cli`, `android` and `ios` | 8.6.0, 2026-10-28: pnpm waits seven days for 8.6.2 | MIT | The apps | Ionic, part of OutSystems |
 | `@capacitor/app` | 8.1.2, 2026-10-02 | MIT | Leaving and coming back, the back button, the scheme's return | Ionic |
 | `@capacitor/browser` | 8.0.5, 2026-10-02 | MIT | Custom Tabs for providers on Android | Ionic |
 | `@capacitor/share` | 8.0.3, 2026-10-02 | MIT | Send a copy, and exports | Ionic |
@@ -655,7 +657,7 @@ than counting on the SQLite plugin to bring it.
 
 ## Consequences
 
-- Nether keeps Swift and Kotlin beside Go: the plugin, the share
+- Nether keeps Swift and Java beside Go: the plugin, the share
   extension and the two projects, with their tests in CI.
 - The apps carry SQLCipher, though they encrypt nothing with it. With the
   end-to-end encryption they do perform, App Store Connect's export

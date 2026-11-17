@@ -3,6 +3,7 @@ import { Suspense, type SyntheticEvent, lazy, useCallback, useEffect, useState }
 import { Mark } from "./Mark.tsx";
 import { VaultView } from "./VaultView.tsx";
 import { backend } from "./backend.ts";
+import { build } from "./features.ts";
 import { t } from "./messages.ts";
 import { type AppInfo, Desktop, type ServerAccount, type VaultInfo } from "./mygo.ts";
 import { ServerError, type Workspace, makeWorkspace, redeemCode } from "./server.ts";
@@ -13,6 +14,41 @@ const platforms: Partial<Record<string, string>> = {
   linux: "Linux",
   windows: "Windows",
 };
+
+/**
+ * A new vault on the phone, by its name (ADR 0087): there is no folder to
+ * choose, as the app keeps its vaults in its own storage.
+ */
+function NewPhoneVault(props: { readonly onCreate: (name: string) => void }) {
+  const { onCreate } = props;
+  const [name, setName] = useState(() => t("mobileVaultDefault"));
+  return (
+    <form
+      className="actions new-workspace"
+      onSubmit={(event) => {
+        event.preventDefault();
+        const chosen = name.trim();
+        if (chosen !== "") onCreate(chosen);
+      }}
+    >
+      <label className="field">
+        {t("mobileVaultName")}
+        <input
+          type="text"
+          required
+          value={name}
+          onChange={(event) => {
+            setName(event.target.value);
+          }}
+        />
+      </label>
+      <button type="submit" className="primary">
+        {t("mobileNewVault")}
+      </button>
+      <p className="hint">{t("mobileNewVaultHint")}</p>
+    </form>
+  );
+}
 
 function Welcome(props: { readonly onOpen: (vault: VaultInfo) => void }) {
   const { onOpen } = props;
@@ -60,16 +96,20 @@ function Welcome(props: { readonly onOpen: (vault: VaultInfo) => void }) {
       <Mark className="mark" />
       <h1>{t("appName")}</h1>
       <p className="lead">{t("tagline")}</p>
-      <div className="actions">
-        <button
-          type="button"
-          className="primary"
-          onClick={() => void attempt(() => backend.choose())}
-        >
-          {t("openFolder")}
-        </button>
-        <p className="hint">{t("openFolderHint")}</p>
-      </div>
+      {build.mobile === true ? (
+        <NewPhoneVault onCreate={(name) => void attempt(() => backend.open(name))} />
+      ) : (
+        <div className="actions">
+          <button
+            type="button"
+            className="primary"
+            onClick={() => void attempt(() => backend.choose())}
+          >
+            {t("openFolder")}
+          </button>
+          <p className="hint">{t("openFolderHint")}</p>
+        </div>
+      )}
       {error === undefined ? null : (
         <p className="error" role="alert">
           {error}
@@ -84,10 +124,13 @@ function Welcome(props: { readonly onOpen: (vault: VaultInfo) => void }) {
                 <button
                   type="button"
                   className="vault-link"
-                  onClick={() => void attempt(() => backend.open(vault.path))}
+                  // A phone's vault opens by its ID; a desktop's by its folder.
+                  onClick={() =>
+                    void attempt(() => backend.open(build.mobile === true ? vault.id : vault.path))
+                  }
                 >
                   <span className="vault-name">{vault.name}</span>
-                  <span className="vault-path">{vault.path}</span>
+                  {build.mobile === true ? null : <span className="vault-path">{vault.path}</span>}
                 </button>
                 <button
                   type="button"
@@ -102,7 +145,7 @@ function Welcome(props: { readonly onOpen: (vault: VaultInfo) => void }) {
           </ul>
         </section>
       )}
-      <p className="about">{about}</p>
+      {build.mobile === true ? null : <p className="about">{about}</p>}
     </main>
   );
 }
