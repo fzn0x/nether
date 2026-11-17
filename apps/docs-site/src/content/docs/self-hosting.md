@@ -45,7 +45,11 @@ name, and signs you in as the server's admin. Then invite the others from
 **Workspace members**, as the [servers guide](../servers/) shows.
 
 The code works once. Only someone who can read the server's log can set it
-up, so a new server cannot be claimed by whoever finds it first. Without
+up, so a new server cannot be claimed by whoever finds it first. To choose
+the code yourself, set `NETHER_SETUP_CODE` in the server's environment, as
+`openssl rand -hex 12` makes one; the log then says only that the server
+waits for setup. A server of several nodes needs it, so each accepts the
+same code. Without
 an app at hand, `POST /api/setup` does the same:
 
 ```sh
