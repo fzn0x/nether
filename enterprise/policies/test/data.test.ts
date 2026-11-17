@@ -9,6 +9,8 @@ import {
   setUp,
   startServer,
 } from "@nether/server/test/app.ts";
+import type { EnterpriseModule } from "@nether/server/src/enterprise.ts";
+import type { ServerEvent } from "@nether/server/src/events.ts";
 import { afterEach, describe, expect, it } from "vitest";
 import { policiesModule } from "../src/index.ts";
 
@@ -20,14 +22,51 @@ afterEach(async () => {
   running = undefined;
 });
 
+/** What the server told of, as audit logs would hear it. */
+const told: ServerEvent[] = [];
+
+/** A module that only listens, standing in for audit logs. */
+const listening: EnterpriseModule = {
+  feature: "audit",
+  plugin: (_app, { events }) => {
+    events.listen((event) => {
+      told.push(event);
+      return Promise.resolve();
+    });
+    return Promise.resolve();
+  },
+};
+
 async function start(env: Record<string, string> = { NETHER_ENTERPRISE_POLICIES: "on" }) {
-  const server = await startServer({ env, enterpriseModules: [policiesModule] });
+  told.length = 0;
+  const server = await startServer({ env, enterpriseModules: [policiesModule, listening] });
   running = { ...server, ...(await setUp(server)) };
   return running;
 }
 
-const open = { shareLinks: "on", sites: true, export: true };
-const closed = { shareLinks: "off", sites: false, export: false };
+const open = {
+  shareLinks: "on",
+  sites: true,
+  export: true,
+  historyDays: null,
+  trashDays: null,
+  legalHold: false,
+};
+const closed = {
+  shareLinks: "off",
+  sites: false,
+  export: false,
+  historyDays: 30,
+  trashDays: 7,
+  legalHold: true,
+};
+
+/** The policy events told, by action and where. */
+function policyEvents() {
+  return told
+    .filter((event) => event.action.startsWith("policy."))
+    .map((event) => [event.action, event.workspace ?? null]);
+}
 
 function call(test: Test, method: string, url: string, payload?: object, token = test.token) {
   return test.server.inject({
@@ -101,6 +140,13 @@ describe("the console's data policies", () => {
     expect(
       (await call(test, "PUT", "/api/admin/data-policies", { shareLinks: "on" })).statusCode,
     ).toBe(400);
+    for (const days of [0, 3651, 1.5]) {
+      const refused = await call(test, "PUT", "/api/admin/data-policies", {
+        ...open,
+        historyDays: days,
+      });
+      expect(refused.statusCode).toBe(400);
+    }
     const nowhere = await call(
       test,
       "PUT",
@@ -142,5 +188,38 @@ describe("the console's data policies", () => {
         )
       ).statusCode,
     ).toBe(403);
+  });
+});
+
+describe("a data policy's changes", () => {
+  it("are told of, with legal hold set and taken off, for every workspace and one apart", async () => {
+    const test = await start();
+    await call(test, "PUT", "/api/admin/data-policies", { ...open, historyDays: 90 });
+    // The same again changes nothing, and tells of nothing.
+    await call(test, "PUT", "/api/admin/data-policies", { ...open, historyDays: 90 });
+    expect(policyEvents()).toEqual([["policy.changed", null]]);
+    const changed = told.find((event) => event.action === "policy.changed");
+    expect(changed?.details).toEqual({
+      before: open,
+      after: { ...open, historyDays: 90 },
+    });
+
+    told.length = 0;
+    const apart = `/api/admin/data-policies/workspaces/${test.workspaceId}`;
+    await call(test, "PUT", apart, closed);
+    await call(test, "DELETE", apart);
+    expect(policyEvents()).toEqual([
+      ["policy.changed", test.workspaceId],
+      ["policy.hold_set", test.workspaceId],
+      ["policy.changed", test.workspaceId],
+      ["policy.hold_removed", test.workspaceId],
+    ]);
+
+    told.length = 0;
+    await call(test, "PUT", "/api/admin/data-policies", { ...open, legalHold: true });
+    expect(policyEvents()).toEqual([
+      ["policy.changed", null],
+      ["policy.hold_set", null],
+    ]);
   });
 });
