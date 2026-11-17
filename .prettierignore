@@ -4,6 +4,8 @@
 pnpm-lock.yaml
 LICENSE
 apps/desktop/src/mygo.ts
+# The iOS project's files, as Xcode writes them, and the page Capacitor copies in
+apps/mobile/ios/
 
 # Evidence kept exactly as the spike produced it
 docs/adr/0002-editor-spike/

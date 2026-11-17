@@ -1,8 +1,9 @@
-// Renders the desktop app's icon.svg to Android's launcher icons for the
-// launchers before adaptive icons, Android 7: mipmap-*/ic_launcher.png, and
-// ic_launcher_round.png on a round body. Android 8 and later draw the
-// adaptive icon from drawable-v24/ic_launcher_foreground.xml instead. Run it
-// after changing the icon: pnpm --filter @nether/mobile icons
+// Renders the desktop app's icon.svg to the apps' icons. Android's launchers
+// before adaptive icons, Android 7: mipmap-*/ic_launcher.png, and
+// ic_launcher_round.png on a round body; Android 8 and later draw the
+// adaptive icon from drawable-v24/ic_launcher_foreground.xml instead. iOS:
+// one opaque square of 1024 px, which the system rounds. Run it after
+// changing the icon: pnpm --filter @nether/mobile icons
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { chromium } from "@playwright/test";
@@ -10,8 +11,20 @@ import { chromium } from "@playwright/test";
 const svg = await readFile(new URL("../../desktop/icon.svg", import.meta.url), "utf8");
 // The same mark on a circle, for launchers that show round icons.
 const round = svg.replace(/<rect [^>]*\/>/, '<circle cx="512" cy="512" r="430" fill="#17141f"/>');
+// The body filling the square, as iOS has it, the mark as large within it as
+// on macOS's 824 px body.
+const square = svg
+  .replace(
+    /<rect [^>]*\/>/,
+    '<rect width="1024" height="1024" fill="#17141f"/><g transform="translate(512 512) scale(1.2427) translate(-512 -512)">',
+  )
+  .replace("</svg>", "</g></svg>");
 const densities = { mdpi: 48, hdpi: 72, xhdpi: 96, xxhdpi: 144, xxxhdpi: 192 };
 const res = new URL("../android/app/src/main/res/", import.meta.url);
+const appIcon = new URL(
+  "../ios/App/App/Assets.xcassets/AppIcon.appiconset/AppIcon-512@2x.png",
+  import.meta.url,
+);
 
 const browser = await chromium.launch();
 try {
@@ -31,6 +44,12 @@ try {
       await page.close();
     }
   }
+  const page = await browser.newPage({ viewport: { width: 1024, height: 1024 } });
+  await page.setContent(
+    `<style>html,body{margin:0}svg{display:block;width:1024px;height:1024px}</style>${square}`,
+  );
+  await page.screenshot({ path: fileURLToPath(appIcon) });
+  await page.close();
 } finally {
   await browser.close();
 }
