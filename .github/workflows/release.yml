@@ -40,6 +40,11 @@ jobs:
             echo "apps/server/package.json is at $server, not $version: /health would report it."
             exit 1
           }
+          clipper="$(jq -r .version apps/clipper/package.json)"
+          test "$clipper" = "$version" || {
+            echo "apps/clipper/package.json is at $clipper, not $version: its ZIPs and manifests are named by it."
+            exit 1
+          }
           grep -q "^## \[$version\]" CHANGELOG.md || {
             echo "CHANGELOG.md has no section for $version."
             exit 1
@@ -228,9 +233,28 @@ jobs:
           helm package deploy/helm/nether --version "$version" --app-version "$version" --destination dist
           helm push "dist/nether-$version.tgz" oci://ghcr.io/fzn0x/charts
 
+  clipper:
+    name: Web clipper
+    needs: check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Build its ZIPs for Chrome and Firefox
+        run: pnpm --filter @nether/clipper build
+      - uses: actions/upload-artifact@v7
+        with:
+          name: release-clipper
+          path: apps/clipper/dist/*.zip
+
   publish:
     name: Publish
-    needs: [desktop, appimage, flatpak, server, chart]
+    needs: [desktop, appimage, flatpak, server, chart, clipper]
     runs-on: ubuntu-latest
     permissions:
       contents: write
