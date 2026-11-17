@@ -8,6 +8,15 @@
 // 2. forced to stop a second and a half after typing, without leaving: the
 //    note's document reached the index, and its file, by then.
 //
+// Then quick capture and the share sheet:
+//
+// 4. a text, then a link with its page's title, shared to the app as
+//    another app's share sheet does, each saved from the capture sheet as
+//    a note in the vault's Inbox, with the link as its source;
+// 5. the app's shortcuts published, and the app started cold by the
+//    Capture shortcut: the capture sheet is ready before the vault, its
+//    time since the process started printed, and its note saved in Inbox.
+//
 // Then, with a server on this machine (sync-server.ts), which the emulator
 // reaches at 10.0.2.2 over plain HTTP, as only the debug build may:
 //
@@ -50,11 +59,12 @@ const [device] = await android.devices();
 if (device === undefined) throw new Error("No device is attached: start an emulator first.");
 
 /**
- * Starts the app and gives the page in its WebView: this process's, by its
- * DevTools socket, never one Playwright still knows from before an end.
+ * Starts the app, with what `intent` adds to its intent, and gives the page
+ * in its WebView: this process's, by its DevTools socket, never one
+ * Playwright still knows from before an end.
  */
-async function start() {
-  shell("am", "start", "-W", "-n", `${app}/.MainActivity`);
+async function start(...intent) {
+  shell("am", "start", "-W", ...intent, "-n", `${app}/.MainActivity`);
   const pid = shell("pidof", app).trim();
   const webView = await device.webView(
     { socketName: `webview_devtools_remote_${pid}` },
@@ -63,6 +73,50 @@ async function start() {
   const page = await webView.page();
   page.setDefaultTimeout(timeout);
   return page;
+}
+
+/** A value for the device's shell, which splits on spaces: quoted, as `am` takes it. */
+function quoted(value) {
+  return `'${value.replaceAll("'", "'\\''")}'`;
+}
+
+/** Shares to the app as another app's share sheet does: an intent to its activity. */
+function share(...extras) {
+  shell(
+    "am",
+    "start",
+    "-W",
+    "-a",
+    "android.intent.action.SEND",
+    "-t",
+    "text/plain",
+    ...extras,
+    "-n",
+    `${app}/.MainActivity`,
+  );
+}
+
+/** A file of the app's vault, read through run-as, which the debug build allows; undefined when missing. */
+function vaultFile(path) {
+  try {
+    return execFileSync(
+      adb,
+      ["shell", "run-as", app, "cat", quoted(`files/vaults/Smoke/${path}`)],
+      {
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "ignore"],
+      },
+    );
+  } catch {
+    return undefined;
+  }
+}
+
+/** The milliseconds since the process started that the page last reached a mark, from the system's log. */
+function lastMark(name) {
+  const log = execFileSync(adb, ["logcat", "-d", "-s", "NetherMarks:I"], { encoding: "utf8" });
+  const found = [...log.matchAll(new RegExp(`\\b${name} (\\d+)`, "g"))].at(-1);
+  return found === undefined ? undefined : Number(found[1]);
 }
 
 /** Ends the app as the system does, without asking it. */
@@ -169,6 +223,62 @@ try {
   page = await start();
   await page.getByRole("textbox", { name: "Durable, note text" }).getByText(second).waitFor();
   console.log("The second words were there after the app was ended on screen.");
+
+  // 4. A text and a link, shared to the app, saved from the capture sheet in the vault's Inbox.
+  const shared = page.getByRole("dialog", { name: "Save to Nether" });
+  share("--es", "android.intent.extra.TEXT", quoted("Buy milk and eggs"));
+  await shared.getByRole("textbox", { name: "Note" }).waitFor();
+  if ((await shared.getByRole("textbox", { name: "Note" }).inputValue()) !== "Buy milk and eggs") {
+    throw new Error("The capture sheet did not show the shared text.");
+  }
+  await shared.getByRole("button", { name: "Save" }).click();
+  await shared.waitFor({ state: "hidden" });
+  await until(
+    "the shared text's note in Inbox",
+    async () => vaultFile("Inbox/Buy milk and eggs.md")?.includes("Buy milk and eggs\n") === true,
+  );
+  console.log("A shared text became Inbox/Buy milk and eggs.md.");
+
+  share(
+    "--es",
+    "android.intent.extra.TEXT",
+    quoted("https://example.org/smoke"),
+    "--es",
+    "android.intent.extra.SUBJECT",
+    quoted("An example page"),
+  );
+  await shared.getByText("Title: An example page").waitFor();
+  await shared.getByRole("button", { name: "Save" }).click();
+  await shared.waitFor({ state: "hidden" });
+  await until(
+    "the shared link's note in Inbox",
+    async () =>
+      vaultFile("Inbox/An example page.md")?.includes("source: https://example.org/smoke\n") ===
+      true,
+  );
+  console.log("A shared link became Inbox/An example page.md, its source the link.");
+
+  // 5. The Capture shortcut, from a cold start: the sheet before the vault.
+  await until("the app's shortcuts", async () =>
+    /\bid=capture\b/.test(shell("dumpsys", "shortcut")),
+  );
+  console.log("The app's four shortcuts are published.");
+  await end();
+  // The intent the launcher's shortcut holds (@capawesome/capacitor-app-shortcuts).
+  page = await start("-a", "android.intent.action.VIEW", "--es", "shortcutId", "capture");
+  const sheet = page.getByRole("dialog", { name: "Capture" });
+  await sheet.getByRole("textbox", { name: "Note" }).waitFor();
+  const ready = lastMark("capture-ready");
+  if (ready === undefined) throw new Error("The capture sheet marked no capture-ready.");
+  console.log(`The capture sheet was ready ${String(ready)} ms after the process started, cold.`);
+  await sheet.getByRole("textbox", { name: "Note" }).fill("Captured from the shortcut");
+  await sheet.getByRole("button", { name: "Save" }).click();
+  await sheet.waitFor({ state: "hidden" });
+  await until(
+    "the shortcut's note in Inbox",
+    async () => vaultFile("Inbox/Captured from the shortcut.md") !== undefined,
+  );
+  console.log("The Capture shortcut's note is Inbox/Captured from the shortcut.md.");
 
   // 3. Signed in to a server, from a fresh start.
   server = await startServer();
