@@ -10,6 +10,7 @@ import {
   invitationLink,
   pkce,
   readInvitationLink,
+  reportExport,
   request,
   serverAddress,
   setUpServer,
@@ -260,6 +261,27 @@ describe("a workspace's AI switch", () => {
     await expect(setWorkspaceAi(refused.fetcher, base, "t0k", "w1", true)).rejects.toThrow(
       "Only the workspace's owners and admins change its settings.",
     );
+  });
+});
+
+describe("an export made", () => {
+  it("is told to the workspace's server, what and how many, never a note's text", async () => {
+    const { fetcher, sent } = fakeFetch({
+      "POST /api/workspaces/w1/exports": () => new Response(null, { status: 204 }),
+    });
+    await reportExport(fetcher, base, "t0k", "w1", { scope: "folder", format: "pdf", notes: 4 });
+    expect(sent).toEqual([
+      {
+        method: "POST",
+        url: `${base}/api/workspaces/w1/exports`,
+        headers: {
+          accept: "application/json",
+          authorization: "Bearer t0k",
+          "content-type": "application/json",
+        },
+        body: { scope: "folder", format: "pdf", notes: 4 },
+      },
+    ]);
   });
 });
 
