@@ -42,7 +42,8 @@ Notion exports. Self-hosting is available for enterprise.
 > [writing assist](https://fzn0x.github.io/nether/ai/) works with an AI
 > provider you bring, OpenAI-compatible or Anthropic, its key in the
 > desktop's keychain or sealed on your server for the web app, and the
-> desktop app searches notes by meaning with its embedding model; share links
+> desktop app searches notes by meaning with its embedding model and builds
+> databases, templates and plans from a description, previewed first; share links
 > open a page to anyone with one, with no account, to read, comment on or
 > edit; [buttons](https://fzn0x.github.io/nether/buttons/) in a note, as
 > Meta Bind writes them, run commands, make notes from templates and set
