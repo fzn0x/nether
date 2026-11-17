@@ -1,0 +1,175 @@
+# 0072. Buttons are Meta Bind's button blocks, and triggers are rules in a database's schema, run where the change is made
+
+- Status: Accepted
+- Date: 2026-11-17
+
+## Context
+
+The [requirements](../requirements.md#databases-and-structure) ask, in
+Phase 4, for "Buttons that create notes, set properties or run plugin
+actions; database triggers ('when status = Done, set Completed date')".
+
+How buttons are written in Obsidian, by the two community plugins that
+make them:
+
+- **Buttons** writes a `button` code block of `key value` lines: `name`,
+  then `type` (`command`, `link`, `calculate`, templates and text put
+  into a note, `swap`, `chain`) and `action`. None of its types sets a
+  property.
+- **Meta Bind** writes a `meta-bind-button` code block of YAML, which its
+  docs and its typed source describe: `label`, `style` (`default`,
+  `primary`, `destructive` or `plain`), `tooltip`, `id`, `hidden`, and
+  `action` or `actions`. Among its actions:
+  - `command`, with the `command` to run, by its ID;
+  - `createNote`, with `fileName`, and `folderPath`, `openNote` and
+    `openIfAlreadyExists`; a taken name gets a number, "Note 1";
+  - `templaterCreateNote`, the same with a `templateFile`, filled by the
+    Templater plugin;
+  - `updateMetadata`, with a `bindTarget`, `evaluate` and a `value`. A
+    bind target is `property` for the note the button is in, or
+    `Note#property` for another, with `frontmatter^` before it when its
+    storage is named. Without `evaluate`, the value is read as Meta Bind
+    reads a literal: `null`, `true`, `false`, a number, or else text;
+  - `open`, with a `link` to a note or a web address;
+  - and others that run JavaScript, ask for input, wait, or change the
+    note's text.
+
+Neither Obsidian nor its bases have triggers.
+
+What any design must live with:
+
+- **A note stays readable Markdown** ([ADR 0006](0006-markdown-file-format.md)),
+  and what Obsidian reads must mean the same there.
+- **Code from a vault runs only in the plugin sandbox**
+  ([ADR 0058](0058-a-plugin-from-a-vault-runs-in-a-sandboxed-frame-with-what-this-device-approved.md)).
+- **Commands are in one registry**, the app's and its plugins', a plugin's
+  named `plugin-id:command`, as Obsidian names them
+  ([ADR 0055](0055-plugins-declare-what-they-add-and-reach-the-app-only-by-messages.md)).
+- **A database is a note whose frontmatter holds its schema**, with an
+  Obsidian base beside it, whose keys mean what Obsidian says
+  ([ADR 0018](0018-a-database-is-a-note-with-an-obsidian-base-beside-it.md),
+  [ADR 0056](0056-a-plugins-database-layout-is-named-for-it-and-a-base-shows-it-as-a-table.md)).
+- **A note changes in many places**: in the app on this device, on other
+  devices whose changes arrive by sync, in other apps that edit its file,
+  and through the server's REST API.
+
+## Decision
+
+**A button is a `meta-bind-button` code block, in Meta Bind's own syntax.**
+In Obsidian with Meta Bind it is the same button; without it, readable
+YAML. Nether reads and runs a part of that syntax:
+
+```meta-bind-button
+label: Mark done
+style: primary
+actions:
+  - type: updateMetadata
+    bindTarget: status
+    evaluate: false
+    value: Done
+  - type: command
+    command: dayNote
+```
+
+- `label`, `style`, `tooltip` and `hidden` draw the button. `id` is kept;
+  inline buttons that use it, `` `BUTTON[id]` ``, are not read yet. Its
+  other fields are kept and not drawn: styles from a note do not reach the
+  app's page.
+- **`command`** runs a command of the registry by its ID: the app's own,
+  as `dayNote`, or a plugin's, `plugin-id:command`. An Obsidian command
+  Nether does not have is named as missing.
+- **`createNote`** makes a note at `folderPath`/`fileName`, the first free
+  name after it, or opens it with `openIfAlreadyExists`; `openNote` opens
+  it.
+- **`templaterCreateNote`** does the same from `templateFile`, filled as
+  Nether fills a template ([ADR 0011](0011-templates-and-periodic-notes.md)):
+  Obsidian's own variables, and Templater's `<% %>` left as text.
+- **`updateMetadata`** sets a property, with `evaluate: false`: of the note
+  the button is in, or of `Note#property`, found as a link finds it. The
+  value is read as Meta Bind reads a literal; a YAML number or true stays
+  one. Nested properties and Meta Bind's memory are not read.
+- **`open`** opens a `[[link]]` in the app, or a web address in the
+  browser.
+- **`sleep`** waits its `ms`, up to ten seconds.
+- **Actions run in order.** One that fails stops the rest and says why.
+- **What Nether does not run**, JavaScript (`js`, `inlineJS`, `evaluate:
+  true`), `input`, `runTemplaterFile` and the actions that change the
+  note's text, makes the button say so and run none of its actions. Code
+  in a note never runs outside the sandbox.
+
+**Buttons are a built-in plugin's**, `automations`, on the plugin API: it
+adds the `meta-bind-button` language and a Button entry to the slash menu.
+Its view gets from the host what a button does: the note it is in, the
+command registry, making a note from a template, and setting a property.
+Turned off, a button shows as its code.
+
+**A trigger is a rule in its database's schema**, under `triggers` in the
+database note's frontmatter, beside its properties and views:
+
+```yaml
+database:
+  properties: …
+  triggers:
+    - when: status
+      is: Done
+      set:
+        completed: "{{date}}"
+```
+
+- `when` names a property and `is` a value. The rule fires when a row's
+  property becomes that value, from another; not on every write while it
+  stays.
+- `set` gives properties and their values. `{{date}}` and `{{time}}`, with
+  a format after a colon, are filled as templates fill them; `null` clears
+  a property.
+- It is Nether's own: no other app has triggers. Obsidian shows the
+  database note's `database` property as it does now, and the base beside
+  it does not change.
+
+**A trigger runs on the device that made the change, once.** It runs right
+after the app makes a change on this device: in a database's cell, board,
+calendar or timeline, in a row's properties, or by a button. It does not
+run for a change that arrives by sync, from another app's edit of the file,
+or through the REST API. A synced change ran its triggers where it was
+made, and its trigger's writes sync with it, so no device runs a rule a
+second time.
+
+**No trigger fires itself.** A trigger's own writes run no triggers, so no
+rule fires another, nor itself. A rule fires on the change into its value,
+not while it stays.
+
+**The `automations` plugin runs triggers too**, through a hook the host
+gives built-in plugins: a property the app changed, before and after.
+Turned off, no trigger runs.
+
+**It comes in two parts**, a pull request each:
+
+1. Buttons, as above.
+2. Triggers, with their editor in the database's settings.
+
+## Alternatives
+
+- **The Buttons plugin's `button` blocks.** None of its types sets a
+  property; adding one would be a syntax that only looks like Buttons'.
+- **A `button` language of Nether's own.** No other app would run it, and
+  the Buttons plugin, whose language that is, would read it wrong.
+- **Running Meta Bind's JavaScript actions.** Only the sandbox runs code
+  from a vault, and these have no permissions to ask for.
+- **Triggers in the base.** Its keys are Obsidian's, and a base Obsidian
+  rewrites would drop them.
+- **Triggers in a file beside the database.** A second file to keep in
+  step, and to move and rename with it.
+- **Triggers run on every device as a change syncs.** Each device would
+  write the same change, as conflicts.
+- **Triggers run on the server.** Vaults with no server would have none,
+  and an encrypted workspace's server cannot read the rows.
+
+## Consequences
+
+- A Meta Bind button that sets a property, makes a note, runs a command
+  Nether has, or opens a link works in both apps.
+- A change made through the REST API, or in another app, runs no trigger.
+  A later item could run triggers on the server for the API's changes,
+  where it can read them.
+- Each command, core or a plugin's, can be a button's action, as the
+  command palette lists them.

@@ -74,3 +74,4 @@ record supersedes it and says so. Start a new one from
 | [0064](0064-a-plugin-reads-and-writes-notes-through-the-app-as-far-as-it-asked.md) | A plugin reads and writes notes through the app, as far as it asked | Accepted |
 | [0065](0065-the-directory-is-an-index-in-the-repository-of-files-pinned-by-commit-and-hash.md) | The directory is an index in the repository, of files pinned by commit and hash | Accepted |
 | [0071](0071-a-share-link-opens-one-shared-page-to-anyone-with-it-through-the-web-app.md) | A share link opens one shared page to anyone with it, through the web app | Accepted |
+| [0072](0072-buttons-are-meta-bind-button-blocks-and-triggers-are-schema-rules-run-where-the-change-is-made.md) | Buttons are Meta Bind's button blocks, and triggers are rules in a database's schema, run where the change is made | Accepted |
