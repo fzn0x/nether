@@ -4,6 +4,7 @@
 // missing row breaks; searched by instance admins, purged when old, with
 // its own settings recorded too.
 import { randomBytes, randomUUID } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { pkceChallenge } from "@nether/server/src/oidc.ts";
 import { storeDocument } from "@nether/server/src/sync.ts";
 import { deactivateAccount } from "@nether/server/src/accounts.ts";
@@ -20,6 +21,7 @@ import {
 } from "@nether/server/test/app.ts";
 import { type TestProvider, startProvider } from "@nether/server/test/provider.ts";
 import { adminModule } from "@nether/enterprise-admin";
+import { policiesModule } from "@nether/enterprise-policies";
 import { ssoModule } from "@nether/enterprise-sso";
 import { afterEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
@@ -56,7 +58,7 @@ async function start(
   const server = await startServer({
     env,
     // Single sign-on's too, off unless a test turns it on, as in the image.
-    enterpriseModules: [createAuditModule(moduleEnv), adminModule, ssoModule],
+    enterpriseModules: [createAuditModule(moduleEnv), adminModule, ssoModule, policiesModule],
   });
   const set = await setUp(server);
   const { rows: counted } = await server.db.query("SELECT count(*) AS count FROM audit_events");
@@ -240,8 +242,9 @@ describe("the audit log", () => {
       (await redeem(stolen.code ?? "", randomBytes(32).toString("base64url"))).statusCode,
     ).toBe(401);
 
-    const log = await rows(test);
-    expect(actions(log)).toEqual([
+    const log = (await rows(test)).slice(1);
+    expect(actions(await rows(test))).toEqual([
+      "sso.provider_added",
       "account.created",
       "session.signed_in",
       "session.signed_in (failed)",
@@ -269,6 +272,136 @@ describe("the audit log", () => {
       reason: "not the app that began it",
       actorId: grace,
       details: by,
+    });
+  });
+
+  it("records the console's settings of who signs in how, and where AI may go", async () => {
+    const test = await start({
+      NETHER_ENTERPRISE_AUDIT: "on",
+      NETHER_ENTERPRISE_ADMIN: "on",
+      NETHER_ENTERPRISE_POLICIES: "on",
+      NETHER_ENTERPRISE_SSO: "on",
+      NETHER_PUBLIC_URL: "https://nether.example.org",
+      NETHER_SECRET_KEY: secret,
+      NETHER_SSO_PRIVATE: "loopback",
+    });
+    const put = (url: string, payload: Record<string, unknown>) =>
+      test.server.inject({ method: "PUT", url, headers: bearer(test.token), payload });
+    expect((await put("/api/admin/security", { sessionIdleDays: 10 })).statusCode).toBe(200);
+    // The same again changes nothing, and records nothing.
+    expect((await put("/api/admin/security", { sessionIdleDays: 10 })).statusCode).toBe(200);
+    expect(
+      (await put("/api/admin/ai-endpoints", { endpoints: ["https://llm.corp.example/v1"] }))
+        .statusCode,
+    ).toBe(200);
+    provider = await startProvider();
+    const added = await test.server.inject({
+      method: "POST",
+      url: "/api/admin/sso/providers",
+      headers: bearer(test.token),
+      payload: {
+        id: "okta",
+        name: "Okta",
+        domains: ["corp.example"],
+        oidc: {
+          issuer: provider.issuer,
+          clientId: provider.clientId,
+          clientSecret: provider.clientSecret,
+        },
+      },
+    });
+    expect(added.statusCode, added.body).toBe(201);
+    expect(
+      (await put("/api/admin/sso/providers/okta", { name: "Corp", required: true })).statusCode,
+    ).toBe(200);
+    expect((await put("/api/admin/sso/enforcement", { everyone: true })).statusCode).toBe(200);
+    expect((await put("/api/admin/sso/enforcement", { everyone: false })).statusCode).toBe(200);
+    const removed = await test.server.inject({
+      method: "DELETE",
+      url: "/api/admin/sso/providers/okta",
+      headers: bearer(test.token),
+    });
+    expect(removed.statusCode).toBe(204);
+
+    const log = await rows(test);
+    expect(actions(log)).toEqual([
+      "instance.security_changed",
+      "instance.ai_endpoints_changed",
+      "sso.provider_added",
+      "sso.provider_changed",
+      "sso.enforcement_changed",
+      "sso.enforcement_changed",
+      "sso.provider_removed",
+    ]);
+    expect(log[0]?.details).toEqual({ sessionIdleDays: { from: 30, to: 10 } });
+    expect(log[1]?.details).toEqual({ from: [], to: ["https://llm.corp.example/v1"] });
+    expect(log[2]).toMatchObject({
+      targetType: "sso_provider",
+      targetId: "okta",
+      targetName: "Okta",
+      details: { kind: "oidc", domains: ["corp.example"], makeAccounts: true, required: false },
+    });
+    expect(log[3]).toMatchObject({
+      targetName: "Corp",
+      details: {
+        kind: "oidc",
+        name: { from: "Okta", to: "Corp" },
+        required: { from: false, to: true },
+      },
+    });
+    expect(log[4]?.details).toEqual({
+      from: { everyone: false, admins: false },
+      to: { everyone: true, admins: false },
+    });
+    expect(log[6]).toMatchObject({
+      targetId: "okta",
+      targetName: "Corp",
+      details: { kind: "oidc" },
+    });
+    // Never a secret.
+    expect(JSON.stringify(log)).not.toContain(provider.clientSecret);
+  });
+
+  it("has a name the console shows for every action", () => {
+    // The console names an action by a message of its own, its code beside it.
+    const messages = readFileSync(
+      new URL("../../../apps/desktop/src/messages.ts", import.meta.url),
+      "utf8",
+    );
+    for (const action of Object.values(actionGroups).flat()) {
+      const key = `adminAuditAction${action
+        .split(/[._]/)
+        .map((part) => part.slice(0, 1).toUpperCase() + part.slice(1))
+        .join("")}`;
+      expect(messages, action).toContain(`  ${key}: "`);
+    }
+  });
+
+  it("records the exports the apps tell of, for their workspace's members alone", async () => {
+    const test = await start();
+    const told = (workspace: string, payload: Record<string, unknown>, token = test.token) =>
+      test.server.inject({
+        method: "POST",
+        url: `/api/workspaces/${workspace}/exports`,
+        headers: { ...bearer(token), "user-agent": "Nether desktop" },
+        payload,
+      });
+    expect(
+      (await told(test.workspaceId, { scope: "folder", format: "pdf", notes: 12 })).statusCode,
+    ).toBe(204);
+    expect(
+      (await told(test.workspaceId, { scope: "folder", format: "docx", notes: 12 })).statusCode,
+    ).toBe(400);
+    expect(
+      (await told(randomUUID(), { scope: "vault", format: "markdown", notes: 3 })).statusCode,
+    ).toBe(404);
+    const log = await rows(test);
+    expect(actions(log)).toEqual(["export.made"]);
+    expect(log[0]).toMatchObject({
+      actorId: test.userId,
+      workspaceId: test.workspaceId,
+      userAgent: "Nether desktop",
+      details: { scope: "folder", format: "pdf", notes: 12, reported: true },
     });
   });
 
