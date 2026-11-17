@@ -153,7 +153,16 @@ describe("request", () => {
     await expect(account(fetcher, base, "t0k")).resolves.toEqual({
       user,
       workspaces: [
-        { id: "w1", name: "Team", role: "owner", encrypted: false, ai: true, exportAllowed: true },
+        {
+          id: "w1",
+          name: "Team",
+          role: "owner",
+          encrypted: false,
+          ai: true,
+          exportAllowed: true,
+          trashDays: null,
+          legalHold: false,
+        },
         {
           id: "w2",
           name: "Secret",
@@ -161,6 +170,8 @@ describe("request", () => {
           encrypted: true,
           ai: false,
           exportAllowed: true,
+          trashDays: null,
+          legalHold: false,
         },
       ],
       aiEndpoints: null,
@@ -170,7 +181,12 @@ describe("request", () => {
         json(200, {
           user,
           workspaces: [
-            { id: "w1", name: "Team", role: "owner", policies: { export: false } },
+            {
+              id: "w1",
+              name: "Team",
+              role: "owner",
+              policies: { export: false, trashDays: 14, legalHold: true },
+            },
             { id: "w2", name: "Open", role: "owner", policies: { export: true } },
             { id: "w3", name: "Unset", role: "owner", policies: null },
           ],
@@ -178,6 +194,11 @@ describe("request", () => {
     });
     const kept = await account(policed.fetcher, base, "t0k");
     expect(kept.workspaces.map((each) => each.exportAllowed)).toEqual([false, true, true]);
+    expect(kept.workspaces.map((each) => [each.trashDays, each.legalHold])).toEqual([
+      [14, true],
+      [null, false],
+      [null, false],
+    ]);
     const locked = fakeFetch({
       "GET /api/me": () =>
         json(200, { user, workspaces: [], aiEndpoints: ["https://llm.corp.example/v1"] }),

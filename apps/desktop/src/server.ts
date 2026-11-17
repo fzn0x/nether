@@ -46,6 +46,15 @@ export interface Workspace {
   readonly ai: boolean;
   /** Whether its server's data policy lets its notes be exported (ADR 0088). */
   readonly exportAllowed: boolean;
+  /** How many days its server's policy keeps its vaults' trash; null for each vault's own. */
+  readonly trashDays: number | null;
+  /** Whether its server's policy holds it: nothing of it deleted for good. */
+  readonly legalHold: boolean;
+}
+
+/** A number of days a policy keeps something, or null for none it sets. */
+function daysOf(value: unknown): number | null {
+  return typeof value === "number" && Number.isInteger(value) && value >= 1 ? value : null;
 }
 
 /** What a page's share links may do under its workspace's data policy (ADR 0088). */
@@ -453,6 +462,8 @@ export async function account(
         ai: workspace.ai !== false,
         // A server from before data policies, or with none, keeps nothing.
         exportAllowed: record(workspace.policies).export !== false,
+        trashDays: daysOf(record(workspace.policies).trashDays),
+        legalHold: record(workspace.policies).legalHold === true,
       };
     }),
     // A server from before the lock locks nothing.
@@ -537,6 +548,8 @@ export async function makeWorkspace(
     ai: answer.ai !== false,
     // Its data policy comes in /api/me, which a vault linked to it asks.
     exportAllowed: true,
+    trashDays: null,
+    legalHold: false,
   };
 }
 

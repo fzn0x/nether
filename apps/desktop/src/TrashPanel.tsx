@@ -1,11 +1,14 @@
 // The vault's trash, in the sidebar: each note removed, with where it was,
 // when it went and how long it stays; a note restored goes back where it
 // was. Deleting one for good, or emptying the trash, asks once more. How
-// many days the trash keeps notes is set here.
+// many days the trash keeps notes is set here, unless the workspace's data
+// policy sets them; while it is on legal hold, nothing is deleted for good
+// (ADR 0088).
 import { type TrashItem, defaultKeepDays } from "@nether/storage";
 import type { Vault } from "@nether/storage";
 import { useCallback, useEffect, useState } from "react";
 import { t } from "./messages.ts";
+import type { TrashPolicy } from "./workspacePolicy.ts";
 
 const dayLength = 86_400_000;
 const relative = new Intl.RelativeTimeFormat("en", { numeric: "auto" });
@@ -35,12 +38,18 @@ function folderOf(path: string): string | undefined {
 
 export function TrashPanel(props: {
   readonly vault: Vault;
+  /** The workspace's data policy for the trash, when the vault syncs with one. */
+  readonly policy?: TrashPolicy | undefined;
   /** Opens a note once it is restored. */
   readonly onRestored: (path: string) => void;
 }) {
-  const { vault, onRestored } = props;
+  const { vault, policy, onRestored } = props;
   const [items, setItems] = useState<readonly TrashItem[] | undefined>();
-  const [keepDays, setKeepDays] = useState(defaultKeepDays);
+  const [ownDays, setKeepDays] = useState(defaultKeepDays);
+  const held = policy?.legalHold === true;
+  // The policy's days, where it sets them, in place of the vault's own.
+  const policyDays = policy?.trashDays ?? null;
+  const keepDays = policyDays ?? ownDays;
   const [daysDraft, setDaysDraft] = useState(String(defaultKeepDays));
   // What asks once more before it goes for good: an item's path, or "all" for the whole trash.
   const [confirming, setConfirming] = useState<string | undefined>();
@@ -75,10 +84,10 @@ export function TrashPanel(props: {
   const saveDays = () => {
     const days = Number(daysDraft);
     if (!Number.isInteger(days) || days < 1) {
-      setDaysDraft(String(keepDays));
+      setDaysDraft(String(ownDays));
       return;
     }
-    if (days !== keepDays) act(vault.setTrashDays(days));
+    if (days !== ownDays) act(vault.setTrashDays(days));
   };
 
   if (items === undefined) return null;
@@ -98,7 +107,7 @@ export function TrashPanel(props: {
                 <span className="trash-when">
                   {t("trashDeleted", {
                     when: deletedWhen(item.deleted, now),
-                    left: timeLeft(item.deleted, keepDays, now),
+                    left: held ? t("trashKeptOnHold") : timeLeft(item.deleted, keepDays, now),
                   })}
                 </span>
                 {confirming === item.path ? (
@@ -140,16 +149,18 @@ export function TrashPanel(props: {
                     >
                       {t("restore")}
                     </button>
-                    <button
-                      type="button"
-                      className="quiet"
-                      aria-label={t("eraseNamed", { name })}
-                      onClick={() => {
-                        setConfirming(item.path);
-                      }}
-                    >
-                      {t("eraseNote")}
-                    </button>
+                    {held ? null : (
+                      <button
+                        type="button"
+                        className="quiet"
+                        aria-label={t("eraseNamed", { name })}
+                        onClick={() => {
+                          setConfirming(item.path);
+                        }}
+                      >
+                        {t("eraseNote")}
+                      </button>
+                    )}
                   </span>
                 )}
               </li>
@@ -158,6 +169,13 @@ export function TrashPanel(props: {
         </ul>
       )}
       {error === undefined ? null : <p role="alert">{error}</p>}
+      {policy === undefined || (!held && policyDays === null) ? null : (
+        <p className="hint" id="trash-policy">
+          {held
+            ? t("trashHeld", { server: policy.server })
+            : t("trashPolicyDays", { server: policy.server, count: keepDays })}
+        </p>
+      )}
       <div className="trash-footer">
         <label className="trash-days">
           {t("trashKeep")}
@@ -165,7 +183,9 @@ export function TrashPanel(props: {
             type="number"
             min={1}
             step={1}
-            value={daysDraft}
+            disabled={policyDays !== null}
+            aria-describedby={policyDays === null ? undefined : "trash-policy"}
+            value={policyDays === null ? daysDraft : String(policyDays)}
             onChange={(event) => {
               setDaysDraft(event.target.value);
             }}
@@ -176,7 +196,7 @@ export function TrashPanel(props: {
           />
           {t("days")}
         </label>
-        {items.length === 0 ? null : confirming === "all" ? (
+        {items.length === 0 || held ? null : confirming === "all" ? (
           <span
             className="trash-actions"
             role="group"

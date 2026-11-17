@@ -58,7 +58,7 @@ import { type LayoutRegistry, useLayouts } from "./plugins/layouts.ts";
 import { type PropertyChangeRegistry, useWatched } from "./plugins/propertyChanges.ts";
 import { DatabaseTriggers } from "./DatabaseTriggers.tsx";
 import { useDocumentProperties } from "./DatabaseSlot.tsx";
-import { useExportPolicyContext } from "./exportPolicy.ts";
+import { useExportPolicyContext } from "./workspacePolicy.ts";
 import { ListEditor } from "./PropertiesPanel.tsx";
 import type { Exporter, VaultMedia } from "./backend.ts";
 import {

@@ -59,10 +59,9 @@ export function useVault(info: VaultInfo): VaultState {
             backend.mark(`heap-mb-${String(Math.round(heap.usedJSHeapSize / 2 ** 20))}`);
           }, seconds * 1000);
         }
-        // What has been in the trash too long goes; what cannot is tried again next time.
-        vault.purgeTrash().catch(() => undefined);
-        // And notes' versions older than this device keeps them (ADR 0041).
-        vault.purgeHistory().catch(() => undefined);
+        // What has been in the trash too long, and notes' versions older than
+        // this device keeps them (ADR 0041), go once the vault has settled,
+        // as its workspace's data policy says (ADR 0088): see VaultView.
         // When another app's change is in the index, for measuring how soon.
         await vault.watch(controller.signal, () => {
           backend.mark("change-applied");

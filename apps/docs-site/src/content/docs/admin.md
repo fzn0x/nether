@@ -333,9 +333,13 @@ server cannot be reached. The **Share** dialog offers only view links
 while links may only view, and says why it offers no link or site when
 they are off.
 
-The apps' trash days, and legal hold in the apps' trash, come in the
-next version: until then the apps keep each vault's own trash days. A
-desktop vault's files are on its device, the person's own: no
+The apps keep the trash to it too: a vault linked to the workspace keeps
+its trash for the policy's days in place of its own, and, on legal hold,
+deletes nothing in it for good and offers no **Delete for good** or
+**Empty trash**, saying why. The app asks your server a little after the
+vault opens, before it purges, and holds to its last answer while the
+server cannot be reached. A desktop vault's files are on its device, the
+person's own: no
 policy stops another program from reading them. Device management on your
 organization's computers is the tool for that.
 

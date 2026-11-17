@@ -60,9 +60,16 @@ there:
   sure. **Empty trash** does the same for every note in the trash.
 
 Notes stay in the trash for 30 days, or as many as you set at the bottom of
-the Trash tab, and are deleted for good when the vault next opens after
-that. Notes another app put in `.trash`, such as Obsidian, show there too,
-and their days count from when Nether first finds them.
+the Trash tab, and are deleted for good a little after the vault next opens
+after that. Notes another app put in `.trash`, such as Obsidian, show there
+too, and their days count from when Nether first finds them.
+
+A vault synced with a workspace on a server keeps its trash as the
+server's [data policy](../admin/#data-policies) says, where it says so: for
+the policy's days, which the Trash tab shows in place of its own, or, while
+the workspace is on legal hold, for good. On hold, the Trash tab offers no
+**Delete for good** or **Empty trash**, and says why; **Restore** still
+works.
 
 ## A note's history
 
