@@ -1,0 +1,23 @@
+{
+  "name": "@nether/enterprise-audit",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Audit logs: every sign-in, permission change, share, export and deletion, kept in a chained, append-only log and searched in the admin console (ADR 0081).",
+  "license": "AGPL-3.0-or-later",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@nether/server": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^24.19.2",
+    "vitest": "^5.0.5",
+    "yjs": "^13.6.33"
+  }
+}
