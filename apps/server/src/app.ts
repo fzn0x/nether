@@ -274,7 +274,12 @@ export async function buildApp(config: Config, services: Services): Promise<Fast
     emailCode: services.mailer !== undefined,
     oidc: oidc === null ? null : { name: oidc.name },
   }));
-  await registerEnterprise(app, services.db, config, switches, modules);
+  await registerEnterprise(
+    app,
+    { db: services.db, config, disconnect: reconnect },
+    switches,
+    modules,
+  );
   // The web app at `/`, with its own answer for paths the API does not have.
   await registerWebApp(app, config.webApp);
   return app;

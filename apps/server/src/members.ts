@@ -3,15 +3,27 @@
 // guests; anyone may leave. A workspace always keeps an owner. A change
 // closes the account's open sync connections, so its apps connect again
 // and every document is checked anew: one removed reads nothing more, and
-// one made a guest only reads.
+// one made a guest only reads. An instance admin sets roles from the admin
+// console (ADR 0083), by the same function and its rules.
 import type { FastifyInstance } from "fastify";
 import { type Database, type Queryable, readText, readTime } from "./db.ts";
 import { fail, uuidField } from "./http.ts";
 import { accountOf, signedIn } from "./sessions.ts";
 import { membership } from "./workspaces.ts";
 
-const roles = ["owner", "admin", "member", "guest"] as const;
-type Role = (typeof roles)[number];
+export const roles = ["owner", "admin", "member", "guest"] as const;
+export type Role = (typeof roles)[number];
+
+/** Who sets a role: a member of the workspace, at their role there, or an instance admin from the console. */
+export interface RoleSetter {
+  /** The account that acts. */
+  readonly account: string;
+  /** Its role in the workspace, or `instance-admin` when an instance admin acts from the console. */
+  readonly as: string;
+}
+
+/** What setting a role came to: changed, already so, or refused, with its status and why. */
+export type RoleOutcome = "changed" | "same" | readonly [status: 403 | 404 | 409, message: string];
 
 interface WorkspaceParams {
   readonly workspace: string;
@@ -63,6 +75,44 @@ async function owners(tx: Queryable, workspace: string): Promise<number> {
 }
 
 /**
+ * Sets a member's role under the workspace's rules: its owners, and
+ * instance admins, change anyone's; its admins change members' and
+ * guests'; and it keeps at least one owner. When the role changed, the
+ * caller closes the account's connections.
+ */
+export async function setRole(
+  db: Database,
+  workspace: string,
+  user: string,
+  role: Role,
+  by: RoleSetter,
+): Promise<RoleOutcome> {
+  if (by.as !== "owner" && by.as !== "admin" && by.as !== "instance-admin") {
+    return [403, "Only the workspace's owners and admins change roles."];
+  }
+  return db.transaction(async (tx) => {
+    const count = await owners(tx, workspace);
+    const { rows } = await tx.query(
+      "SELECT role FROM memberships WHERE workspace_id = $1 AND user_id = $2 FOR UPDATE",
+      [workspace, user],
+    );
+    if (rows.length === 0) return [404, noMember] as const;
+    const current = readText(rows[0], "role");
+    if (by.as === "admin" && !(adminMay(current) && adminMay(role))) {
+      return [403, "An admin changes members and guests; owners change the rest."] as const;
+    }
+    if (current === "owner" && role !== "owner" && count === 1) return [409, lastOwner] as const;
+    if (current === role) return "same";
+    await tx.query("UPDATE memberships SET role = $3 WHERE workspace_id = $1 AND user_id = $2", [
+      workspace,
+      user,
+      role,
+    ]);
+    return "changed";
+  });
+}
+
+/**
  * The members' routes. `changed` hears of each account whose place in a
  * workspace changed, to close its connections.
  */
@@ -109,32 +159,10 @@ export function registerMembers(
       const workspace = request.params.workspace.toLowerCase();
       const user = request.params.user.toLowerCase();
       const { role } = request.body;
-      const me = await membership(db, accountOf(request).id, workspace);
+      const myId = accountOf(request).id;
+      const me = await membership(db, myId, workspace);
       if (me === undefined) return fail(reply, 404, noWorkspace);
-      if (me.role !== "owner" && me.role !== "admin") {
-        return fail(reply, 403, "Only the workspace's owners and admins change roles.");
-      }
-      const outcome = await db.transaction(async (tx) => {
-        const count = await owners(tx, workspace);
-        const { rows } = await tx.query(
-          "SELECT role FROM memberships WHERE workspace_id = $1 AND user_id = $2 FOR UPDATE",
-          [workspace, user],
-        );
-        if (rows.length === 0) return [404, noMember] as const;
-        const current = readText(rows[0], "role");
-        if (me.role === "admin" && !(adminMay(current) && adminMay(role))) {
-          return [403, "An admin changes members and guests; owners change the rest."] as const;
-        }
-        if (current === "owner" && role !== "owner" && count === 1)
-          return [409, lastOwner] as const;
-        if (current !== role) {
-          await tx.query(
-            "UPDATE memberships SET role = $3 WHERE workspace_id = $1 AND user_id = $2",
-            [workspace, user, role],
-          );
-        }
-        return current === role ? "same" : "changed";
-      });
+      const outcome = await setRole(db, workspace, user, role, { account: myId, as: me.role });
       if (typeof outcome !== "string") return fail(reply, outcome[0], outcome[1]);
       if (outcome === "changed") changed(user);
       return { id: user, role };
