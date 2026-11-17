@@ -1,6 +1,6 @@
 ---
 title: AI
-description: How to bring your own AI provider to Nether, an OpenAI-compatible endpoint such as Ollama or OpenAI, or Anthropic, and use writing assist on what you select.
+description: How to bring your own AI provider to Nether, an OpenAI-compatible endpoint such as Ollama or OpenAI, or Anthropic, use writing assist on what you select, and search notes by meaning.
 ---
 
 Nether's AI uses a provider you choose, with your own key: any
@@ -106,3 +106,32 @@ instruction. Links, tags and formatting in the reply become the note's
 own. Nether records nothing of what is sent or received.
 
 Writing assist works on notes shown as blocks, not in source mode.
+
+## Search by meaning
+
+Search by meaning finds notes by what they are about, not only by their
+words: "keeping tomatoes from splitting" finds a note on watering that
+never says "split". It is off until you turn it on for a vault.
+
+In the **AI** tab, under **Search by meaning**, choose an
+OpenAI-compatible provider and its embedding model, as the provider names
+it, such as `text-embedding-3-small` for OpenAI or `nomic-embed-text` for
+Ollama, then **Turn on**. Anthropic offers no embedding models.
+
+Nether then sends the vault's notes to that model, a passage at a time,
+the text under one heading, and keeps what comes back in the vault's index
+on this computer. That sends the whole vault once, then each passage that
+changes; a paid provider charges for what it is sent. A provider on this
+computer, such as Ollama, keeps the text on it. The tab shows how far it
+has come.
+
+In the sidebar's **Search**, choose **By meaning**, type what you are
+looking for, and press Enter. Each note found shows its passage closest in
+meaning, and opens at that passage's heading. Filters such as `tag:` and
+`path:` work as they do by words.
+
+Another model embeds the vault anew. **Turn off** stops, and keeps what
+was embedded, for turning it on again. While AI is off in the vault, or
+its workspace's owners and admins turned it off, search by meaning is off
+too. In a vault of an end-to-end encrypted workspace, choosing a provider
+here gives it the vault's text, as choosing one for AI in this vault does.

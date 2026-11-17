@@ -11,7 +11,9 @@ import { type SyntheticEvent, useEffect, useState } from "react";
 import type { AiProviderEntry, ServerAi, VaultAiChoice } from "./ai.ts";
 import { providerWhere } from "./aiWords.ts";
 import { backend } from "./backend.ts";
+import { MeaningSettings } from "./MeaningSettings.tsx";
 import { t } from "./messages.ts";
+import type { VaultMeaning } from "./useMeaning.ts";
 import { hostOf } from "./sync.ts";
 import type { VaultAi } from "./useAi.ts";
 
@@ -277,9 +279,11 @@ export function AiSettings(props: {
   readonly encrypted: boolean;
   /** The server the vault syncs with, to name it when it cannot be reached. */
   readonly server: string | undefined;
+  /** Search by meaning for the vault, where the app offers it. */
+  readonly meaning?: VaultMeaning | undefined;
   readonly onClose: () => void;
 }) {
-  const { ai, encrypted, server, onClose } = props;
+  const { ai, encrypted, server, meaning, onClose } = props;
   const { settings, choice, workspace, resolution, lookUpWorkspace } = ai;
   const [editing, setEditing] = useState<Draft | undefined>();
   const [error, setError] = useState<string | undefined>();
@@ -465,6 +469,14 @@ export function AiSettings(props: {
               </>
             )}
           </>
+        )}
+        {meaning === undefined || !meaning.offered || settings.providers.length === 0 ? null : (
+          <MeaningSettings
+            // Drawn again once the vault's choice is read, to start from it.
+            key={meaning.loaded ? "loaded" : "loading"}
+            meaning={meaning}
+            providers={settings.providers}
+          />
         )}
         {workspace === undefined ? null : (
           <>
