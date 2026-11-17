@@ -67,7 +67,9 @@ Markdown that Obsidian reads. [Writing assist](../ai/) rewrites, fixes,
 summarizes, translates or continues what you select, with an AI provider
 you bring, in the desktop app and in the web app through its server.
 [Share links](../servers/#share-links) open a page to anyone with one,
-with no account, to read, to comment on or to edit. The
+with no account, to read, to comment on or to edit.
+[Buttons](../buttons/) in a note, written as Obsidian's Meta Bind writes
+them, run commands, make notes from templates and set properties. The
 [roadmap](../roadmap/) lists what each phase delivers.
 
 The full requirements, the architecture and the decision records live in

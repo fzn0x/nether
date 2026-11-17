@@ -1114,6 +1114,27 @@ export const messages = {
   pdfEmbedPage: "Page {page} of {count}",
   pdfEmbedOpen: "Open",
   pdfEmbedOpenHint: "Open {name} in a tab, at the page shown",
+  // Buttons, as Meta Bind writes them (ADR 0072).
+  buttonYaml: "This button cannot be read: {detail}",
+  buttonNotMap: "A button is written as keys and their values, as label: and action:.",
+  buttonNoLabel: "This button has no label.",
+  buttonNoAction: "This button has no action.",
+  buttonActionType: "Each of this button's actions needs a type.",
+  buttonActionField: "This button's {action} action needs its {field}.",
+  buttonUnsupported: "Nether does not run {actions}, so this button runs none of its actions.",
+  buttonFailed: "The button stopped: {error}",
+  buttonNoCommand: "Nether has no command {command}.",
+  buttonCommandUnavailable: "The command {command} cannot run now.",
+  buttonNoNote: "No note is named {note}.",
+  buttonNoTemplate: "The template {template} is not in the vault.",
+  buttonBadPlace: "A button cannot make a note at {path}.",
+  buttonBadLink: "This button's link cannot be opened: {link}",
+  buttonCannotCreate: "This note cannot make notes.",
+  buttonAskTitle: "Run this button?",
+  buttonAskBody: "This button runs: {commands}. Run it?",
+  buttonAskEveryTime: "A plugin from this vault adds a command it runs, so it asks each time.",
+  buttonAskRun: "Run",
+  propertyCannotChange: "This note's properties cannot be changed now.",
 } as const;
 
 export type MessageKey = keyof typeof messages;

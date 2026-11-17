@@ -340,6 +340,8 @@ for (const [name, connect] of Object.entries(connections)) {
       expect(count?.name()).toBe("Compter les mots");
       expect(count?.menu).toBe("plugins");
       expect(count?.plugin).toBe("word-count");
+      // A built-in plugin's command is the app's own, as a button asks about it.
+      expect(count?.fromVault).toBeUndefined();
       expect(registry.get("word-count:forgotten")?.menu).toBe("note");
       // Keys that cannot be a shortcut are left out.
       expect(registry.defaults()).toEqual({ "word-count:count": ["Mod+Shift+K"] });
@@ -980,7 +982,8 @@ describe("PluginHost, adding", () => {
     for (const builtin of builtinPlugins) expect(host.add(builtin)).toEqual([]);
     expect(codeBlocks.get("mermaid")?.plugin).toBe("mermaid");
     expect(codeBlocks.get("base")?.plugin).toBe("query");
-    // The slash menu's Diagram and Query come from them.
+    expect(codeBlocks.get("Meta-Bind-Button")?.plugin).toBe("automations");
+    // The slash menu's Diagram, Query and Button come from them.
     expect(
       slashEntries(codeBlocks.all(), []).map(({ id, title, insert }) => [
         id,
@@ -990,6 +993,7 @@ describe("PluginHost, adding", () => {
     ).toEqual([
       ["code:mermaid", "Diagram", "flowchart LR"],
       ["code:base", "Query", "views:"],
+      ["code:meta-bind-button", "Button", "label: Mark done"],
     ]);
     // The sidebar's Tags and Assigned, and the outline, backlinks and unlinked mentions beside a note.
     expect(

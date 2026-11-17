@@ -3,13 +3,17 @@
 import { MemoryFiles, MemoryStore, Vault } from "@nether/storage";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  buttonNotePath,
   cleanTag,
   copyNote,
+  freeNotePath,
   fullPath,
   noteTags,
   setNoteTags,
+  setNoteValue,
   tagsOf,
   vaultFolders,
+  withProperty,
   withTags,
 } from "../src/noteActions.ts";
 
@@ -110,5 +114,50 @@ describe("tags in frontmatter", () => {
         "---\nstatus: draft\ntags: [work, area/project]\n---\n\n# Plan\n",
       );
     });
+  });
+});
+
+describe("what a button sets and makes", () => {
+  it("sets a property in its place, or last when it is new", () => {
+    const entries = [
+      { key: "status", value: "draft" },
+      { key: "due", value: "2026-11-20" },
+    ];
+    expect(withProperty(entries, "status", "Done")).toEqual([
+      { key: "status", value: "Done" },
+      { key: "due", value: "2026-11-20" },
+    ]);
+    expect(withProperty(entries, "count", 1)).toEqual([...entries, { key: "count", value: 1 }]);
+  });
+
+  it("writes a property to a note's file through its document", async () => {
+    const { memory, vault } = await openVault({
+      "Task.md": "---\nstatus: draft\n---\n\nText\n",
+    });
+    const id = vault.noteAt("Task.md")?.id;
+    if (id === undefined) throw new Error("No Task.md");
+    await setNoteValue(vault, id, "status", "Done");
+    await setNoteValue(vault, id, "done", true);
+    await vi.waitFor(async () => {
+      expect((await memory.read("Task.md")).text).toBe(
+        "---\nstatus: Done\ndone: true\n---\n\nText\n",
+      );
+    });
+  });
+
+  it("makes a note in the folder it names, and nowhere hidden or above the vault", () => {
+    expect(buttonNotePath("My Folder", "New Note")).toBe("My Folder/New Note.md");
+    expect(buttonNotePath("/", "New Note.md")).toBe("New Note.md");
+    expect(buttonNotePath(" a/b/ ", "c/Note")).toBe("a/b/c/Note.md");
+    expect(buttonNotePath("", "")).toBeUndefined();
+    expect(buttonNotePath(".nether", "x")).toBeUndefined();
+    expect(buttonNotePath("a", "../x")).toBeUndefined();
+    expect(buttonNotePath("a", "b\\..\\x")).toBeUndefined();
+  });
+
+  it("numbers a note's name when a file has it", async () => {
+    const { vault } = await openVault({ "Note.md": "", "Note 2.md": "" });
+    expect(freeNotePath(vault, "Note.md")).toBe("Note 3.md");
+    expect(freeNotePath(vault, "Other.md")).toBe("Other.md");
   });
 });
