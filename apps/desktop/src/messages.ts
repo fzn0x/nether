@@ -162,6 +162,7 @@ export const messages = {
   resolvedBy: "Resolved by {name}",
   resolvedThreads: "Resolved ({count})",
   commentEdited: "(edited)",
+  commentByLink: "(by a link)",
   edit: "Edit",
   editComment: "Edit the comment",
   deleteComment: "Delete",
