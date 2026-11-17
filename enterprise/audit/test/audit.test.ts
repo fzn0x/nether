@@ -25,6 +25,7 @@ import {
   chainKey,
   checkLog,
   createAuditModule,
+  keepUp,
   purge,
   record,
   searchLog,
@@ -512,6 +513,21 @@ describe("the audit log", () => {
     });
     expect(await checkLog(test.db, null)).toMatchObject({ broken: null, from: last, checked: 2 });
     expect(await purge(test.db, 365, null)).toBe(0);
+  });
+
+  it("purges nothing while a workspace is on legal hold, and checkpoints still", async () => {
+    const test = await start();
+    for (const password of ["one wrong", "two wrong"]) {
+      await signIn(test.server, admin.email, password);
+    }
+    const before = await rows(test);
+    const held = await keepUp(test.db, null, 0, () => Promise.resolve(true));
+    expect(held.purged).toBeNull();
+    expect(held.head).toBeDefined();
+    // Every event is still there, with the checkpoint after them.
+    expect((await rows(test)).slice(0, before.length)).toEqual(before);
+    const free = await keepUp(test.db, null, 0, () => Promise.resolve(false));
+    expect(free.purged).toBeGreaterThan(0);
   });
 
   it("is searched by instance admins alone: by group, actor, email, outcome and time, a page at a time", async () => {
