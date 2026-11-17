@@ -1,10 +1,13 @@
 // Single sign-on (ADR 0080), the `sso` enterprise feature: SAML 2.0 and
 // OpenID Connect providers bound to email domains, set on the console's
 // Single sign-on page, which the apps offer beside the server's own ways
-// in. Its routes answer only while the feature is on; its tables are in
-// every schema, as the module is in every image (ADR 0079).
+// in, and may require: then the server refuses other ways in to the
+// accounts it covers, and ends their other sessions. Its routes answer
+// only while the feature is on; its tables are in every schema, as the
+// module is in every image (ADR 0079).
 import type { EnterpriseModule } from "@nether/server/src/enterprise.ts";
 import { refreshMetadata, registerConsole } from "./console.ts";
+import { Enforcement } from "./enforcement.ts";
 import { listProviders } from "./providers.ts";
 import { registerSignIn } from "./signIn.ts";
 
@@ -15,10 +18,12 @@ const readEvery = 86_400_000;
 
 export const ssoModule: EnterpriseModule = {
   feature: "sso",
-  plugin: (app, { db, config, isOn, whenOn }) => {
-    const context = { db, config, whenOn };
+  plugin: (app, { db, config, isOn, whenOn, guards, disconnect, security }) => {
+    const enforcement = new Enforcement(db, isOn, config.ssoEnforce);
+    const removeGuard = guards.add(enforcement);
+    const context = { db, config, whenOn, guards, enforcement };
     registerSignIn(app, context);
-    registerConsole(app, context);
+    registerConsole(app, { ...context, disconnect, security });
 
     // Each day, a SAML provider's metadata is read again from its address,
     // so a certificate it rolls over is taken; a copy that does not read
@@ -45,6 +50,7 @@ export const ssoModule: EnterpriseModule = {
     timer.unref();
     app.addHook("onClose", (_instance, done) => {
       clearInterval(timer);
+      removeGuard();
       done();
     });
     return Promise.resolve();

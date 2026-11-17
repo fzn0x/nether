@@ -3,7 +3,9 @@
 // loopback or web address and a PKCE challenge; the browser signs in at
 // the provider, which answers at this provider's own address; the server
 // finds the account and sends the browser back with a code that lasts a
-// minute, which the app redeems with its verifier for a session.
+// minute, which the app redeems with its verifier for a session. Where
+// single sign-on is required, the apps ask for the address first, and
+// `/api/sso/find` names its domain's provider.
 import { randomUUID, timingSafeEqual } from "node:crypto";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import type { Config } from "@nether/server/src/config.ts";
@@ -15,7 +17,7 @@ import {
   readText,
   readTextOrNull,
 } from "@nether/server/src/db.ts";
-import { fail, limitByAddress } from "@nether/server/src/http.ts";
+import { emailField, fail, limitByAddress } from "@nether/server/src/http.ts";
 import {
   type OidcClient,
   type Person,
@@ -31,12 +33,16 @@ import {
 } from "@nether/server/src/oidc.ts";
 import { checkedFetch } from "@nether/server/src/outbound.ts";
 import { type Seal, SealedElsewhere, sealWith } from "@nether/server/src/secrets.ts";
-import { newToken, startSession, tokenHash } from "@nether/server/src/sessions.ts";
+import { type NewSession, newToken, startSession, tokenHash } from "@nether/server/src/sessions.ts";
+import { type SignInGuards, SignInRefused } from "@nether/server/src/signIns.ts";
 import { type Outcome, type SignInError, resolveAccount } from "./accounts.ts";
+import { type Enforcement, covers } from "./enforcement.ts";
 import {
   type OidcSettings,
   type Provider,
   type SamlSettings,
+  addressDomain,
+  domainOwner,
   findProvider,
   listProviders,
   openSecrets,
@@ -49,6 +55,10 @@ export interface SignInContext {
   readonly db: Database;
   readonly config: Config;
   readonly whenOn: (request: FastifyRequest, reply: FastifyReply) => Promise<unknown>;
+  /** Every guard the server asks, single sign-on's among them. */
+  readonly guards: SignInGuards;
+  /** What single sign-on requires. */
+  readonly enforcement: Enforcement;
 }
 
 /** The setting that lets the console's providers be on a private network. */
@@ -94,7 +104,7 @@ interface Params {
 }
 
 export function registerSignIn(app: FastifyInstance, context: SignInContext): void {
-  const { db, config, whenOn } = context;
+  const { db, config, whenOn, guards, enforcement } = context;
   const clients = oidcClients(app, config);
   const seal = sealOf(config);
 
@@ -138,31 +148,56 @@ export function registerSignIn(app: FastifyInstance, context: SignInContext): vo
     person: Person,
   ) {
     const flowId = readText(flow, "id");
-    const outcome = await db.transaction(async (tx): Promise<Outcome | { code: string }> => {
-      // Taken now, so a second answer to the same flow finds it gone.
-      const taken = await tx.query(
-        "SELECT id FROM sso_flows WHERE id = $1 AND handoff_hash IS NULL FOR UPDATE",
-        [flowId],
-      );
-      if (taken.rows.length === 0) return { error: "provider_error" };
-      const resolved = await resolveAccount(
-        tx,
-        provider,
-        issuer,
-        person,
-        readTextOrNull(flow, "invitation_hash"),
-      );
-      if ("error" in resolved) return resolved;
-      const code = newToken();
-      await tx.query(
-        `UPDATE sso_flows
+    const outcome = await db
+      .transaction(async (tx): Promise<Outcome | { code: string }> => {
+        // Taken now, so a second answer to the same flow finds it gone.
+        const taken = await tx.query(
+          "SELECT id FROM sso_flows WHERE id = $1 AND handoff_hash IS NULL FOR UPDATE",
+          [flowId],
+        );
+        if (taken.rows.length === 0) return { error: "provider_error" };
+        const resolved = await resolveAccount(
+          tx,
+          provider,
+          issuer,
+          person,
+          readTextOrNull(flow, "invitation_hash"),
+        );
+        if ("error" in resolved) return resolved;
+        // Told now, while the browser is still here, rather than when the app
+        // redeems; refused, what the sign-in made or linked is not kept.
+        const users = await tx.query("SELECT email, instance_admin FROM users WHERE id = $1", [
+          resolved.userId,
+        ]);
+        const refusal = await guards.check(
+          {
+            userId: resolved.userId,
+            email: readText(users.rows[0], "email"),
+            instanceAdmin: readBoolean(users.rows[0], "instance_admin"),
+            method: "sso",
+            provider: provider.id,
+          },
+          tx,
+        );
+        if (refusal !== undefined) throw new SignInRefused(refusal);
+        const code = newToken();
+        await tx.query(
+          `UPDATE sso_flows
             SET handoff_hash = $2, user_id = $3, workspace_id = $4,
                 expires_at = now() + $5 * interval '1 second'
           WHERE id = $1`,
-        [flowId, tokenHash(code), resolved.userId, resolved.workspaceId, handoffSeconds],
-      );
-      return { code };
-    });
+          [flowId, tokenHash(code), resolved.userId, resolved.workspaceId, handoffSeconds],
+        );
+        return { code };
+      })
+      .catch((error: unknown) => {
+        if (!(error instanceof SignInRefused)) throw error;
+        reply.log.info(
+          { provider: provider.id, reason: error.refusal.reason },
+          "A sign-in was refused",
+        );
+        return { error: "sso_required" } as const;
+      });
     if ("code" in outcome) return back(reply, readText(flow, "redirect"), { code: outcome.code });
     return failed(reply, flow, "error" in outcome ? outcome.error : "provider_error");
   }
@@ -182,13 +217,44 @@ export function registerSignIn(app: FastifyInstance, context: SignInContext): vo
     return rows[0];
   }
 
-  // The providers the apps offer, by name; 404 while single sign-on is off.
+  // The providers the apps offer, by name, and whether everyone signs in
+  // through one; 404 while single sign-on is off.
   app.get("/api/sso", { preHandler: whenOn }, async () => ({
     providers: (await listProviders(db)).map((provider) => ({
       id: provider.id,
       name: provider.name,
     })),
+    everyone: (await enforcement.rules())?.everyone ?? false,
   }));
+
+  // An address's provider, by its domain alone, so it tells nothing of
+  // accounts: the apps go straight there when there is one.
+  app.post<{ Body: { email: string } }>(
+    "/api/sso/find",
+    {
+      schema: {
+        body: {
+          type: "object",
+          required: ["email"],
+          additionalProperties: false,
+          properties: { email: emailField },
+        },
+      },
+      onRequest: limitByAddress(app, "sso-find", 60, "5 minutes"),
+      preHandler: whenOn,
+    },
+    async (request) => {
+      const { email } = request.body;
+      const rules = await enforcement.rules();
+      const id = await domainOwner(db, addressDomain(email));
+      const owner = id === undefined ? undefined : await findProvider(db, id);
+      return {
+        provider: owner === undefined ? null : { id: owner.id, name: owner.name },
+        // Whether the address's accounts sign in through a provider alone, their admins aside.
+        required: rules !== undefined && covers(rules, email),
+      };
+    },
+  );
 
   app.post<{ Params: Params; Body: Start }>(
     "/api/sso/:id/flows",
@@ -371,7 +437,7 @@ export function registerSignIn(app: FastifyInstance, context: SignInContext): vo
         const { rows } = await tx.query(
           `DELETE FROM sso_flows
             WHERE handoff_hash = $1 AND expires_at > now()
-            RETURNING challenge, user_id, workspace_id`,
+            RETURNING challenge, user_id, workspace_id, provider_id`,
           [tokenHash(request.body.code)],
         );
         const flow = rows[0];
@@ -398,8 +464,20 @@ export function registerSignIn(app: FastifyInstance, context: SignInContext): vo
                 [workspaceId, userId],
               );
         const workspace = workspaces?.rows[0];
+        let session: NewSession;
+        try {
+          session = await startSession(tx, userId, request, {
+            method: "sso",
+            provider: readText(flow, "provider_id"),
+            guards,
+          });
+        } catch (error) {
+          // Spent, as any try is: the account signs in through another provider now.
+          if (error instanceof SignInRefused) return "refused" as const;
+          throw error;
+        }
         return {
-          ...(await startSession(tx, userId, request)),
+          ...session,
           user: {
             id: userId,
             name: readText(user, "name"),
@@ -419,6 +497,9 @@ export function registerSignIn(app: FastifyInstance, context: SignInContext): vo
       });
       if (outcome === undefined) {
         return fail(reply, 401, "That sign-in code was used, has expired, or is not this app's.");
+      }
+      if (outcome === "refused") {
+        return fail(reply, 403, "This account signs in through another provider now.");
       }
       // From the web app, the session goes in its cookie, not in the answer (ADR 0053).
       if (wantsCookie(request)) {
