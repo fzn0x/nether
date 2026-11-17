@@ -1,0 +1,19 @@
+{
+  "name": "@nether/enterprise-server",
+  "version": "0.0.0",
+  "private": true,
+  "description": "The server as the image runs it: with every enterprise feature's module, each off until an admin switches it on (ADR 0079).",
+  "license": "AGPL-3.0-or-later",
+  "type": "module",
+  "scripts": {
+    "start": "node src/main.ts",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@nether/enterprise-admin": "workspace:*",
+    "@nether/server": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^24.19.2"
+  }
+}

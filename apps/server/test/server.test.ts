@@ -31,7 +31,7 @@ async function start(
 }
 
 describe("readConfig", () => {
-  it("defaults to localhost:3000, info logs and every enterprise feature off", () => {
+  it("defaults to localhost:3000, info logs and no enterprise feature pinned", () => {
     expect(readConfig(database)).toEqual({
       host: "127.0.0.1",
       port: 3000,
@@ -52,12 +52,12 @@ describe("readConfig", () => {
       backup: null,
       webApp: { dir: builtWebApp, named: false },
       enterprise: {
-        sso: false,
-        scim: false,
-        audit: false,
-        policies: false,
-        admin: false,
-        ha: false,
+        sso: undefined,
+        scim: undefined,
+        audit: undefined,
+        policies: undefined,
+        admin: undefined,
+        ha: undefined,
       },
     });
   });
@@ -73,7 +73,8 @@ describe("readConfig", () => {
       NETHER_ENTERPRISE_HA: "off",
     });
     expect(config).toMatchObject({ host: "0.0.0.0", port: 0, logLevel: "warn" });
-    expect(config.enterprise).toMatchObject({ sso: true, audit: true, ha: false, scim: false });
+    // Set, a switch pins its feature; unset, it leaves it to the console (ADR 0079).
+    expect(config.enterprise).toMatchObject({ sso: true, audit: true, ha: false, scim: undefined });
   });
 
   it.each([
@@ -300,11 +301,11 @@ describe("enterprise features", () => {
     );
   });
 
-  it("register a module only when its switch is on", async () => {
+  it("answer at a module's routes only while its switch is on", async () => {
     const audit: EnterpriseModule = {
       feature: "audit",
-      plugin: (instance) => {
-        instance.get("/audit", () => ({ entries: [] }));
+      plugin: (instance, { whenOn }) => {
+        instance.get("/audit", { preHandler: whenOn }, () => ({ entries: [] }));
         return Promise.resolve();
       },
     };

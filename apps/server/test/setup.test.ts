@@ -50,6 +50,7 @@ describe("migrate", () => {
       "documents",
       "encrypted_updates",
       "identities",
+      "instance_settings",
       "invitations",
       "link_visits",
       "memberships",

@@ -14,6 +14,7 @@ import { type IncomingMessage, createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { adminModule } from "../../../enterprise/admin/src/index.ts";
 import { buildApp } from "../../server/src/app.ts";
 import { DiskBlobs } from "../../server/src/blobs.ts";
 import { readConfig } from "../../server/src/config.ts";
@@ -98,6 +99,8 @@ const app = await buildApp(
     mailer,
     resolveTxt,
     blobs: new DiskBlobs(await mkdtemp(join(tmpdir(), "nether-web-e2e-"))),
+    // As the image has them: each off until the console turns it on (ADR 0079).
+    enterpriseModules: [adminModule],
   },
 );
 await app.listen({ host: "127.0.0.1", port });

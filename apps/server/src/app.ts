@@ -10,7 +10,13 @@ import type { BlobStore } from "./blobs.ts";
 import { registerCodes } from "./codes.ts";
 import type { Config } from "./config.ts";
 import type { Database } from "./db.ts";
-import { type EnterpriseModule, enterpriseFeatures, registerEnterprise } from "./enterprise.ts";
+import {
+  type EnterpriseModule,
+  EnterpriseSwitches,
+  enterpriseFeatures,
+  registerEnterprise,
+} from "./enterprise.ts";
+import { registerFeatures } from "./features.ts";
 import { tooManyTries } from "./http.ts";
 import { registerInvitations } from "./invitations.ts";
 import { registerMembers } from "./members.ts";
@@ -79,7 +85,7 @@ export interface Services {
    * and nodes (ADR 0054); without it, each node counts in its memory.
    */
   readonly redis?: Redis;
-  /** The modules of the enterprise features this build includes; none are written yet. */
+  /** The modules of the enterprise features this build includes, each off until switched on (ADR 0079). */
   readonly enterpriseModules?: readonly EnterpriseModule[];
   /**
    * Whether webhooks' worker runs every few seconds (ADR 0060), as it does
@@ -135,11 +141,18 @@ export async function buildApp(config: Config, services: Services): Promise<Fast
     return Promise.resolve(JSON.stringify({ ...rest, expiresAt }));
   });
 
-  app.get("/health", { schema: healthSchema }, () => ({
+  const modules = services.enterpriseModules ?? [];
+  const switches = new EnterpriseSwitches(
+    services.db,
+    config.enterprise,
+    modules.map((module) => module.feature),
+  );
+  app.get("/health", { schema: healthSchema }, async () => ({
     status: "ok",
     version,
-    enterprise: config.enterprise,
+    enterprise: await switches.all(),
   }));
+  registerFeatures(app, services.db, switches);
 
   registerSetup(app, services.db, services.setupCode);
   registerSessions(app, services.db);
@@ -261,7 +274,7 @@ export async function buildApp(config: Config, services: Services): Promise<Fast
     emailCode: services.mailer !== undefined,
     oidc: oidc === null ? null : { name: oidc.name },
   }));
-  await registerEnterprise(app, config.enterprise, services.enterpriseModules ?? []);
+  await registerEnterprise(app, services.db, switches, modules);
   // The web app at `/`, with its own answer for paths the API does not have.
   await registerWebApp(app, config.webApp);
   return app;

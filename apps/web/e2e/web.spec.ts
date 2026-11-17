@@ -911,3 +911,50 @@ test("a site published from the Share dialog loads on the custom domain its DNS 
   expect((await fetch(`http://127.0.0.1:4175/api/sites/domain?domain=${domain}`)).status).toBe(404);
   expect(problems).toEqual([]);
 });
+
+test("the admin console turns a feature on and off, for an instance admin alone", async ({
+  page,
+  browser,
+}) => {
+  const problems = problemsOf(page);
+  await signIn(page, { email: "ada@example.org", password: "a long password" });
+  await page.goto("/admin");
+  await expect(page.getByRole("heading", { name: "Admin console", level: 1 })).toBeVisible();
+  const features = page.getByRole("region", { name: "Features" });
+  // A feature this build has no module for is shown, and cannot be turned on.
+  await expect(features.getByRole("checkbox", { name: "Audit logs" })).toBeDisabled();
+  await expect(features).toContainText("Not in this server's build of Nether yet.");
+  const pages = features.getByRole("checkbox", {
+    name: "The console's usage, workspaces and security pages",
+  });
+  await expect(pages).toBeEnabled();
+  await expect(pages).not.toBeChecked();
+  await expect(page.getByRole("region", { name: "Usage" })).toHaveCount(0);
+  expect(await violations(page)).toEqual([]);
+
+  await pages.check();
+  await expect(
+    page.getByText("The console's usage, workspaces and security pages: on."),
+  ).toBeVisible();
+  const usage = page.getByRole("region", { name: "Usage" });
+  await expect(usage).toContainText("Accounts");
+  await expect(usage).toContainText("The server's version");
+  expect(await violations(page)).toEqual([]);
+  await pages.uncheck();
+  await expect(page.getByRole("region", { name: "Usage" })).toHaveCount(0);
+
+  // Someone who is no instance admin sees nothing of it.
+  const bea = await person("Bea");
+  const other = await browser.newContext();
+  try {
+    const theirs = await other.newPage();
+    await signIn(theirs, bea);
+    await theirs.goto("/admin");
+    await expect(theirs.getByRole("alert")).toHaveText(
+      "Only an instance admin may see the server's features.",
+    );
+  } finally {
+    await other.close();
+  }
+  expect(problems).toEqual([]);
+});
