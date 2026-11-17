@@ -1,9 +1,18 @@
 // The console's Directories page (ADR 0085), while the `scim` feature is
 // on: the directories that provision the server's accounts, each with the
-// email domains it speaks for, its SCIM address and its token, and a form
-// to add or change one. A token is shown once, when it is made; the page
-// shows its last characters and when it ends, and warns a month before.
+// email domains it speaks for, and a SCIM directory's address and token or
+// an LDAP directory's settings and runs, and a form to add or change one.
+// A token is shown once, when it is made; the page shows its last
+// characters and when it ends, and warns a month before.
 import { type SyntheticEvent, useCallback, useEffect, useState } from "react";
+import {
+  type LdapPresets,
+  type LdapView,
+  LdapFields,
+  LdapRuns,
+  ldapBody,
+  ldapForm,
+} from "./AdminLdap.tsx";
 import { t } from "./messages.ts";
 import { roleName } from "./server.ts";
 import { messageOf, webFetch, webServer } from "./web.ts";
@@ -25,11 +34,15 @@ interface DirectoryView {
   readonly deactivated: number;
   readonly scimUrl: string | null;
   readonly token: TokenView | null;
+  readonly ldap: LdapView | null;
 }
 
 interface DirectoriesState {
   readonly directories: readonly DirectoryView[];
   readonly publicUrl: string | null;
+  /** Whether the server can keep an LDAP directory's bind password. */
+  readonly secretKey: boolean;
+  readonly ldapPresets: LdapPresets;
   readonly signIn: { readonly providers: number; readonly oidc: boolean; readonly codes: boolean };
 }
 
@@ -66,11 +79,15 @@ function domainList(text: string): string[] {
 function DirectoryForm(props: {
   readonly directory: DirectoryView | undefined;
   readonly busy: boolean;
+  readonly presets: LdapPresets;
+  readonly secretKey: boolean;
   readonly onSave: (body: Record<string, unknown>) => void;
   readonly onCancel: () => void;
 }) {
-  const { directory, busy, onSave, onCancel } = props;
+  const { directory, busy, presets, secretKey, onSave, onCancel } = props;
   const editing = directory !== undefined;
+  const [kind, setKind] = useState<"scim" | "ldap">(directory?.kind ?? "scim");
+  const [ldap, setLdap] = useState(() => ldapForm(directory?.ldap ?? null, presets));
   const [id, setId] = useState(directory?.id ?? "");
   const [name, setName] = useState(directory?.name ?? "");
   const [domains, setDomains] = useState(directory?.domains.join("\n") ?? "");
@@ -80,15 +97,44 @@ function DirectoryForm(props: {
   const submit = (event: SyntheticEvent) => {
     event.preventDefault();
     onSave({
-      ...(editing ? {} : { id: id.trim() }),
+      ...(editing ? {} : { id: id.trim(), kind }),
       name: name.trim(),
       domains: domainList(domains),
       otherDomains,
+      ...(kind === "ldap" ? { ldap: ldapBody(ldap) } : {}),
     });
   };
 
   return (
     <form className="admin-directory-form" onSubmit={submit}>
+      {editing ? null : (
+        <fieldset>
+          <legend>{t("adminDirectoriesKind")}</legend>
+          <label className="field-check">
+            <input
+              type="radio"
+              name="directory-kind"
+              checked={kind === "scim"}
+              onChange={() => {
+                setKind("scim");
+              }}
+            />
+            {t("adminDirectoriesKindScim")}
+          </label>
+          <label className="field-check">
+            <input
+              type="radio"
+              name="directory-kind"
+              checked={kind === "ldap"}
+              onChange={() => {
+                setKind("ldap");
+              }}
+            />
+            {t("adminDirectoriesKindLdap")}
+          </label>
+        </fieldset>
+      )}
+      {kind === "ldap" && !secretKey ? <p role="alert">{t("adminLdapNoSecretKey")}</p> : null}
       {editing ? null : (
         <div className="field">
           <label htmlFor={`${prefix}-id`}>{t("adminDirectoriesId")}</label>
@@ -148,6 +194,15 @@ function DirectoryForm(props: {
           {t("adminDirectoriesOtherDomainsHint")}
         </p>
       </div>
+      {kind === "ldap" ? (
+        <LdapFields
+          prefix={prefix}
+          form={ldap}
+          editing={editing}
+          presets={presets}
+          onChange={setLdap}
+        />
+      ) : null}
       <div className="dialog-actions">
         <button type="button" className="quiet" onClick={onCancel}>
           {t("cancel")}
@@ -391,7 +446,7 @@ function DirectoryGroups(props: { readonly directory: DirectoryView }) {
       <summary>{t("adminDirectoriesGroups")}</summary>
       <p className="hint">{t("adminDirectoriesGroupsIntro")}</p>
       {state === undefined ? null : state.groups.length === 0 ? (
-        <p>{t("adminDirectoriesNoGroups")}</p>
+        <p>{t(directory.kind === "ldap" ? "adminLdapNoGroups" : "adminDirectoriesNoGroups")}</p>
       ) : (
         <ul className="admin-directory-group-list">
           {state.groups.map((group) => (
@@ -433,6 +488,20 @@ export function DirectoriesPage() {
     });
   }, [load]);
 
+  // While an LDAP directory runs, the page looks again every few seconds.
+  const running = state?.directories.some((directory) => directory.ldap?.running === true);
+  useEffect(() => {
+    if (running !== true) return;
+    const timer = setTimeout(() => {
+      load().catch((reason: unknown) => {
+        setError(reason instanceof Error ? reason.message : String(reason));
+      });
+    }, 2000);
+    return () => {
+      clearTimeout(timer);
+    };
+  }, [running, state, load]);
+
   const act = (work: () => Promise<string>) => {
     setBusy(true);
     setError(undefined);
@@ -455,7 +524,8 @@ export function DirectoriesPage() {
       if (directory === undefined) await send("/api/admin/directories", "POST", body);
       else await send(`/api/admin/directories/${directory.id}`, "PATCH", body);
       setEditing(undefined);
-      return t(directory === undefined ? "adminDirectoriesAdded" : "adminDirectoriesSaved", {
+      const added = body.kind === "ldap" ? "adminLdapAdded" : "adminDirectoriesAdded";
+      return t(directory === undefined ? added : "adminDirectoriesSaved", {
         name: String(body.name),
       });
     });
@@ -482,6 +552,8 @@ export function DirectoriesPage() {
                   <DirectoryForm
                     directory={directory}
                     busy={busy}
+                    presets={state.ldapPresets}
+                    secretKey={state.secretKey}
                     onSave={(body) => {
                       save(directory, body);
                     }}
@@ -512,18 +584,42 @@ export function DirectoriesPage() {
                           })}
                         </dd>
                       </div>
-                      <div>
-                        <dt>{t("adminDirectoriesAddress")}</dt>
-                        <dd className="admin-directory-value">
-                          {directory.scimUrl ?? t("adminDirectoriesNoAddress")}
-                        </dd>
-                      </div>
-                      <div>
-                        <dt>{t("adminDirectoriesToken")}</dt>
-                        <dd>{tokenText(directory.token)}</dd>
-                      </div>
+                      {directory.ldap === null ? (
+                        <>
+                          <div>
+                            <dt>{t("adminDirectoriesAddress")}</dt>
+                            <dd className="admin-directory-value">
+                              {directory.scimUrl ?? t("adminDirectoriesNoAddress")}
+                            </dd>
+                          </div>
+                          <div>
+                            <dt>{t("adminDirectoriesToken")}</dt>
+                            <dd>{tokenText(directory.token)}</dd>
+                          </div>
+                        </>
+                      ) : (
+                        <>
+                          <div>
+                            <dt>{t("adminLdapUrl")}</dt>
+                            <dd className="admin-directory-value">{directory.ldap.url}</dd>
+                          </div>
+                          <div>
+                            <dt>{t("adminLdapBindDn")}</dt>
+                            <dd className="admin-directory-value">{directory.ldap.bindDn}</dd>
+                          </div>
+                        </>
+                      )}
                     </dl>
-                    <TokenNotes directory={directory} made={made} />
+                    {directory.ldap === null ? (
+                      <TokenNotes directory={directory} made={made} />
+                    ) : (
+                      <LdapRuns
+                        id={directory.id}
+                        name={directory.name}
+                        ldap={directory.ldap}
+                        onChanged={load}
+                      />
+                    )}
                     <DirectoryGroups directory={directory} />
                     <div className="dialog-actions">
                       {removing === directory.id ? (
@@ -555,65 +651,69 @@ export function DirectoriesPage() {
                         </>
                       ) : (
                         <>
-                          <label className="admin-directory-lasts">
-                            {t("adminDirectoriesLasts")}
-                            <select
-                              value={days}
-                              onChange={(event) => {
-                                setDays(Number(event.target.value));
-                              }}
-                            >
-                              {lengths.map((length) => (
-                                <option key={length} value={length}>
-                                  {t("adminDirectoriesDays", { days: length })}
-                                </option>
-                              ))}
-                            </select>
-                          </label>
-                          <button
-                            type="button"
-                            disabled={busy || directory.kind !== "scim"}
-                            onClick={() => {
-                              act(async () => {
-                                const answer = await send(
-                                  `/api/admin/directories/${directory.id}/token`,
-                                  "POST",
-                                  { days },
-                                );
-                                const { token } = (await answer.json()) as {
-                                  readonly token: string;
-                                };
-                                setMade({ id: directory.id, token });
-                                return t("adminDirectoriesTokenMade", { name: directory.name });
-                              });
-                            }}
-                          >
-                            {t(
-                              directory.token === null
-                                ? "adminDirectoriesMakeToken"
-                                : "adminDirectoriesNewToken",
-                            )}
-                          </button>
-                          {directory.token === null ? null : (
-                            <button
-                              type="button"
-                              className="quiet"
-                              disabled={busy}
-                              onClick={() => {
-                                act(async () => {
-                                  await send(
-                                    `/api/admin/directories/${directory.id}/token`,
-                                    "DELETE",
-                                  );
-                                  setMade(undefined);
-                                  return t("adminDirectoriesTokenRevoked", {
-                                    name: directory.name,
+                          {directory.kind !== "scim" ? null : (
+                            <>
+                              <label className="admin-directory-lasts">
+                                {t("adminDirectoriesLasts")}
+                                <select
+                                  value={days}
+                                  onChange={(event) => {
+                                    setDays(Number(event.target.value));
+                                  }}
+                                >
+                                  {lengths.map((length) => (
+                                    <option key={length} value={length}>
+                                      {t("adminDirectoriesDays", { days: length })}
+                                    </option>
+                                  ))}
+                                </select>
+                              </label>
+                              <button
+                                type="button"
+                                disabled={busy}
+                                onClick={() => {
+                                  act(async () => {
+                                    const answer = await send(
+                                      `/api/admin/directories/${directory.id}/token`,
+                                      "POST",
+                                      { days },
+                                    );
+                                    const { token } = (await answer.json()) as {
+                                      readonly token: string;
+                                    };
+                                    setMade({ id: directory.id, token });
+                                    return t("adminDirectoriesTokenMade", { name: directory.name });
                                   });
-                                });
-                              }}
-                            >
-                              {t("adminDirectoriesRevoke")}
-                            </button>
+                                }}
+                              >
+                                {t(
+                                  directory.token === null
+                                    ? "adminDirectoriesMakeToken"
+                                    : "adminDirectoriesNewToken",
+                                )}
+                              </button>
+                              {directory.token === null ? null : (
+                                <button
+                                  type="button"
+                                  className="quiet"
+                                  disabled={busy}
+                                  onClick={() => {
+                                    act(async () => {
+                                      await send(
+                                        `/api/admin/directories/${directory.id}/token`,
+                                        "DELETE",
+                                      );
+                                      setMade(undefined);
+                                      return t("adminDirectoriesTokenRevoked", {
+                                        name: directory.name,
+                                      });
+                                    });
+                                  }}
+                                >
+                                  {t("adminDirectoriesRevoke")}
+                                </button>
+                              )}
+                            </>
                           )}
                           <button
                             type="button"
@@ -645,6 +745,8 @@ export function DirectoriesPage() {
             <DirectoryForm
               directory={undefined}
               busy={busy}
+              presets={state.ldapPresets}
+              secretKey={state.secretKey}
               onSave={(body) => {
                 save(undefined, body);
               }}

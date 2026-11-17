@@ -1567,3 +1567,58 @@ test("the admin console adds a directory, whose token, shown once, opens its SCI
   }
   expect(problems).toEqual([]);
 });
+
+test("the admin console adds an LDAP directory from a preset, and says why it cannot reach it", async ({
+  page,
+}) => {
+  const problems = problemsOf(page);
+  await signIn(page, { email: "ada@example.org", password: "a long password" });
+  await page.goto("/admin");
+  const feature = page.getByRole("checkbox", { name: "Provisioning, by SCIM and LDAP" });
+  await feature.check();
+  const section = page.getByRole("region", { name: "Directories" });
+  try {
+    await section.getByRole("button", { name: "Add a directory" }).click();
+    await section.getByRole("radio", { name: /^LDAP/ }).check();
+    await section.getByRole("textbox", { name: "Short name" }).fill("corp-ad");
+    await section.getByRole("textbox", { name: "Name", exact: true }).fill("Corp AD");
+    await section.getByRole("textbox", { name: "Email domains" }).fill("corp.example");
+    await section.getByRole("button", { name: "Active Directory" }).click();
+    await expect(section.getByRole("textbox", { name: "Stable ID" })).toHaveValue("objectGUID");
+    await expect(section.getByRole("textbox", { name: "People's filter" })).toHaveValue(
+      /userAccountControl/,
+    );
+    // A name that never resolves: the connection says so, and a run changes nothing.
+    await section.getByRole("textbox", { name: "LDAP address" }).fill("ldaps://ldap.invalid");
+    await section.getByRole("textbox", { name: "Bind DN" }).fill("CN=Nether,OU=Service,DC=corp");
+    await section.getByLabel("Bind password").fill("reader-password");
+    await section
+      .getByRole("textbox", { name: "People's base DN" })
+      .fill("OU=People,DC=corp,DC=example");
+    await section
+      .getByRole("textbox", { name: "Groups' base DN" })
+      .fill("OU=Groups,DC=corp,DC=example");
+    expect(await violations(page)).toEqual([]);
+    await section.getByRole("button", { name: "Add", exact: true }).click();
+    await expect(section.getByRole("status")).toHaveText(
+      "Corp AD was added. Test the connection, then preview its first run.",
+    );
+    const corp = section.getByRole("listitem").filter({ hasText: "Corp AD" });
+    await expect(corp).toContainText("ldaps://ldap.invalid");
+    await expect(corp).toContainText("None yet: preview the first one.");
+    await corp.getByRole("button", { name: "Test the connection" }).click();
+    await expect(corp.getByRole("alert")).toContainText("ldap.invalid does not resolve");
+    await corp.getByRole("button", { name: "Preview the first run" }).click();
+    await expect(corp).toContainText(/Failed .*ldap\.invalid does not resolve/);
+    expect(await violations(page)).toEqual([]);
+  } finally {
+    const corp = section.getByRole("listitem").filter({ hasText: "Corp AD" });
+    if ((await corp.count()) > 0) {
+      await corp.getByRole("button", { name: "Remove" }).click();
+      await corp.getByRole("button", { name: "Remove" }).click();
+      await expect(section.getByRole("status")).toHaveText("Corp AD was removed.");
+    }
+    await feature.uncheck();
+  }
+  expect(problems).toEqual([]);
+});
