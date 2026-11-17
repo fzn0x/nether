@@ -24,9 +24,14 @@ describe("the console's directories", () => {
     const refused = await admin(test, "GET", "/api/admin/directories", undefined, bea.token);
     expect(refused.statusCode).toBe(403);
     const listed = await admin(test, "GET", "/api/admin/directories");
-    expect(listed.json()).toEqual({
+    expect(listed.json()).toMatchObject({
       directories: [],
       publicUrl: "https://nether.example.org",
+      secretKey: false,
+      ldapPresets: {
+        activeDirectory: { idAttribute: "objectGUID" },
+        openLdap: { idAttribute: "entryUUID" },
+      },
       signIn: { providers: 0, oidc: false, codes: false },
     });
   });
@@ -49,6 +54,7 @@ describe("the console's directories", () => {
       deactivated: 0,
       scimUrl: "https://nether.example.org/api/scim/okta/v2",
       token: null,
+      ldap: null,
     });
     const badId = await admin(test, "POST", "/api/admin/directories", { id: "Okta_1", name: "x" });
     expect(badId.statusCode).toBe(400);

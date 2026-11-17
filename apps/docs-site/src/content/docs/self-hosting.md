@@ -159,6 +159,12 @@ from the same file, such as:
   your own network, as Keycloak beside the server. Where the console
   requires single sign-on and a provider breaks,
   `NETHER_SSO_ENFORCE=off` lets everyone in another way again.
+- **An LDAP directory to provision from**, as Active Directory, added in
+  the [admin console](../admin/#reading-an-ldap-directory) with
+  `NETHER_SECRET_KEY` set, which seals its bind password. It reaches
+  public addresses only: `NETHER_LDAP_PRIVATE=10.0.0.0/8`, or another
+  address or range, lets the server read a directory on your own
+  network.
 - **Attachments in an S3-compatible bucket** instead of the volume:
   `NETHER_STORAGE=s3` with `NETHER_S3_ENDPOINT`, `NETHER_S3_BUCKET`,
   `NETHER_S3_ACCESS_KEY` and `NETHER_S3_SECRET_KEY`.

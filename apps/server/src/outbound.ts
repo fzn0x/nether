@@ -209,7 +209,21 @@ export interface SendOptions {
  * a private address the admin allows.
  */
 async function target(url: URL, options: SendOptions): Promise<Resolved | string> {
-  const host = hostOf(url);
+  const first = await checkedHost(hostOf(url), options);
+  if (typeof first === "string") return first;
+  if (url.protocol === "http:" && isPublicAddress(first.address)) {
+    return "http:// goes only to a private address the admin allows; a public one takes https://.";
+  }
+  return first;
+}
+
+/**
+ * The address a connection to `host` goes to, once checked: every address
+ * it resolves to must be one it may reach, as an LDAP directory's are
+ * (ADR 0085); or why it may not be reached. The caller connects to that
+ * address, and gives TLS the name.
+ */
+export async function checkedHost(host: string, options: SendOptions): Promise<Resolved | string> {
   const literal = checkedForm(host);
   let found: readonly Resolved[];
   if (isIP(host) !== 0 && literal !== undefined)
@@ -226,9 +240,6 @@ async function target(url: URL, options: SendOptions): Promise<Resolved | string
   const refused = found.find((item) => !reachable(options.policy, item.address));
   if (refused !== undefined) {
     return `${host} resolves to ${refused.address}, which is not a public address: the server's admin can allow it with ${options.allowedBy ?? "NETHER_WEBHOOK_PRIVATE"}.`;
-  }
-  if (url.protocol === "http:" && isPublicAddress(first.address)) {
-    return "http:// goes only to a private address the admin allows; a public one takes https://.";
   }
   return first;
 }

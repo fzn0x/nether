@@ -47,6 +47,7 @@ describe("readConfig", () => {
       ai: "on",
       aiPrivate: false,
       ssoPrivate: false,
+      ldapPrivate: false,
       ssoEnforce: true,
       secretKey: null,
       setupCode: null,

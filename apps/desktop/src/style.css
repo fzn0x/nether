@@ -2742,6 +2742,40 @@ button {
   gap: 0.25rem;
 }
 
+/* An LDAP directory's settings and runs (ADR 0085). */
+.admin-directory-form fieldset {
+  display: grid;
+  gap: 0.75rem;
+  min-width: 0;
+  margin: 0;
+  padding: 0.75rem 1rem 1rem;
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+}
+
+.admin-directory-form .admin-ldap-trust {
+  gap: 0.375rem;
+  padding: 0;
+  border: 0;
+}
+
+.admin-ldap-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.admin-ldap-runs {
+  margin-top: 0.75rem;
+}
+
+.admin-ldap-list {
+  margin: 0.5rem 0;
+  padding-left: 1.25rem;
+  overflow-wrap: anywhere;
+}
+
 /* A workspace whose owners left or were deactivated (ADR 0085). */
 .admin-ownerless {
   color: var(--accent);

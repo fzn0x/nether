@@ -10,7 +10,7 @@ import {
   setUp,
   startServer,
 } from "@nether/server/test/app.ts";
-import { scimModule } from "../src/index.ts";
+import { type ScimOptions, scimModuleWith } from "../src/index.ts";
 
 export const publicUrl = "https://nether.example.org";
 
@@ -24,8 +24,14 @@ export async function stop(): Promise<void> {
   running = undefined;
 }
 
-/** A server with the feature on, a public address, and every event it tells of kept in order. */
-export async function start(env: Record<string, string> = {}): Promise<Test> {
+/**
+ * A server with the feature on, a public address, and every event it tells
+ * of kept in order; `options` read LDAP directories in place of the network.
+ */
+export async function start(
+  env: Record<string, string> = {},
+  options: ScimOptions = {},
+): Promise<Test> {
   const told: ServerEvent[] = [];
   const listening: EnterpriseModule = {
     feature: "audit",
@@ -44,7 +50,7 @@ export async function start(env: Record<string, string> = {}): Promise<Test> {
       NETHER_ENTERPRISE_POLICIES: "on",
       ...env,
     },
-    enterpriseModules: [scimModule, policiesModule, listening],
+    enterpriseModules: [scimModuleWith(options), policiesModule, listening],
   });
   running = { ...server, ...(await setUp(server)), told };
   return running;

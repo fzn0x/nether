@@ -58,6 +58,23 @@ jobs:
         run: pnpm format:check
       - name: Types
         run: pnpm typecheck
+      # The LDAP pull's tests read a real OpenLDAP (ADR 0085), built from
+      # Alpine's packages beside them. A service container cannot be built
+      # here, so it starts here; it writes its test authority to a folder
+      # the tests read, and answers on 1389 and 1636.
+      - name: Start the test LDAP directory
+        run: |
+          docker build -t nether-ldap-test enterprise/scim/test/ldap
+          mkdir -p "$RUNNER_TEMP/ldap"
+          docker run -d --name ldap -p 1389:389 -p 1636:636 -v "$RUNNER_TEMP/ldap:/out" nether-ldap-test
+          for i in $(seq 1 60); do
+            if test -s "$RUNNER_TEMP/ldap/fingerprint" && (exec 3<>/dev/tcp/127.0.0.1/1636) 2>/dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+          docker logs ldap
+          exit 1
       - name: Unit tests
         run: pnpm test
         env:
@@ -65,6 +82,7 @@ jobs:
           # and count their rate limits in this Valkey, each under a prefix of its own.
           NETHER_TEST_DATABASE_URL: postgres://nether:nether@localhost:5432/nether
           NETHER_TEST_REDIS_URL: redis://localhost:6379
+          NETHER_TEST_LDAP: ${{ runner.temp }}/ldap
       - name: Build the server, the desktop page and the documentation site
         run: pnpm build
       # The Phase 0 gate: the server runs with every enterprise feature off.

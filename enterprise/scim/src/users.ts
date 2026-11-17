@@ -417,7 +417,7 @@ export async function writeUser(
       emailKey(address),
       name,
     ]);
-    await tell("account.created", { by: "scim", directory: directory.id });
+    await tell("account.created", { by: directory.kind, directory: directory.id });
     await tx.query(
       `INSERT INTO directory_accounts (user_id, directory_id, user_name, external_id, attributes)
        VALUES ($1, $2, $3, $4, $5::jsonb)`,

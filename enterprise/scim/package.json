@@ -14,7 +14,8 @@
   },
   "dependencies": {
     "@nether/server": "workspace:*",
-    "fastify": "^5.12.7"
+    "fastify": "^5.12.7",
+    "ldapts": "^9.2.0"
   },
   "devDependencies": {
     "@hocuspocus/provider": "~4.8.0",

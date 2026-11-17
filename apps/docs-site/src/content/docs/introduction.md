@@ -88,7 +88,10 @@ sessions last. AI keeps to the [endpoints](../admin/#ai-endpoints) an
 organization approves. [Single sign-on](../admin/#single-sign-on) goes
 through SAML and OpenID Connect providers, and can be required.
 [Data policies](../admin/#data-policies) set public sharing, export,
-retention and legal hold. [Audit logs](../admin/#audit-logs) record every
+retention and legal hold. [Provisioning](../admin/#provisioning) makes,
+changes and deactivates accounts and groups from Okta or Entra ID by
+SCIM, or by reading Active Directory or OpenLDAP.
+[Audit logs](../admin/#audit-logs) record every
 sign-in, permission change, share, export and deletion, chained so a
 change shows, and send them to a SIEM by syslog or a webhook. And
 [high availability](../high-availability/) runs several server nodes,

@@ -54,7 +54,7 @@ Notion exports. Self-hosting is available for enterprise.
 > [publishes](https://fzn0x.github.io/nether/publishing/) as a site the
 > server draws for anyone, on its own domain if you like, linking only
 > between its own pages. Phase 5, enterprise, mobile and scale, is under
-> way, 7 of 11 on the
+> way, 8 of 11 on the
 > [roadmap](docs/roadmap.md#phase-5-enterprise-mobile-and-scale): a
 > 50,000-note vault opening to its last note about 450 ms sooner; the
 > [admin console](https://fzn0x.github.io/nether/admin/), where an
@@ -63,6 +63,9 @@ Notion exports. Self-hosting is available for enterprise.
 > locked to the endpoints the organization approves; single sign-on
 > through SAML and OpenID Connect providers, which can be required; data
 > policies for public sharing, export, retention and legal hold;
+> [provisioning](https://fzn0x.github.io/nether/admin/#provisioning) of
+> accounts and groups by SCIM from Okta or Entra ID, or read from Active
+> Directory or OpenLDAP;
 > [audit logs](https://fzn0x.github.io/nether/admin/#audit-logs) of every
 > sign-in, permission change, share, export and deletion, chained so a
 > change shows, and sent to a SIEM by syslog or webhook; and
