@@ -3,6 +3,7 @@
 // teamspace's folder leaves the vaults of those outside it; and a guest
 // syncs the page shared with them, its subpages, and nothing else.
 import { afterEach, describe, expect, it } from "vitest";
+import type { SyncRecord } from "../src/engine.ts";
 import { unitForPath } from "../src/units.ts";
 import { MemoryVault, database, device, startServer, stopAll, until } from "./harness.ts";
 
@@ -230,8 +231,10 @@ describe("syncing units", () => {
         note: launch,
       },
     );
-    // Once the page's unit has its notes, it stops being shared on its own.
-    await until(() => first.store.record?.vaults?.[page.id as string] !== undefined);
+    // Once both devices sync the page's unit, it stops being shared on its own.
+    const syncsPage = (record: SyncRecord | undefined) =>
+      record?.vaults?.[page.id as string] !== undefined;
+    await until(() => syncsPage(first.store.record) && syncsPage(beas.store.record));
     await settle();
     await api(
       served,
@@ -239,10 +242,14 @@ describe("syncing units", () => {
       "DELETE",
       `/api/workspaces/${served.workspaceId}/pages/${String(page.id)}`,
     );
-    // Its notes go back to where it sat, and stay on every device: waited
-    // for, as a slow machine takes more than a few seconds to move them.
+    // Its notes go back to where it sat, and stay on every device. Waited
+    // for until both devices have let the unit go: until then its notes are
+    // still there from the unit, and a slow machine takes more than a few
+    // seconds to move them.
     await until(
       () =>
+        !syncsPage(first.store.record) &&
+        !syncsPage(beas.store.record) &&
         beas.vault.text(launch) === "the launch" &&
         beas.vault.text(tasks) === "the tasks" &&
         laptop.text(tasks) === "the tasks",
