@@ -1089,7 +1089,8 @@ export const messages = {
   adminAuditOnly: "Only the events of {name}.",
   adminAuditOnlyClear: "Show everyone's",
   adminAuditOnlyThem: "Only theirs",
-  adminAuditOnlyLabel: "Only the events of {name}",
+  // Begins with the button's text, as a name from its content must (WCAG 2.5.3).
+  adminAuditOnlyLabel: "Only theirs: the events of {name}",
   adminAuditSearching: "Searching.",
   adminAuditNone: "No events match.",
   adminAuditWhen: "When",
