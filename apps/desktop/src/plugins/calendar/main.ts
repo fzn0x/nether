@@ -5,7 +5,7 @@
 // runs apart, in the sandbox, written only against the public SDK, and
 // reaching its feeds only through the app's connections.
 import { type PanelProps, definePlugin } from "@nether/plugin-api";
-import { type Calendar, type Reach, calendars, keptCalendars } from "./feeds.ts";
+import { type Calendar, type Reach, calendars, covering, keptCalendars } from "./feeds.ts";
 import { eventLines, localDay } from "./events.ts";
 import {
   blockHtml,
@@ -40,7 +40,8 @@ export default definePlugin({
       if ("missing" in picked)
         return { error: fill(words.noSuchCalendar, { name: picked.missing }) };
       const day = firstDay(asked.day, block.note?.day, now);
-      return { html: blockHtml(picked.calendars, day, asked.days, context.language) };
+      const shown = await covering(reach, picked.calendars, day, asked.days);
+      return { html: blockHtml(shown, day, asked.days, context.language) };
     });
 
     await context.panels.register("events", {
@@ -137,11 +138,8 @@ export default definePlugin({
           busy = true;
           draw();
           try {
-            shown = await calendars(reach, {
-              minutes: minutes(),
-              now: Date.now(),
-              force,
-            });
+            const read = await calendars(reach, { minutes: minutes(), now: Date.now(), force });
+            shown = await covering(reach, read, day(), 1);
           } catch (error) {
             notice = error instanceof Error ? error.message : String(error);
           }
@@ -162,9 +160,12 @@ export default definePlugin({
 
         return {
           update(next) {
+            const before = day();
             props = next;
             notice = "";
-            draw();
+            // Another day may lie outside the days kept, and be read for itself.
+            if (day() === before) draw();
+            else void load(false);
           },
           unmount() {
             gone = true;

@@ -20,6 +20,7 @@ import {
 import {
   type Reach,
   calendars,
+  covering,
   isStale,
   keptCalendars,
   readKept,
@@ -374,6 +375,34 @@ describe("feeds", () => {
     // Another service's connection is not the calendar's.
     fake.connections = [work, { ...work, id: "c2", service: "github" }];
     expect((await keptCalendars(fake.reach)).map((each) => each.connection.id)).toEqual(["c1"]);
+  });
+
+  it("reads a day outside the days kept for itself, and keeps none of it", async () => {
+    const fake = fakeReach([
+      () => ({ status: 200, headers: {}, text: feed }),
+      () => ({ status: 200, headers: {}, text: feed }),
+      () => ({ status: 404, headers: {} }),
+    ]);
+    // Read in a year's time, the days kept start long after the trip.
+    const later = new Date(2027, 10, 17, 8).getTime();
+    const all = await calendars(fake.reach, { minutes: 15, now: later });
+    expect(eventsOn(all[0]?.feed?.events ?? [], "2026-11-17")).toEqual([]);
+    const kept = fake.kept.get("feed:c1");
+    const shown = await covering(fake.reach, all, "2026-11-17", 1);
+    expect(shown[0]?.feed?.events.map((event) => event.title)).toEqual([
+      "Trip",
+      "Standup",
+      "Call with New York",
+      "(no title)",
+    ]);
+    expect(fake.kept.get("feed:c1")).toEqual(kept);
+    // A day inside them is shown from what was kept.
+    expect(await covering(fake.reach, all, "2027-11-17", 1)).toEqual(all);
+    const failed = await covering(fake.reach, all, "2026-11-17", 1);
+    expect(failed[0]?.feed).toMatchObject({ events: [], failed: "The feed answered 404." });
+    expect(
+      await covering(fake.reach, [{ connection: work, feed: undefined }], "2026-11-17", 1),
+    ).toEqual([{ connection: work, feed: undefined }]);
   });
 
   it("reads back only what it kept", () => {

@@ -2,9 +2,10 @@
 // ICS feeds, kept in the plugin's store on this device with when it was
 // read, and read again when what shows it finds it older than the
 // plugin's period. A feed is asked with If-None-Match and
-// If-Modified-Since, so one that has not changed sends nothing again.
+// If-Modified-Since, so one that has not changed sends nothing again. A
+// day outside the days kept is read when it is shown.
 import { type Connection, type Json, type PluginContext, isJsonObject } from "@nether/plugin-api";
-import { type CalendarEvent, readEvents, windowAround } from "./events.ts";
+import { type CalendarEvent, addDays, dayBounds, readEvents, windowAround } from "./events.ts";
 
 /** A feed as the store keeps it. */
 export interface KeptFeed {
@@ -162,6 +163,40 @@ export async function calendars(
           ? await refresh(reach, connection, options.now)
           : kept;
       return { connection, feed };
+    }),
+  );
+}
+
+/**
+ * The calendars for days that may lie outside the window kept: a calendar
+ * whose kept days do not hold them is read for those days alone, and what
+ * it gives is shown, not kept.
+ */
+export async function covering(
+  reach: Reach,
+  all: readonly Calendar[],
+  first: string,
+  days: number,
+): Promise<Calendar[]> {
+  const from = dayBounds(first).start;
+  const to = dayBounds(addDays(first, days)).start;
+  return Promise.all(
+    all.map(async (calendar) => {
+      const { feed } = calendar;
+      if (feed === undefined || (feed.from <= from.getTime() && feed.to >= to.getTime())) {
+        return calendar;
+      }
+      try {
+        const answer = await reach.http.fetch({ connection: calendar.connection.id });
+        if (answer.status < 200 || answer.status > 299) {
+          throw new Error(`The feed answered ${String(answer.status)}.`);
+        }
+        const events = readEvents(answer.text ?? "", from, to);
+        return { ...calendar, feed: { ...withoutFailure(feed), events } };
+      } catch (error) {
+        const failed = error instanceof Error ? error.message : String(error);
+        return { ...calendar, feed: { ...withoutFailure(feed), events: [], failed } };
+      }
     }),
   );
 }
