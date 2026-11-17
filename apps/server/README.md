@@ -257,6 +257,14 @@ syncs only those. A client syncing the vault document hears of every note
 as it is stored, as the stateless message
 `{ "type": "stored", "document": "<note id>", "seq": 42 }`.
 
+**Several nodes.** With `NETHER_ENTERPRISE_HA=on` in the image, the `ha`
+module shares each open document, and who is in it, across the nodes
+through Valkey, with Hocuspocus's Redis extension, so clients on two
+nodes see each other's edits as they are made (ADR 0082). The API reads a
+document through a connection of its own, which takes another node's open
+copy when one has it. The relay's hints and the closes of an account's
+sockets go over the same Valkey. No sticky sessions are needed.
+
 ## Encrypted workspaces
 
 A workspace made with `encryption: "end-to-end"` is encrypted by its
@@ -509,6 +517,7 @@ machine.
 | `NETHER_OIDC_SIGN_UP` | `off` | Whether anyone the provider signs in gets an account, not only the invited |
 | `NETHER_STORAGE` | `disk` | Where attachments are kept: `disk` or `s3` |
 | `NETHER_STORAGE_PATH` | `data/attachments` | The folder for `disk`, relative to where the server runs |
+| `NETHER_STORAGE_SHARED` | `off` | `on` says `NETHER_STORAGE_PATH` is one volume every node mounts, as high availability needs of attachments on disk (ADR 0082) |
 | `NETHER_S3_ENDPOINT` | none, required for `s3` | The S3-compatible store's address |
 | `NETHER_S3_BUCKET`, `NETHER_S3_ACCESS_KEY`, `NETHER_S3_SECRET_KEY` | none, required for `s3` | The bucket and the keys to it |
 | `NETHER_S3_REGION` | `us-east-1` | The region requests are signed for |
@@ -533,7 +542,7 @@ machine.
 | `NETHER_ENTERPRISE_AUDIT` | unset | Audit logs |
 | `NETHER_ENTERPRISE_POLICIES` | unset | Data policies and advanced permissions |
 | `NETHER_ENTERPRISE_ADMIN` | unset | The admin console's usage, workspaces and security pages |
-| `NETHER_ENTERPRISE_HA` | unset | High availability |
+| `NETHER_ENTERPRISE_HA` | `off` | High availability, set here alone and read as the server starts: `on` makes this node one of several (ADR 0082). It needs `NETHER_REDIS_URL`, attachments every node reads, and `NETHER_SETUP_CODE` while the server has no account; missing one, the server stops, saying which |
 | `NETHER_SESSION_IDLE_DAYS` | unset, 30 | Days a session lasts unused, from 1 to 365 |
 | `NETHER_SESSION_LIFETIME_DAYS` | unset, 90 | Days a session lasts however much it is used, from 1 to 3650 |
 | `NETHER_SIGN_IN_TRIES_ACCOUNT` | unset, 10 | Sign-in tries per account in 15 minutes, from 3 to 100 |

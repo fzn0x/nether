@@ -34,6 +34,11 @@ export interface Channel {
    * workspace's ID, and no others: the units' as the account opens them.
    */
   vaults(documents: ReadonlyMap<string, Y.Doc>): void;
+  /**
+   * Syncs the vault documents again: not synced until each has what the
+   * server has now, when `onSynced` tells, as after connecting.
+   */
+  resync(): void;
   /** Syncs a note's document: both sides get what the other lacks. */
   sync(id: string, document: Y.Doc): Promise<void>;
   /**
@@ -151,6 +156,18 @@ export class HocuspocusChannel implements Channel {
       });
       this.#vaults.set(name, { document, provider });
       provider.attach();
+    }
+  }
+
+  resync(): void {
+    for (const { provider } of this.#vaults.values()) {
+      // One not synced now gets the server's state once connected anyway.
+      if (!provider.isSynced) continue;
+      // Synced again, and "synced" told, when the server's answer comes: on
+      // this socket, after anything the server sent before. A socket that
+      // closes first syncs it on connecting again.
+      provider.synced = false;
+      provider.forceSync();
     }
   }
 

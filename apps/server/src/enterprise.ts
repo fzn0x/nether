@@ -4,9 +4,18 @@
 // or off. Every module a build has registers once, and asks for its switch
 // on each request, so a switch takes effect on every node within the few
 // seconds the switches are kept. Nothing here imports the modules: a build
-// passes in those it has.
-import type { FastifyInstance, FastifyPluginAsync, FastifyReply, FastifyRequest } from "fastify";
+// passes in those it has. High availability is the environment's alone,
+// read as the server starts, and its module acts then (ADR 0082).
+import type { Extension } from "@hocuspocus/server";
+import type {
+  FastifyBaseLogger,
+  FastifyInstance,
+  FastifyPluginAsync,
+  FastifyReply,
+  FastifyRequest,
+} from "fastify";
 import type { AiEndpoints } from "./aiEndpoints.ts";
+import type { ClusterBus } from "./cluster.ts";
 import type { Config } from "./config.ts";
 import type { DataPolicies } from "./dataPolicies.ts";
 import type { Database, Queryable } from "./db.ts";
@@ -18,6 +27,13 @@ import type { SignInGuards } from "./signIns.ts";
 export const enterpriseFeatures = ["sso", "scim", "audit", "policies", "admin", "ha"] as const;
 
 export type EnterpriseFeature = (typeof enterpriseFeatures)[number];
+
+/**
+ * The features only the environment sets, read as the server starts: unset
+ * is off, and the console cannot turn one on (ADR 0082). `ha` describes the
+ * deployment, as the database's address does.
+ */
+export const environmentOnly: readonly EnterpriseFeature[] = ["ha"];
 
 /** How the environment pins each feature: on, off, or not at all, when the console decides. */
 export type EnterprisePins = Readonly<Record<EnterpriseFeature, boolean | undefined>>;
@@ -73,10 +89,37 @@ export interface EnterpriseContext extends EnterpriseServices {
   ) => Promise<FastifyReply | undefined>;
 }
 
+/** What a module's startup is given, before the server has routes. */
+export interface StartupServices {
+  readonly db: Database;
+  readonly config: Config;
+  readonly log: FastifyBaseLogger;
+}
+
+/** What a module's startup gives the server to run with. */
+export interface Started {
+  /** What the nodes tell each other, in place of one process's bus. */
+  readonly bus?: ClusterBus;
+  /** Hocuspocus's extensions, as one that shares open documents across nodes. */
+  readonly syncExtensions?: readonly Extension[];
+  /**
+   * Whether the API reads a document through a connection of its own, so
+   * it sees another node's open copy, rather than what is stored.
+   */
+  readonly readsThroughSync?: boolean;
+  /** Lets go of what the startup holds, once the server has stored its documents. */
+  readonly close?: () => Promise<void>;
+}
+
 /** An enterprise feature's code: a Fastify plugin the server registers in every build that has it. */
 export interface EnterpriseModule {
   readonly feature: EnterpriseFeature;
   readonly plugin: FastifyPluginAsync<EnterpriseContext>;
+  /**
+   * Runs once, before the routes, when the feature is on as the server
+   * starts (ADR 0082); a failure stops the server, saying why.
+   */
+  readonly startup?: (services: StartupServices) => Promise<Started>;
 }
 
 /** The environment variable that pins a feature, such as NETHER_ENTERPRISE_SSO. */
@@ -184,6 +227,9 @@ export class EnterpriseSwitches {
    * in `db`'s transaction when given one; this server sees it at once.
    */
   async set(feature: EnterpriseFeature, on: boolean, db: Queryable = this.#db): Promise<void> {
+    if (environmentOnly.includes(feature)) {
+      throw new Error(`${switchVariable(feature)} sets ${feature}, read as the server starts.`);
+    }
     await db.query(
       `INSERT INTO instance_settings (key, value) VALUES ($1, to_jsonb($2::boolean))
         ON CONFLICT (key) DO UPDATE SET value = excluded.value, updated_at = now()`,
@@ -203,17 +249,8 @@ function notFound(request: FastifyRequest, reply: FastifyReply): FastifyReply {
   });
 }
 
-/**
- * Registers every module this build has, each with what the server shares
- * and the way to ask for its switch. A feature the environment pins on with
- * no module in the build is an error at startup, not a silent no.
- */
-export async function registerEnterprise(
-  app: FastifyInstance,
-  services: EnterpriseServices,
-  switches: EnterpriseSwitches,
-  modules: readonly EnterpriseModule[],
-): Promise<void> {
+/** A feature the environment pins on with no module in the build is an error at startup, not a silent no. */
+function refuseMissing(switches: EnterpriseSwitches): void {
   for (const feature of enterpriseFeatures) {
     if (switches.pinned(feature) === true && !switches.available(feature)) {
       throw new Error(
@@ -222,6 +259,37 @@ export async function registerEnterprise(
       );
     }
   }
+}
+
+/**
+ * Runs the startup of each module whose feature is on as the server starts,
+ * in the order the build gives them, and gives what each started.
+ */
+export async function startModules(
+  switches: EnterpriseSwitches,
+  modules: readonly EnterpriseModule[],
+  services: StartupServices,
+): Promise<Started[]> {
+  refuseMissing(switches);
+  const started: Started[] = [];
+  for (const module of modules) {
+    if (module.startup === undefined || !(await switches.on(module.feature))) continue;
+    started.push(await module.startup(services));
+  }
+  return started;
+}
+
+/**
+ * Registers every module this build has, each with what the server shares
+ * and the way to ask for its switch.
+ */
+export async function registerEnterprise(
+  app: FastifyInstance,
+  services: EnterpriseServices,
+  switches: EnterpriseSwitches,
+  modules: readonly EnterpriseModule[],
+): Promise<void> {
+  refuseMissing(switches);
   for (const module of modules) {
     const isOn = (db?: Queryable) => switches.on(module.feature, db);
     const whenOn = async (request: FastifyRequest, reply: FastifyReply) =>

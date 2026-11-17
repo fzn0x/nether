@@ -17,11 +17,12 @@ export function redactedUrl(url: string): string {
 
 /**
  * Connects to the server at `url` and checks that it answers. `keyPrefix`
- * goes before every key, as tests use to keep theirs apart.
+ * goes before every key, as tests use to keep theirs apart, and
+ * `connectionName` names the connection where `CLIENT LIST` shows it.
  */
 export async function connectRedis(
   url: string,
-  options: { keyPrefix?: string } = {},
+  options: { keyPrefix?: string; connectionName?: string } = {},
 ): Promise<Redis> {
   const client = new Redis(url, {
     lazyConnect: true,

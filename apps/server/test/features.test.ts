@@ -1,8 +1,11 @@
 // Enterprise features' switches (ADR 0079): off until the console turns
 // one on, or the environment pins it; a module's routes answering only
 // while its feature is on, from the next request; and the console's
-// routes for instance admins alone.
+// routes for instance admins alone. High availability is the environment's
+// alone, and a module acts as the server starts when its feature is on
+// (ADR 0082).
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { ProcessBus } from "../src/cluster.ts";
 import type { Database } from "../src/db.ts";
 import {
   type EnterpriseModule,
@@ -175,5 +178,67 @@ describe("EnterpriseSwitches", () => {
     expect(await switches.on("audit")).toBe(false);
     expect(await switches.on("sso")).toBe(false);
     expect(reads.count).toBe(0);
+  });
+});
+
+describe("high availability and a module's startup", () => {
+  /** A module of the `ha` feature that says when it starts and closes. */
+  function haOf(said: string[], fails = false): EnterpriseModule {
+    return {
+      feature: "ha",
+      plugin: () => Promise.resolve(),
+      startup: ({ config }) => {
+        said.push(`started on ${config.nodeName}`);
+        if (fails) return Promise.reject(new Error("Several nodes need NETHER_REDIS_URL."));
+        return Promise.resolve({
+          bus: new ProcessBus(),
+          close: () => {
+            said.push("closed");
+            return Promise.resolve();
+          },
+        });
+      },
+    };
+  }
+
+  it("is off unless the environment says on, and the console cannot turn it on", async () => {
+    const said: string[] = [];
+    const test = await start({}, [audit, haOf(said)]);
+    expect((await features(test)).json<{ features: unknown[] }>().features).toContainEqual({
+      feature: "ha",
+      on: false,
+      pinned: "off",
+      available: true,
+    });
+    const refused = await turn(test, "ha", true);
+    expect(refused.statusCode).toBe(409);
+    expect(refused.json()).toMatchObject({
+      message: "NETHER_ENTERPRISE_HA sets it: change it there.",
+    });
+    expect(said).toEqual([]);
+    const none = Object.fromEntries(enterpriseFeatures.map((feature) => [feature, undefined]));
+    const switches = new EnterpriseSwitches(test.db, { ...none, ha: false } as never, ["ha"]);
+    await expect(switches.set("ha", true)).rejects.toThrow("NETHER_ENTERPRISE_HA sets ha");
+  });
+
+  it("runs the module's startup when the environment says on, and closes it as the server closes", async () => {
+    const said: string[] = [];
+    const test = await start({ NETHER_ENTERPRISE_HA: "on", NETHER_NODE_NAME: "web-1" }, [
+      audit,
+      haOf(said),
+    ]);
+    expect(said).toEqual(["started on web-1"]);
+    expect((await test.server.inject({ method: "GET", url: "/health" })).json()).toMatchObject({
+      enterprise: { ha: true },
+    });
+    await test.close();
+    running = undefined;
+    expect(said).toEqual(["started on web-1", "closed"]);
+  });
+
+  it("stops the server when the startup fails, saying why", async () => {
+    await expect(
+      startServer({ env: { NETHER_ENTERPRISE_HA: "on" }, enterpriseModules: [haOf([], true)] }),
+    ).rejects.toThrow("Several nodes need NETHER_REDIS_URL.");
   });
 });

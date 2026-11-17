@@ -25,7 +25,12 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   then closes its sockets with 1012 and stores its open documents.
   Migrations expand, and contract a release later: a server runs on a
   database a newer release migrated unless a step since needs a newer
-  server. `node dist/admin.js migrate` migrates without starting the server
+  server. `node dist/admin.js migrate` migrates without starting the server.
+  `NETHER_ENTERPRISE_HA=on`, which the environment alone sets, makes a node
+  one of several: open documents and who is in them are shared through
+  Valkey, the API reads other nodes' open copies, and a node stops at
+  startup unless it has Valkey, attachments every node reads
+  (`NETHER_STORAGE_SHARED` for a shared volume) and a setup code
   ([ADR 0082](docs/adr/0082-several-nodes-share-sync-through-valkey-take-their-order-from-postgresql-and-roll-out-one-at-a-time.md)).
 - Publishing: a page with its subpages, or the folder it is in, published
   from its Share dialog as a site anyone opens at the server's
@@ -452,6 +457,15 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   other's change, and later syncs did not bring it. The relay now tells a
   device its change's number only after sending it every change numbered
   before it.
+- A page that stops being shared on its own keeps its notes and files on
+  every device. Before, an app that saw them listed where the page sat
+  while the page's unit was still there could move them back into it, and
+  once the unit was gone they went to the trash on every device; a device
+  that heard the unit was gone before their new list could send them to
+  the trash and fetch them again. An app now leaves a note or file where
+  it is listed when the page's unit lists it too, and after letting a unit
+  go it syncs the units it still opens again before it next compares
+  lists.
 
 ## [0.1.0] - 2026-11-15
 
