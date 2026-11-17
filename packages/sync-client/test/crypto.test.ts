@@ -1,6 +1,7 @@
 // The cryptography of encrypted workspaces: the recovery phrase and the
 // private key's box, sealed workspace keys, and encrypted updates bound to
 // their document and key version.
+import { wordlist } from "@scure/bip39/wordlists/english.js";
 import { describe, expect, it } from "vitest";
 import {
   decryptUpdate,
@@ -25,11 +26,15 @@ describe("the recovery phrase", () => {
     expect(isRecoveryPhrase(phrase)).toBe(true);
     expect(isRecoveryPhrase(`  ${phrase.toUpperCase().replaceAll(" ", "\n  ")} `)).toBe(true);
     expect(recoveryWords(phrase.toUpperCase())).toEqual(phrase.split(" "));
-    // A word off, a word short, or a word not in the list.
+    // A word off, a word short, or a word not in the list. The last word holds
+    // the checksum's 8 bits under 3 of the key's: its neighbour in the list,
+    // one bit of the checksum apart, is always wrong, where any other word
+    // fits once in 256 phrases.
     const words = phrase.split(" ");
-    expect(
-      isRecoveryPhrase([...words.slice(0, 23), words[0] === "zoo" ? "abandon" : "zoo"].join(" ")),
-    ).toBe(false);
+    const last = wordlist.indexOf(words[23] ?? "");
+    expect(last).not.toBe(-1);
+    const neighbour = wordlist[last ^ 1] ?? "";
+    expect(isRecoveryPhrase([...words.slice(0, 23), neighbour].join(" "))).toBe(false);
     expect(isRecoveryPhrase(words.slice(0, 23).join(" "))).toBe(false);
     expect(isRecoveryPhrase([...words.slice(0, 23), "nether"].join(" "))).toBe(false);
   });
