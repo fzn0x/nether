@@ -2392,6 +2392,88 @@ button {
   margin: 0.15rem 0 0;
 }
 
+/* A shared page's links, in its Share dialog (ADR 0071). */
+.share-links {
+  margin-top: 1rem;
+}
+
+.share-links h3 {
+  margin: 0 0 0.25rem;
+  font-size: 1rem;
+}
+
+.share-link input[readonly] {
+  width: 100%;
+  font: inherit;
+  font-size: 0.875rem;
+}
+
+.share-link-actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.25rem;
+}
+
+.share-link-new {
+  display: grid;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+
+.share-link-new button,
+.shared-pages button {
+  justify-self: start;
+  padding: 0.3rem 0.8rem;
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  background: none;
+  color: var(--text);
+  cursor: pointer;
+}
+
+/* The page a share link opens in the web app. */
+.shared {
+  max-width: 60rem;
+  margin: 0 auto;
+  padding: 2rem 1rem;
+}
+
+.shared-visit {
+  display: grid;
+  grid-template-columns: minmax(10rem, 14rem) 1fr;
+  gap: 2rem;
+}
+
+.shared-pages ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.shared-pages button {
+  width: 100%;
+  margin-bottom: 0.25rem;
+  border-color: transparent;
+  text-align: start;
+}
+
+.shared-pages button[aria-current="page"] {
+  border-color: var(--rule);
+  font-weight: 600;
+}
+
+.shared-password {
+  display: grid;
+  gap: 0.75rem;
+  max-width: 24rem;
+}
+
+@media (max-width: 40rem) {
+  .shared-visit {
+    grid-template-columns: 1fr;
+  }
+}
+
 /* The plugin and theme directory, in the Plugins and Appearance tabs (ADR 0065). */
 .directory {
   margin-top: 1.5rem;

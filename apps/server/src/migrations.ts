@@ -451,6 +451,38 @@ export const migrations: readonly Migration[] = [
         WHERE status <> 'waiting';
     `,
   },
+  {
+    version: 16,
+    name: "share links, and the visits they start",
+    sql: `
+      -- A link that opens a page shared on its own to anyone with it
+      -- (ADR 0071), kept as it is so that it can be copied again.
+      CREATE TABLE share_links (
+        id uuid PRIMARY KEY,
+        workspace_id uuid NOT NULL REFERENCES workspaces (id) ON DELETE CASCADE,
+        unit_id uuid NOT NULL REFERENCES units (id) ON DELETE CASCADE,
+        token text NOT NULL UNIQUE,
+        level text NOT NULL CHECK (level IN ('view', 'comment', 'edit')),
+        -- An argon2id hash, as an account's password is; none for a link without one.
+        password_hash text,
+        expires_at timestamptz,
+        created_by uuid REFERENCES users (id) ON DELETE SET NULL,
+        created_at timestamptz NOT NULL DEFAULT now()
+      );
+
+      CREATE INDEX share_links_by_unit ON share_links (unit_id, created_at);
+
+      -- A visit a link started, by its token's SHA-256; it ends with its link.
+      CREATE TABLE link_visits (
+        token_hash text PRIMARY KEY,
+        link_id uuid NOT NULL REFERENCES share_links (id) ON DELETE CASCADE,
+        created_at timestamptz NOT NULL DEFAULT now(),
+        expires_at timestamptz NOT NULL
+      );
+
+      CREATE INDEX link_visits_by_link ON link_visits (link_id);
+    `,
+  },
 ];
 
 /** The schema version this server writes and reads. */

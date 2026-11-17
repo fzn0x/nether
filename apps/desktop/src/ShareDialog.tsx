@@ -2,7 +2,8 @@
 // until it is shared on its own: it and its subpages then become a unit,
 // which keeps the people of where it sits unless it is restricted to its
 // own. Those with full access to it give members a level, invite guests by
-// a link, and stop sharing it on its own, when it goes back where it sits.
+// a link, make links anyone may open it with (ADR 0071), and stop sharing
+// it on its own, when it goes back where it sits.
 import type { NoteEntry } from "@nether/storage";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { backend } from "./backend.ts";
@@ -16,6 +17,7 @@ import {
   units,
 } from "./server.ts";
 import type { VaultLink } from "./sync.ts";
+import { ShareLinks } from "./ShareLinks.tsx";
 import { UnitPeople } from "./UnitPeople.tsx";
 import { useModal } from "./useModal.ts";
 
@@ -143,6 +145,7 @@ export function ShareDialog(props: {
                   onStatus={setStatus}
                   onError={setError}
                 />
+                <ShareLinks link={link} unit={page.id} onStatus={setStatus} onError={setError} />
                 <button
                   type="button"
                   className="quiet danger"
