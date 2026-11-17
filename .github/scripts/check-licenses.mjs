@@ -6,10 +6,8 @@
 //
 //   node .github/scripts/check-licenses.mjs
 import { execFileSync } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
 
-import { allowed, permits, reviewed } from "./licenses.mjs";
+import { allowed, identify, permits, reviewed } from "./licenses.mjs";
 
 function run(command, args, options = {}) {
   return execFileSync(command, args, {
@@ -34,31 +32,6 @@ function checkNpm() {
     }
   }
   return { count, problems };
-}
-
-// Recognizes a license file by phrases from its text.
-const licenseTexts = [
-  ["MIT", ["Permission is hereby granted, free of charge", 'THE SOFTWARE IS PROVIDED "AS IS"']],
-  ["Apache-2.0", ["Apache License", "Version 2.0"]],
-  ["BSD-3-Clause", ["Redistribution and use in source and binary forms", "Neither the name of"]],
-  ["BSD-2-Clause", ["Redistribution and use in source and binary forms"]],
-  ["ISC", ["Permission to use, copy, modify, and/or distribute this software for any purpose"]],
-  ["MPL-2.0", ["Mozilla Public License Version 2.0"]],
-  ["Unlicense", ["This is free and unencumbered software released into the public domain"]],
-];
-const licenseFiles = ["LICENSE", "LICENSE.md", "LICENSE.txt", "LICENCE", "COPYING"];
-
-function identify(directory) {
-  for (const name of licenseFiles) {
-    const path = join(directory, name);
-    if (!existsSync(path)) continue;
-    const text = readFileSync(path, "utf8").replace(/\s+/g, " ");
-    const match = licenseTexts.find(([, phrases]) =>
-      phrases.every((phrase) => text.includes(phrase)),
-    );
-    return match?.[0] ?? `unrecognized text in ${name}`;
-  }
-  return "no license file";
 }
 
 function checkGo(moduleDirectory) {
