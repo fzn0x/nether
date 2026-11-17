@@ -4633,6 +4633,8 @@ kbd {
 /* The capture sheet (ADR 0087): a capture's text, what was shared, and the vault it goes to. */
 .capture-sheet {
   align-self: flex-start;
+  /* Above the on-screen keyboard there may be no room for all of it. */
+  overflow-y: auto;
 }
 
 /* On a phone, a sheet along the bottom, above the keyboard, as every dialog is there. */
