@@ -165,6 +165,15 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   embed, its passage. An area of a page is highlighted by a drag or from
   the keyboard, written as PDF++'s `&rect=`. Every view and embed of a PDF
   shares one loaded copy.
+- Buttons in notes, as `meta-bind-button` code blocks in the syntax of
+  Obsidian's Meta Bind plugin, drawn below their code by the built-in
+  Buttons plugin, with a Button entry in the slash menu
+  ([ADR 0072](docs/adr/0072-buttons-are-meta-bind-button-blocks-and-triggers-are-schema-rules-run-where-the-change-is-made.md)).
+  A button's actions run in order: a command of the app or a plugin by
+  its ID, a new note from a template or blank, a property of its note or
+  another, a link opened, a wait. One that fails stops the rest and says
+  why, and a button that would run JavaScript, ask for input or change
+  the note's text says so and runs nothing.
 
 ### Changed
 
