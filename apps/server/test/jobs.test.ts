@@ -1,10 +1,14 @@
 // Work across the server's nodes (ADR 0082): a job runs once in its period
 // across the nodes, and again after it; a job that fails gives its claim
-// back.
+// back. Each node writes its heartbeat, which instance admins list, and a
+// node without high availability that sees another says so.
+import { randomUUID } from "node:crypto";
 import type { FastifyBaseLogger } from "fastify";
 import { afterEach, describe, expect, it } from "vitest";
+import { readConfig } from "../src/config.ts";
 import { ClusterJobs } from "../src/jobs.ts";
-import { type SetUp, type TestServer, setUp, startServer } from "./app.ts";
+import { startHeartbeat } from "../src/nodes.ts";
+import { type SetUp, type TestServer, bearer, setUp, startServer } from "./app.ts";
 
 const running: TestServer[] = [];
 
@@ -88,5 +92,103 @@ describe("jobs across nodes", () => {
     expect(() => {
       jobs.every("once", 1_000, () => Promise.resolve());
     }).toThrow("named once already");
+  });
+});
+
+describe("each node's heartbeat", () => {
+  it("lists the server's nodes to instance admins, the one answering marked", async () => {
+    const test = await server();
+    const second = await startServer({
+      nodeOf: test,
+      env: { NETHER_NODE_NAME: "second-node" },
+    });
+    running.push(second);
+    await second.server.ready();
+    await test.server.ready();
+    const answer = await test.server.inject({
+      method: "GET",
+      url: "/api/instance/nodes",
+      headers: bearer(test.token),
+    });
+    expect(answer.statusCode).toBe(200);
+    const { nodes } = answer.json<{
+      nodes: { name: string; version: string; current: boolean }[];
+    }>();
+    expect(nodes).toHaveLength(2);
+    expect(nodes.filter((node) => node.current)).toHaveLength(1);
+    expect(nodes.find((node) => !node.current)?.name).toBe("second-node");
+    expect(nodes.every((node) => node.version.length > 0)).toBe(true);
+    // A node that stops is gone from the list at once.
+    running.splice(running.indexOf(second), 1);
+    await second.close();
+    const after = await test.server.inject({
+      method: "GET",
+      url: "/api/instance/nodes",
+      headers: bearer(test.token),
+    });
+    expect(after.json<{ nodes: unknown[] }>().nodes).toHaveLength(1);
+  });
+
+  it("refuses anyone but an instance admin", async () => {
+    const test = await server();
+    const invited = await test.server.inject({
+      method: "POST",
+      url: `/api/workspaces/${test.workspaceId}/invitations`,
+      headers: bearer(test.token),
+      payload: { role: "member" },
+    });
+    const accepted = await test.server.inject({
+      method: "POST",
+      url: "/api/invitations/accept",
+      payload: {
+        token: invited.json<{ token: string }>().token,
+        name: "Bea",
+        email: "bea@example.org",
+        password: "Bea's long password",
+      },
+    });
+    const answer = await test.server.inject({
+      method: "GET",
+      url: "/api/instance/nodes",
+      headers: bearer(accepted.json<{ token: string }>().token),
+    });
+    expect(answer.statusCode).toBe(403);
+  });
+
+  it("says so when another node runs beside one without high availability", async () => {
+    const test = await server();
+    const other = startHeartbeat(
+      test.db,
+      { id: randomUUID(), name: "other", version: "1" },
+      { log: logOf(), highlyAvailable: () => Promise.resolve(true), every: 3_600_000 },
+    );
+    const log = logOf();
+    let highlyAvailable = false;
+    const node = startHeartbeat(
+      test.db,
+      { id: randomUUID(), name: "this", version: "1" },
+      {
+        log,
+        highlyAvailable: () => Promise.resolve(highlyAvailable),
+        every: 3_600_000,
+        overlapFor: 0,
+      },
+    );
+    await other.beat();
+    await node.beat();
+    expect(log.errors.some((error) => error.includes("NETHER_ENTERPRISE_HA=on"))).toBe(true);
+    // With high availability, others beside it are expected.
+    highlyAvailable = true;
+    const said = log.errors.length;
+    await node.beat();
+    expect(log.errors).toHaveLength(said);
+    await node.stop();
+    await other.stop();
+  });
+
+  it("takes its name from NETHER_NODE_NAME, or the machine's", () => {
+    const base = { NETHER_DATABASE_URL: "postgres://nether@localhost:5432/nether" };
+    expect(readConfig({ ...base, NETHER_NODE_NAME: " web-1 " }).nodeName).toBe("web-1");
+    expect(readConfig(base).nodeName.length).toBeGreaterThan(0);
   });
 });
