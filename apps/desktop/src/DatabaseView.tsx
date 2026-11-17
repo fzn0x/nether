@@ -55,7 +55,8 @@ import {
   usePropertyTypes,
 } from "./plugins/propertyTypes.ts";
 import { type LayoutRegistry, useLayouts } from "./plugins/layouts.ts";
-import type { PropertyChangeRegistry } from "./plugins/propertyChanges.ts";
+import { type PropertyChangeRegistry, useWatched } from "./plugins/propertyChanges.ts";
+import { DatabaseTriggers } from "./DatabaseTriggers.tsx";
 import { useDocumentProperties } from "./DatabaseSlot.tsx";
 import { ListEditor } from "./PropertiesPanel.tsx";
 import type { Exporter, VaultMedia } from "./backend.ts";
@@ -722,7 +723,9 @@ function Database(props: DatabaseProps & { readonly entries: readonly PropertyEn
   const notes = useNotes(vault);
   const [chosen, setChosen] = useState<string | undefined>();
   const [error, setError] = useState<string | undefined>();
-  const [panel, setPanel] = useState<"filter" | "properties" | undefined>();
+  const [panel, setPanel] = useState<"filter" | "properties" | "triggers" | undefined>();
+  // Whether the Buttons and triggers plugin runs the triggers.
+  const running = useWatched(propertyChanges);
   const [exported, setExported] = useState<
     { readonly path: string } | { readonly failed: string } | undefined
   >();
@@ -1300,6 +1303,18 @@ function Database(props: DatabaseProps & { readonly entries: readonly PropertyEn
             <button
               type="button"
               className="quiet"
+              aria-expanded={panel === "triggers"}
+              onClick={() => {
+                setPanel(panel === "triggers" ? undefined : "triggers");
+              }}
+            >
+              {(schema.triggers?.length ?? 0) === 0
+                ? t("triggers")
+                : t("triggersCount", { count: schema.triggers?.length ?? 0 })}
+            </button>
+            <button
+              type="button"
+              className="quiet"
               onClick={() => {
                 exportCsv(view);
               }}
@@ -1451,6 +1466,16 @@ function Database(props: DatabaseProps & { readonly entries: readonly PropertyEn
                 }}
               />
             </div>
+          ) : null}
+          {panel === "triggers" ? (
+            <DatabaseTriggers
+              properties={schema.properties}
+              triggers={schema.triggers ?? []}
+              running={running}
+              onChange={(triggers) => {
+                saveSchema({ ...schema, triggers });
+              }}
+            />
           ) : null}
           {error === undefined ? null : <p role="alert">{t("cellFailed", { error })}</p>}
           {view.layout !== "table" && shownLayout !== undefined ? (

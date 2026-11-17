@@ -1135,6 +1135,24 @@ export const messages = {
   buttonAskEveryTime: "A plugin from this vault adds a command it runs, so it asks each time.",
   buttonAskRun: "Run",
   propertyCannotChange: "This note's properties cannot be changed now.",
+  // A database's triggers (ADR 0072).
+  triggers: "Triggers",
+  triggersCount: "Triggers ({count})",
+  triggersOff:
+    "The Buttons and triggers plugin is off, so these do not run. It is in the Plugins tab of the settings.",
+  triggersNone: "No triggers yet. A trigger sets a row's properties when one becomes a value.",
+  triggerText: "When {when} becomes {is}, set {set}",
+  triggerSets: "{key} to {value}",
+  triggerEmpty: "empty",
+  triggerRemove: "Remove the trigger: {trigger}",
+  triggerRemoveButton: "Remove",
+  triggerNeedsProperty: "A trigger needs a property of the database to watch and set.",
+  triggerNew: "New trigger",
+  triggerWhen: "When",
+  triggerBecomes: "becomes",
+  triggerSet: "set",
+  triggerTo: "to",
+  triggerAdd: "Add the trigger",
 } as const;
 
 export type MessageKey = keyof typeof messages;
