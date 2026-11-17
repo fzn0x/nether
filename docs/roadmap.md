@@ -130,6 +130,9 @@ The first public release, one feature per pull request, in this order:
 
 ## Phase 4: Platform
 
+Done on 2026-11-17; the [report](reports/phase-4.md) says what shipped,
+what was deferred and the plan for Phase 5.
+
 One feature per pull request, in this order:
 
 - [x] Headroom in the desktop app's memory, before plugins add their own: on 50,000 notes the page's renderer holds 209 MB of 291, its JavaScript heap 67 MB, and the vault's link index 31 MB of that. 10 MB of the heap was copies of the same link targets, tags, headings and property values, now shared as the links load, and the app idles at 287 MB, against 292 MB before. The process gave back about half of what the heap freed; more can come from the rest, and from the headings and the path index the page holds, about 6 MB each.
@@ -143,3 +146,25 @@ One feature per pull request, in this order:
 - [x] Buttons and automations. Buttons are `meta-bind-button` blocks, as Obsidian's Meta Bind plugin writes them, which run commands of the app and its plugins, asking first, make notes from templates, set properties and open links, and run no code. Database triggers are rules in a database's schema, `when` a row's property becomes a value `set` others, edited in its settings, which run on the device that made the change, once, for the app's own changes, and run no trigger for what they set ([ADR 0072](adr/0072-buttons-are-meta-bind-button-blocks-and-triggers-are-schema-rules-run-where-the-change-is-made.md)). Both are the built-in Buttons and triggers plugin's.
 - [x] PDF annotation, with highlights as linkable blocks. PDFs open in a view of pdf.js, a built-in plugin's, where words selected or found are highlighted and commented on, each highlight a callout in a note that links to its passage as Obsidian links to one, and links to a page, a passage or a highlight open the PDF there ([ADR 0061](adr/0061-pdfs-show-through-pdf-js-and-a-highlight-is-a-callout-that-links-to-its-passage.md)). Every note's link to a passage shows on the PDF too, as Obsidian's Copy as quote and PDF++ write them, in PDF++'s colors, which highlights take as well, and the PDF's own outline and links work ([ADR 0062](adr/0062-every-link-to-a-passage-shows-on-the-pdf-in-pdf-plus-plus-colors.md)). PDFs embedded in notes are drawn by pdf.js once on screen, on every system, a passage or a box alone when the link names one, and a highlight's embed shows its passage; an area of a page is highlighted as PDF++ writes a box ([ADR 0067](adr/0067-pdf-embeds-draw-with-pdf-js-when-on-screen-and-an-area-is-pdf-plus-plus-rect.md)).
 - [x] The web clipper, for Chrome and Firefox: `apps/clipper`, a Manifest V3 extension whose button saves the selection, or the page's article through Readability, as Markdown the importer writes, to a new note, a note it is added to with `If-Match`, or a database row, through the REST API with a write token, reaching the person's own server alone ([ADR 0066](adr/0066-the-web-clipper-is-a-manifest-v3-extension-that-sends-clips-to-the-users-own-server-alone.md)). Publishing it to the Chrome Web Store and Firefox Add-ons waits on the maintainer's accounts.
+
+## Phase 5: Enterprise, mobile and scale
+
+Every enterprise feature is free and open source, in `enterprise/`, and an
+admin turns each on or off, with no license key, seat limit or phone-home.
+One feature per pull request, in this order:
+
+- [ ] Headroom in opening the app: find what the start does before the last note shows, with 120 ms of margin left at the end of Phase 4, before Phase 5 adds its own.
+- [ ] The enterprise switch and the admin console: each enterprise feature on or off in the console or by environment variable, and usage, workspaces and security settings in one place.
+- [ ] Single sign-on: SAML 2.0 and enforced OpenID Connect, tested against Keycloak, Okta and Microsoft Entra ID.
+- [ ] Audit logs: every sign-in, permission change, share, export and deletion, searchable, and sent to a SIEM by syslog or webhook.
+- [ ] SCIM and LDAP: users and groups provisioned and deprovisioned.
+- [ ] Advanced permissions: custom roles, group-based access and domain-restricted sharing.
+- [ ] Data policies: retention rules, legal hold, and public sharing and export restricted per workspace.
+- [ ] Private AI endpoint enforcement: an admin locks AI to an approved internal endpoint for the whole organization.
+- [ ] High availability and the Helm chart: several server nodes with documented failover and zero-downtime upgrades, the sync service scaled out.
+- [ ] The mobile apps, for iOS and Android: offline editing, quick capture and the share sheet.
+- [ ] Integrations as plugins: GitHub, Slack, and Google Drive and Calendar through CalDAV and ICS first, with the admin's own OAuth credentials.
+
+The gate: a self-hosted install runs air-gapped, with single sign-on and
+audit logs on, and no license key.
+

@@ -41,7 +41,7 @@ editions, no license keys and no seat limits, and nothing phones home.
 
 ## Where it stands
 
-Four of Nether's six phases are done. The desktop app keeps a vault of
+Five of Nether's six phases are done. The desktop app keeps a vault of
 Markdown notes with the block editor, links and backlinks, tags, search,
 templates and export, and turns notes into databases with six views,
 relations, rollups and formulas, with the graph, the canvas, themes, and
@@ -52,7 +52,7 @@ mentions, history and backups, and serves the web app.
 
 Version 0.1.0, the first public release, with sync and the server, is
 ready to [install](../install/). The fifth phase, the platform,
-is under way: the [plugin API](../plugins/) is done, and Nether's own
+is done: the [plugin API](../plugins/) is done, and Nether's own
 diagrams, panels, canvas, graph and database layouts are built-in plugins
 on it. Plugins from a vault run in a sandbox, with only what each device
 approved for them, and plugins and themes install from Nether's
