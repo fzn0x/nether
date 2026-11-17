@@ -9,6 +9,7 @@ import { join as joinPath } from "node:path";
 import type { LightMyRequestResponse } from "fastify";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { DiskBlobs } from "../src/blobs.ts";
+import { builtInSettings, cut, generalLevel, settingsOf } from "../src/places.ts";
 import { type SetUp, type TestServer, bearer, setUp, startServer } from "./app.ts";
 
 type Test = TestServer & SetUp;
@@ -224,5 +225,37 @@ describe("each built-in role", () => {
       level: "view",
     });
     expect(given.statusCode).toBe(400);
+  });
+});
+
+describe("a role's settings", () => {
+  it("are a guest's for a role the server does not know, which give the least", () => {
+    expect(settingsOf("owner")).toBe(builtInSettings.owner);
+    expect(settingsOf("member")).toBe(builtInSettings.member);
+    expect(settingsOf("superuser")).toBe(builtInSettings.guest);
+  });
+
+  it("cut a level to At most, and open General at the lower of the two", () => {
+    const viewer = {
+      ...builtInSettings.member,
+      general: "edit" as const,
+      atMost: "comment" as const,
+    };
+    expect(cut("full", viewer)).toBe("comment");
+    expect(cut("view", viewer)).toBe("view");
+    expect(cut(undefined, viewer)).toBeUndefined();
+    expect(generalLevel(viewer)).toBe("comment");
+    expect(generalLevel(builtInSettings.member)).toBe("full");
+    expect(generalLevel(builtInSettings.guest)).toBeUndefined();
+  });
+
+  it("reach the apps in /api/me, with each workspace", async () => {
+    for (const role of roles) {
+      const me = (await call(people[role], "GET", "/api/me")).json<{
+        workspaces: { id: string; may: unknown }[];
+      }>();
+      const here = me.workspaces.find((workspace) => workspace.id === test.workspaceId);
+      expect(here?.may).toEqual(builtInSettings[role]);
+    }
   });
 });

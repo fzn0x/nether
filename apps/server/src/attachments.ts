@@ -12,7 +12,9 @@ import { type Database, readText } from "./db.ts";
 import { fail, uuidField } from "./http.ts";
 import { type LinkPolicies, visitOf, visitToken } from "./links.ts";
 import { accountOf, requestToken, sessionAccount, signedIn } from "./sessions.ts";
-import { membership, writes } from "./workspaces.ts";
+import { generalLevel, placeOf } from "./places.ts";
+import { writesAt } from "./units.ts";
+import { membership } from "./workspaces.ts";
 
 interface Params {
   readonly workspace: string;
@@ -67,7 +69,7 @@ export function registerAttachments(
   );
 
   async function place(userId: string, workspace: string) {
-    return membership(db, userId, workspace);
+    return placeOf(db, userId, workspace);
   }
 
   app.head<{ Params: Params }>(
@@ -92,7 +94,7 @@ export function registerAttachments(
       const workspace = request.params.workspace.toLowerCase();
       const found = await place(accountOf(request).id, workspace);
       if (found === undefined) return fail(reply, 404, "This account is in no such workspace.");
-      if (!writes(found.role))
+      if (!writesAt(generalLevel(found.settings)))
         return fail(reply, 403, "A guest may read this workspace, not change it.");
       const body = request.body as unknown;
       if (!Buffer.isBuffer(body) || body.length === 0) {

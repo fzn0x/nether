@@ -249,13 +249,14 @@ export function registerLinks(
     if (place.encryption !== "none") {
       return [409, "An encrypted workspace has no share links yet."] as const;
     }
-    const { levels, units } = await accessible(db, me, workspace);
+    const { levels, units, place: placed } = await accessible(db, me, workspace);
     if (units.get(unit)?.kind !== "page")
       return [404, "This workspace shares no such page."] as const;
     if (levels.get(unit) !== "full") {
       return [403, "Managing a page's links takes full access to it."] as const;
     }
-    return { workspace, unit };
+    // Whether its role makes links (ADR 0089); listing and revoking them take full access alone.
+    return { workspace, unit, makes: placed?.settings.shareLinks === true };
   }
 
   const listed = (request: FastifyRequest, rows: readonly Record<string, unknown>[]): LinkInfo[] =>
@@ -304,6 +305,8 @@ export function registerLinks(
       }
       const found = await managed(request);
       if (!("unit" in found)) return fail(reply, found[0], found[1]);
+      if (!found.makes)
+        return fail(reply, 403, "Your role in this workspace makes no share links.");
       const allowed = levelAllowed(request.body.level, await policies.of(found.workspace));
       if (allowed === undefined) return fail(reply, 403, linksOff);
       if (allowed !== request.body.level) return fail(reply, 403, linksViewOnly);

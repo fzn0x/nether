@@ -29,7 +29,7 @@ import {
 } from "./db.ts";
 import { fail, uuidField } from "./http.ts";
 import { accountOf, signedIn } from "./sessions.ts";
-import { membership } from "./workspaces.ts";
+import { type RoleSettings, placeOf, seesMembers, settingsOf } from "./places.ts";
 import {
   type EventActor,
   type EventDetails,
@@ -48,6 +48,8 @@ export interface RoleSetter {
   readonly account: string;
   /** Its role in the workspace, or `instance-admin` when an instance admin acts from the console. */
   readonly as: string;
+  /** What its role may do there (ADR 0089); its built-in role's settings when not given. */
+  readonly may?: RoleSettings;
   /** Where its request came from, for the change to be told of (ADR 0081). */
   readonly origin: EventOrigin;
 }
@@ -112,6 +114,16 @@ export function higherRole(a: Role | null, b: Role | null): Role | null {
 /** Whether an admin may act on a role: members and guests, not owners or other admins. */
 function adminMay(role: string): boolean {
   return role === "member" || role === "guest";
+}
+
+/**
+ * How far a setter manages a workspace's members: as an owner, any of them,
+ * as an instance admin from the console does; as one whose role manages
+ * members, as an admin's does, members and guests; or not at all.
+ */
+function managing(by: RoleSetter): "all" | "members" | "none" {
+  if (by.as === "owner" || by.as === "instance-admin") return "all";
+  return (by.may ?? settingsOf(by.as)).members === "manage" ? "members" : "none";
 }
 
 /** A group, as an event or an answer names it. */
@@ -248,14 +260,15 @@ export async function setRole(
   by: RoleSetter,
   events: ServerEvents,
 ): Promise<RoleOutcome> {
-  if (by.as !== "owner" && by.as !== "admin" && by.as !== "instance-admin") {
+  const manages = managing(by);
+  if (manages === "none") {
     return [403, "Only the workspace's owners and admins change roles."];
   }
   return db.transaction(async (tx) => {
     const locked = await lockMember(tx, workspace, user);
     if (locked === undefined) return [404, noMember] as const;
     const current = locked.role;
-    if (by.as === "admin" && !(adminMay(current) && adminMay(role))) {
+    if (manages === "members" && !(adminMay(current) && adminMay(role))) {
       return [403, "An admin changes members and guests; owners change the rest."] as const;
     }
     if (takesLastOwner(locked, role)) return [409, lastOwner] as const;
@@ -305,7 +318,8 @@ export async function removeMember(
     const locked = await lockMember(tx, workspace, user);
     if (locked === undefined) return [404, noMember] as const;
     const { role } = locked;
-    const allowed = leaving || by.as === "owner" || (by.as === "admin" && adminMay(role));
+    const manages = managing(by);
+    const allowed = leaving || manages === "all" || (manages === "members" && adminMay(role));
     if (!allowed) return [403, "Owners remove anyone, admins remove members and guests."] as const;
     if (takesLastOwner(locked, null)) return [409, lastOwner] as const;
     const given = await groupPlace(tx, workspace, user);
@@ -461,9 +475,9 @@ export function registerMembers(
     { schema: { params: workspaceParams }, preHandler: account },
     async (request, reply) => {
       const workspace = request.params.workspace.toLowerCase();
-      const place = await membership(db, accountOf(request).id, workspace);
+      const place = await placeOf(db, accountOf(request).id, workspace);
       if (place === undefined) return fail(reply, 404, noWorkspace);
-      if (place.role === "guest") {
+      if (!seesMembers(place.settings)) {
         return fail(reply, 403, "A guest sees what is shared with them, not who else is here.");
       }
       const { rows } = await db.query(
@@ -519,14 +533,14 @@ export function registerMembers(
       const user = request.params.user.toLowerCase();
       const { role } = request.body;
       const myId = accountOf(request).id;
-      const me = await membership(db, myId, workspace);
+      const me = await placeOf(db, myId, workspace);
       if (me === undefined) return fail(reply, 404, noWorkspace);
       const outcome = await setRole(
         db,
         workspace,
         user,
         role,
-        { account: myId, as: me.role, origin: originOf(request) },
+        { account: myId, as: me.role, may: me.settings, origin: originOf(request) },
         events,
       );
       if (typeof outcome !== "string") return fail(reply, outcome[0], outcome[1]);
@@ -542,13 +556,13 @@ export function registerMembers(
       const workspace = request.params.workspace.toLowerCase();
       const user = request.params.user.toLowerCase();
       const myId = accountOf(request).id;
-      const me = await membership(db, myId, workspace);
+      const me = await placeOf(db, myId, workspace);
       if (me === undefined) return fail(reply, 404, noWorkspace);
       const outcome = await removeMember(
         db,
         workspace,
         user,
-        { account: myId, as: me.role, origin: originOf(request) },
+        { account: myId, as: me.role, may: me.settings, origin: originOf(request) },
         events,
       );
       if (outcome !== "removed") return fail(reply, outcome[0], outcome[1]);
