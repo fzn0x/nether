@@ -920,6 +920,48 @@ export const migrations: readonly Migration[] = [
       );
     `,
   },
+  {
+    version: 29,
+    name: "custom roles",
+    sql: `
+      -- A workspace's custom roles (ADR 0089): each a base, one of the
+      -- built-in roles but owner's, and its settings, the ten things it may
+      -- do, as the server reads them; one it lacks is its base's.
+      CREATE TABLE custom_roles (
+        id uuid PRIMARY KEY,
+        workspace_id uuid NOT NULL REFERENCES workspaces (id) ON DELETE CASCADE,
+        name text NOT NULL,
+        base text NOT NULL CHECK (base IN ('admin', 'member', 'guest')),
+        settings jsonb NOT NULL DEFAULT '{}',
+        created_at timestamptz NOT NULL DEFAULT now(),
+        updated_at timestamptz NOT NULL DEFAULT now(),
+        UNIQUE (workspace_id, id)
+      );
+
+      CREATE UNIQUE INDEX custom_roles_names ON custom_roles (workspace_id, lower(name));
+
+      -- A membership's own custom role, whose base its own role is; a
+      -- group's, whose base the role it gives is; and an invitation's. Each
+      -- by the workspace and the role, so a role is only its own
+      -- workspace's, and none is deleted while one of these holds it.
+      -- Empty, as every row before, is the built-in role alone.
+      ALTER TABLE memberships ADD COLUMN custom_role uuid;
+      ALTER TABLE memberships ADD FOREIGN KEY (workspace_id, custom_role)
+        REFERENCES custom_roles (workspace_id, id);
+      CREATE INDEX memberships_by_custom_role ON memberships (custom_role)
+        WHERE custom_role IS NOT NULL;
+
+      ALTER TABLE group_workspaces ADD COLUMN custom_role uuid;
+      ALTER TABLE group_workspaces ADD FOREIGN KEY (workspace_id, custom_role)
+        REFERENCES custom_roles (workspace_id, id);
+      CREATE INDEX group_workspaces_by_custom_role ON group_workspaces (custom_role)
+        WHERE custom_role IS NOT NULL;
+
+      ALTER TABLE invitations ADD COLUMN custom_role uuid;
+      ALTER TABLE invitations ADD FOREIGN KEY (workspace_id, custom_role)
+        REFERENCES custom_roles (workspace_id, id);
+    `,
+  },
 ];
 
 /** The schema version this server writes and reads. */

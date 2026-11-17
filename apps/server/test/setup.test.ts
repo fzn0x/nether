@@ -50,6 +50,7 @@ describe("migrate", () => {
       "backup_state",
       "cluster_jobs",
       "cluster_nodes",
+      "custom_roles",
       "directories",
       "directory_accounts",
       "directory_domains",
