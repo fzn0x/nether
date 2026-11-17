@@ -116,12 +116,12 @@ async function tellRemoved(
   tx: Queryable,
   workspaceId: string,
   unit: string,
-  state: Uint8Array,
-  before: Uint8Array | undefined,
+  listed: ReadonlyMap<string, string>,
+  listedBefore: ReadonlyMap<string, string>,
   told: StoreTold,
 ): Promise<void> {
-  const now = new Set([...pathsOf(state).keys()].map((id) => id.toLowerCase()));
-  const was = new Map([...pathsOf(before)].map(([id, path]) => [id.toLowerCase(), path]));
+  const now = new Set([...listed.keys()].map((id) => id.toLowerCase()));
+  const was = new Map([...listedBefore].map(([id, path]) => [id.toLowerCase(), path]));
   const gone = [...was.keys()].filter((id) => !now.has(id));
   if (gone.length === 0) return;
   const { rows } = await tx.query(
@@ -220,10 +220,17 @@ export async function storeDocument(
     if (before !== undefined) {
       const unit = document === "vault" ? general : document.slice("vault.".length);
       const old = before.rows[0] === undefined ? undefined : readBytes(before.rows[0], "state");
+      // Each side's paths, parsed once for everything that reads them: a
+      // vault document lists every note of its unit.
+      const now = pathsOf(state);
+      const was = pathsOf(old);
       // Read against the index's paths before it takes the new ones.
-      if (watched) await keepListChanges(tx, workspaceId, unit, state, old);
-      if (told !== undefined) await tellRemoved(tx, workspaceId, unit, state, old, told);
-      await indexPaths(tx, workspaceId, unit, state, old);
+      if (watched) await keepListChanges(tx, workspaceId, unit, now, was);
+      // Only while a module wants them, as audit logs do when on (ADR 0081).
+      if (told !== undefined && (await told.events.wanted(tx))) {
+        await tellRemoved(tx, workspaceId, unit, now, was, told);
+      }
+      await indexPaths(tx, workspaceId, unit, now, was);
     } else if (!isComments(document)) {
       await indexNote(tx, workspaceId, document, state);
     }

@@ -151,16 +151,41 @@ export type EventListener = (
   db: Queryable,
 ) => Promise<void>;
 
+/** Whether a listener wants events now, as its feature's switch says: cheap, and asked often. */
+export type EventWants = (db: Queryable) => Promise<boolean>;
+
+interface Listening {
+  readonly listener: EventListener;
+  readonly wants: EventWants | undefined;
+}
+
 /** The server's events, which routes tell of and modules listen to. */
 export class ServerEvents {
-  readonly #listeners = new Set<EventListener>();
+  readonly #listeners = new Set<Listening>();
 
-  /** Runs `listener` for each event; returns what stops it. */
-  listen(listener: EventListener): () => void {
-    this.#listeners.add(listener);
+  /**
+   * Runs `listener` for each event; `wants`, when given, says whether it
+   * wants them now, so what is costly to find is found only then. Returns
+   * what stops it.
+   */
+  listen(listener: EventListener, wants?: EventWants): () => void {
+    const listening = { listener, wants };
+    this.#listeners.add(listening);
     return () => {
-      this.#listeners.delete(listener);
+      this.#listeners.delete(listening);
     };
+  }
+
+  /**
+   * Whether any listener wants events now: a route asks before work done
+   * only to tell of something, as finding the notes a vault document no
+   * longer lists. With none listening, or none on, nothing is done.
+   */
+  async wanted(db: Queryable): Promise<boolean> {
+    for (const { wants } of this.#listeners) {
+      if (wants === undefined || (await wants(db))) return true;
+    }
+    return false;
   }
 
   /**
@@ -168,7 +193,7 @@ export class ServerEvents {
    * fails rejects, so the change rolls back rather than go unrecorded.
    */
   async emit(db: Queryable, event: ServerEvent, origin: EventOrigin): Promise<void> {
-    for (const listener of this.#listeners) await listener(event, origin, db);
+    for (const { listener } of this.#listeners) await listener(event, origin, db);
   }
 
   /**
