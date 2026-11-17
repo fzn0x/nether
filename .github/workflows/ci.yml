@@ -255,6 +255,8 @@ jobs:
         run: pnpm --filter @nether/desktop test:e2e
       - name: The web app, served by a real server, in Chromium
         run: pnpm --filter @nether/web test:e2e
+      - name: The web clipper, unpacked in Chromium, against the web app's test server
+        run: pnpm --filter @nether/clipper test:e2e
       - uses: actions/upload-artifact@v7
         if: failure()
         with:
@@ -262,6 +264,7 @@ jobs:
           path: |
             apps/desktop/playwright-report/
             apps/web/playwright-report/
+            apps/clipper/playwright-report/
           retention-days: 7
 
   commits:
