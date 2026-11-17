@@ -129,6 +129,25 @@ describe("first-run setup", () => {
     expect(newSetupCode()).not.toBe(code);
   });
 
+  it("takes NETHER_SETUP_CODE, so every node accepts one code, read as a typed code is", async () => {
+    const base = { NETHER_DATABASE_URL: "postgres://nether@localhost:5432/nether" };
+    expect(readConfig(base).setupCode).toBeNull();
+    const set = readConfig({ ...base, NETHER_SETUP_CODE: " abcd-efgh-jkmn-pqrs " }).setupCode;
+    expect(set).toBe("abcd-efgh-jkmn-pqrs");
+    const { server } = await start(set ?? undefined);
+    const made = await server.inject({
+      method: "POST",
+      url: "/api/setup",
+      payload: { ...admin, code: "ABCDEFGHJKMNPQRS" },
+    });
+    expect(made.statusCode).toBe(201);
+    for (const code of ["too-short-code", "x".repeat(65)]) {
+      expect(() => readConfig({ ...base, NETHER_SETUP_CODE: code })).toThrow(
+        "NETHER_SETUP_CODE must be 16 to 64 characters",
+      );
+    }
+  });
+
   it("makes the admin and the first workspace once, for the code the server logged", async () => {
     const code = newSetupCode();
     const { db, server } = await start(code);

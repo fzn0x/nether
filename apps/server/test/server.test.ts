@@ -47,6 +47,7 @@ describe("readConfig", () => {
       aiPrivate: false,
       ssoPrivate: false,
       secretKey: null,
+      setupCode: null,
       mail: null,
       publicUrl: null,
       oidc: null,
