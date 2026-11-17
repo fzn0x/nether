@@ -1,0 +1,22 @@
+{
+  "name": "@nether/enterprise-admin",
+  "version": "0.0.0",
+  "private": true,
+  "description": "The admin console's pages beyond its features' switches: the server's usage, then its workspaces and security settings (ADR 0079).",
+  "license": "AGPL-3.0-or-later",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@nether/server": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^24.19.2",
+    "vitest": "^5.0.5"
+  }
+}
