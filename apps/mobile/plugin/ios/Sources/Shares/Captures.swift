@@ -8,9 +8,14 @@
 // simulator.
 import Foundation
 
-/// The App Group the app and its share extension share.
+/// The App Group the app and its share extension share: the one their
+/// Info.plist names, as nether.xcconfig sets it, else the project's own.
 public enum SharedGroup {
-    public static let identifier = "group.io.github.fzn0x.nether"
+    public static let identifier: String = {
+        let named = Bundle.main.object(forInfoDictionaryKey: "NetherAppGroup") as? String
+        if let named, !named.isEmpty, !named.contains("$(") { return named }
+        return "group.io.github.fzn0x.nether"
+    }()
 
     /// The group's folder, or nil where the app is not signed into it.
     public static func folder() -> URL? {
