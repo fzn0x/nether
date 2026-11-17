@@ -3966,7 +3966,8 @@ kbd {
 .new-folder-dialog,
 .text-prompt-dialog,
 .delete-folder-dialog,
-.move-note-dialog {
+.move-note-dialog,
+.button-ask-dialog {
   align-self: flex-start;
 }
 

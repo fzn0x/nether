@@ -27,12 +27,22 @@ export interface NoteRequest {
 /** How a command a button names ran: it did, the app has none, or it cannot run now. */
 export type CommandRun = "ran" | "missing" | "unavailable";
 
+/** A command a button asks about before it runs it (ADR 0072). */
+export interface CommandTitle {
+  /** Its name as the palette shows it now. */
+  readonly title: string;
+  /** Whether a plugin from the vault adds it, so a button asks each time it runs it. */
+  readonly fromVault: boolean;
+}
+
 /** What a live view may do from the note its block is in, as a button does (ADR 0072). */
 export interface CodeBlockNote {
   /** The note the block is in. */
   readonly id: NoteId;
   /** Runs a command of the registry by its ID, as the palette runs it. */
   readonly runCommand: (command: string) => CommandRun;
+  /** A command of the registry by its ID, as a button asks about it; none when there is none. */
+  readonly describeCommand: (command: string) => CommandTitle | undefined;
   /** Makes a note, or opens the one there; rejects with why it could not. */
   readonly createNote: (request: NoteRequest) => Promise<void>;
   /** Opens what a link names, as a link in the note does: a note, a part of one, or a file. */

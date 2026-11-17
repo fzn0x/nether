@@ -281,6 +281,12 @@ export default function NoteView(props: {
         found.run();
         return "ran";
       },
+      describeCommand: (command) => {
+        const found = plugins.commands.get(command);
+        return found === undefined
+          ? undefined
+          : { title: (found.nameNow ?? found.name)(), fromVault: found.fromVault === true };
+      },
       createNote: onCreateNote ?? (() => Promise.reject(new Error(t("buttonCannotCreate")))),
       openLink: (target) => {
         base.open(target);

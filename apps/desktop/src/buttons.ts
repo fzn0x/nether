@@ -1,11 +1,14 @@
 // What a button does when it is clicked (ADR 0072): its actions, one after
 // another, each through the app, as Meta Bind runs them. One that fails
-// stops the rest, and says why.
+// stops the rest, and says why. A note's buttons come from whoever may edit
+// it, so a button that runs commands asks first: once on this device for
+// the button as it is, or each time for a command a vault's plugin adds.
 import type { ButtonAction, ButtonProblem } from "@nether/automations";
 import type { JsonValue, LinkTarget, NoteId } from "@nether/core";
 import { parseLinkText } from "@nether/editor";
+import type { VaultSettings } from "@nether/storage";
 import { t } from "./messages.ts";
-import type { CommandRun, NoteRequest } from "./plugins/codeBlocks.ts";
+import type { CommandRun, CommandTitle, NoteRequest } from "./plugins/codeBlocks.ts";
 
 /** What a button's actions do through the app. */
 export interface ButtonHost {
@@ -21,6 +24,89 @@ export interface ButtonHost {
   /** Opens a web address in the browser. */
   readonly openUrl: (url: string) => void;
   readonly wait: (ms: number) => Promise<void>;
+}
+
+/** A command a button runs, as it asks about it. */
+export interface AskedCommand extends CommandTitle {
+  readonly id: string;
+}
+
+/**
+ * The commands a button runs that the app has, once each, in order: those
+ * it asks about before it runs. A command the app does not have runs
+ * nothing, and fails where the button reaches it.
+ */
+export function commandsToAsk(
+  actions: readonly ButtonAction[],
+  describe: (command: string) => CommandTitle | undefined,
+): AskedCommand[] {
+  const asked: AskedCommand[] = [];
+  for (const action of actions) {
+    if (action.type !== "command" || asked.some((each) => each.id === action.command)) continue;
+    const found = describe(action.command);
+    if (found !== undefined) asked.push({ id: action.command, ...found });
+  }
+  return asked;
+}
+
+/** A button's block as this device remembers running it: the SHA-256 of its text, in hex. */
+export async function blockHash(source: string): Promise<string> {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(source));
+  return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+/** How many of a note's buttons this device remembers, the newest kept. */
+const rememberedButtons = 50;
+
+const ranKey = (note: NoteId) => `buttons.ran.${note}`;
+
+async function ranHashes(settings: VaultSettings, note: NoteId): Promise<string[]> {
+  const bytes = await settings.setting(ranKey(note));
+  if (bytes === undefined) return [];
+  try {
+    const value = JSON.parse(new TextDecoder().decode(bytes)) as unknown;
+    return Array.isArray(value)
+      ? value.filter((item): item is string => typeof item === "string")
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+/** Whether this device ran a button of a note, its block as it is, when asked. */
+export async function ranBefore(
+  settings: VaultSettings,
+  note: NoteId,
+  hash: string,
+): Promise<boolean> {
+  return (await ranHashes(settings, note)).includes(hash);
+}
+
+/** Remembers on this device that a button of a note ran, its block as it is, so it asks no more. */
+export async function rememberRun(
+  settings: VaultSettings,
+  note: NoteId,
+  hash: string,
+): Promise<void> {
+  const kept = (await ranHashes(settings, note)).filter((each) => each !== hash);
+  const next = [...kept, hash].slice(-rememberedButtons);
+  await settings.setSetting(ranKey(note), new TextEncoder().encode(JSON.stringify(next)));
+}
+
+/**
+ * Whether a button asks before it runs its commands: always for a command
+ * a vault's plugin adds, whose code can change; otherwise until this device
+ * runs the button as it is.
+ */
+export async function mustAsk(
+  settings: VaultSettings,
+  note: NoteId,
+  hash: string,
+  asked: readonly AskedCommand[],
+): Promise<boolean> {
+  if (asked.length === 0) return false;
+  if (asked.some((command) => command.fromVault)) return true;
+  return !(await ranBefore(settings, note, hash));
 }
 
 /** Where an `open` action goes: a note, or a web address. */

@@ -1101,6 +1101,10 @@ export const messages = {
   buttonBadPlace: "A button cannot make a note at {path}.",
   buttonBadLink: "This button's link cannot be opened: {link}",
   buttonCannotCreate: "This note cannot make notes.",
+  buttonAskTitle: "Run this button?",
+  buttonAskBody: "This button runs: {commands}. Run it?",
+  buttonAskEveryTime: "A plugin from this vault adds a command it runs, so it asks each time.",
+  buttonAskRun: "Run",
   propertyCannotChange: "This note's properties cannot be changed now.",
 } as const;
 

@@ -1,10 +1,22 @@
 // What a button does when clicked: its actions in order through the app,
 // stopped at the first that fails, and its links read as Meta Bind reads them.
+// Its commands are asked about until this device has run it as it is.
 import { type ButtonAction, readButton } from "@nether/automations";
 import type { JsonValue, LinkTarget, NoteId } from "@nether/core";
+import { MemoryStore } from "@nether/storage";
 import { describe, expect, it } from "vitest";
-import { type ButtonHost, problemText, readLink, runActions } from "../src/buttons.ts";
-import type { CommandRun, NoteRequest } from "../src/plugins/codeBlocks.ts";
+import {
+  type ButtonHost,
+  blockHash,
+  commandsToAsk,
+  mustAsk,
+  problemText,
+  ranBefore,
+  readLink,
+  rememberRun,
+  runActions,
+} from "../src/buttons.ts";
+import type { CommandRun, CommandTitle, NoteRequest } from "../src/plugins/codeBlocks.ts";
 
 const here = "note-here" as NoteId;
 const other = "note-other" as NoteId;
@@ -137,5 +149,80 @@ describe("problemText", () => {
     expect(problemText({ kind: "badAction", action: "command", field: "command" })).toBe(
       "This button's command action needs its command.",
     );
+  });
+});
+
+describe("asking before a button runs commands", () => {
+  const titles: Readonly<Record<string, CommandTitle>> = {
+    trashNote: { title: "Move to trash", fromVault: false },
+    dayNote: { title: "Open today's note", fromVault: false },
+    "echo:say": { title: "Say it", fromVault: true },
+  };
+  const describeCommand = (command: string) => titles[command];
+  const commandButton = [
+    "label: Open the plan",
+    "actions:",
+    "  - type: updateMetadata",
+    "    bindTarget: status",
+    "    value: Done",
+    "  - type: command",
+    "    command: trashNote",
+    "  - type: command",
+    "    command: editor:toggle-bold",
+    "  - type: command",
+    "    command: trashNote",
+  ].join("\n");
+
+  it("names each command the app has, once, by its title", () => {
+    expect(commandsToAsk(actionsOf(commandButton), describeCommand)).toEqual([
+      { id: "trashNote", title: "Move to trash", fromVault: false },
+    ]);
+    expect(
+      commandsToAsk(actionsOf("label: x\naction:\n  type: sleep\n  ms: 1"), describeCommand),
+    ).toEqual([]);
+  });
+
+  it("remembers a run on this device by its note and its block's hash", async () => {
+    const store = new MemoryStore();
+    const hash = await blockHash(commandButton);
+    expect(hash).toMatch(/^[0-9a-f]{64}$/);
+    expect(await blockHash(commandButton)).toBe(hash);
+    const edited = await blockHash(commandButton.replace("Open the plan", "Open it"));
+    expect(edited).not.toBe(hash);
+
+    expect(await ranBefore(store, here, hash)).toBe(false);
+    await rememberRun(store, here, hash);
+    expect(await ranBefore(store, here, hash)).toBe(true);
+    // Another note's button, or this one edited, is not the one that ran.
+    expect(await ranBefore(store, other, hash)).toBe(false);
+    expect(await ranBefore(store, here, edited)).toBe(false);
+    // Remembered again, it is kept once.
+    await rememberRun(store, here, hash);
+    await rememberRun(store, here, edited);
+    const kept = await store.setting(`buttons.ran.${here}`);
+    expect(JSON.parse(new TextDecoder().decode(kept))).toEqual([hash, edited]);
+  });
+
+  it("keeps the newest fifty of a note's buttons, and reads a damaged record as none", async () => {
+    const store = new MemoryStore();
+    for (let n = 0; n < 51; n++) await rememberRun(store, here, `hash ${String(n)}`);
+    expect(await ranBefore(store, here, "hash 0")).toBe(false);
+    expect(await ranBefore(store, here, "hash 1")).toBe(true);
+    expect(await ranBefore(store, here, "hash 50")).toBe(true);
+    await store.setSetting(`buttons.ran.${here}`, new TextEncoder().encode("not json"));
+    expect(await ranBefore(store, here, "hash 50")).toBe(false);
+    await store.setSetting(`buttons.ran.${here}`, new TextEncoder().encode('{"a":1}'));
+    expect(await ranBefore(store, here, "hash 50")).toBe(false);
+  });
+
+  it("asks until the button ran as it is, and each time for a vault plugin's command", async () => {
+    const store = new MemoryStore();
+    const app = [{ id: "trashNote", ...titles.trashNote }] as const;
+    const fromVault = [...app, { id: "echo:say", title: "Say it", fromVault: true }];
+    expect(await mustAsk(store, here, "h", [])).toBe(false);
+    expect(await mustAsk(store, here, "h", app)).toBe(true);
+    await rememberRun(store, here, "h");
+    expect(await mustAsk(store, here, "h", app)).toBe(false);
+    expect(await mustAsk(store, here, "h", fromVault)).toBe(true);
   });
 });
