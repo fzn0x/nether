@@ -3,7 +3,7 @@
 // the certificates it signs with. node-saml reads no metadata, so this
 // does, with the XML parser node-saml itself uses.
 import { DOMParser } from "@xmldom/xmldom";
-import * as xpath from "xpath";
+import xpath from "xpath";
 
 /** What a provider's metadata says, as signing in uses it. */
 export interface IdpMetadata {
