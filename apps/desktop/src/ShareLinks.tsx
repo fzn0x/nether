@@ -1,12 +1,23 @@
 // A shared page's links, in its Share dialog (ADR 0071): each opens the
-// page and its subpages to anyone with it, in the web app, to read. Those
-// with full access make one, with an expiry and a password if they want,
-// copy it again, and revoke it, which ends the visits it started.
+// page and its subpages to anyone with it, in the web app, to read, to
+// comment on or to edit. Those with full access make one, with an expiry
+// and a password if they want, copy it again, and revoke it, which ends
+// the visits it started.
 import { type SyntheticEvent, useCallback, useEffect, useState } from "react";
 import { backend } from "./backend.ts";
 import { language, t } from "./messages.ts";
-import { type ShareLink, makeShareLink, revokeShareLink, shareLinks } from "./server.ts";
+import { type ShareLink, levelName, makeShareLink, revokeShareLink, shareLinks } from "./server.ts";
 import type { VaultLink } from "./sync.ts";
+
+/** The levels a link can open its page at. */
+const linkLevels = ["view", "comment", "edit"] as const;
+
+/** What a link lets anyone with it do, said in its list. */
+function letsOf(level: string): string {
+  if (level === "edit") return t("shareLinkToEdit");
+  if (level === "comment") return t("shareLinkToComment");
+  return t("shareLinkToRead");
+}
 
 /** A link's expiry, as the end of the day it names, in this device's time. */
 function endOf(day: string): string {
@@ -22,6 +33,7 @@ export function ShareLinks(props: {
   const { link, unit, onStatus, onError } = props;
   const { server, workspaceId } = link;
   const [links, setLinks] = useState<readonly ShareLink[]>([]);
+  const [level, setLevel] = useState<(typeof linkLevels)[number]>("view");
   const [expires, setExpires] = useState("");
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
@@ -66,10 +78,11 @@ export function ShareLinks(props: {
     event.preventDefault();
     act(async (token) => {
       const made = await makeShareLink(backend.serverFetch, server, token, workspaceId, unit, {
-        level: "view",
+        level,
         ...(expires === "" ? {} : { expiresAt: endOf(expires) }),
         ...(password === "" ? {} : { password }),
       });
+      setLevel("view");
       setExpires("");
       setPassword("");
       await navigator.clipboard.writeText(made.url).catch(() => undefined);
@@ -87,7 +100,7 @@ export function ShareLinks(props: {
           {links.map((each) => (
             <li key={each.id} className="share-link">
               <p>
-                {t("shareLinkToRead")}
+                {letsOf(each.level)}
                 {each.expiresAt === null
                   ? null
                   : ` ${t("shareLinkUntil", { date: dates.format(new Date(each.expiresAt)) })}`}
@@ -141,6 +154,22 @@ export function ShareLinks(props: {
         </ul>
       )}
       <form className="share-link-new" onSubmit={make}>
+        <label className="field">
+          {t("accessLevel")}
+          <select
+            value={level}
+            onChange={(event) => {
+              const chosen = linkLevels.find((each) => each === event.target.value);
+              if (chosen !== undefined) setLevel(chosen);
+            }}
+          >
+            {linkLevels.map((each) => (
+              <option key={each} value={each}>
+                {levelName(each)}
+              </option>
+            ))}
+          </select>
+        </label>
         <label className="field">
           {t("shareLinkExpires")}
           <input
