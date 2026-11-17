@@ -127,6 +127,8 @@ export function ExportDialog(props: {
         (path) => {
           if (controller.signal.aborted) return;
           setStatus(path === undefined ? { kind: "idle" } : { kind: "saved", path });
+          // Saved: the workspace's audit log is told of it (ADR 0081).
+          if (path !== undefined) policy.report({ scope, format, notes: chosen.length });
         },
         (error: unknown) => {
           setStatus(

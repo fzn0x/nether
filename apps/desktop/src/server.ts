@@ -502,6 +502,32 @@ export interface AccountKeys {
   readonly recoveryBox: string;
 }
 
+/** What an app exported from a vault linked to a workspace, as it tells the server (ADR 0081). */
+export interface ExportMade {
+  readonly scope: "note" | "folder" | "vault" | "view";
+  readonly format: "markdown" | "html" | "pdf" | "csv";
+  /** How many notes, or a view's rows. */
+  readonly notes: number;
+}
+
+/**
+ * Tells a workspace's server of an export made from its vault, so its audit
+ * log records it: what, in which format and how many notes, never a note's
+ * text.
+ */
+export async function reportExport(
+  fetcher: Fetch,
+  base: string,
+  token: string,
+  workspaceId: string,
+  made: ExportMade,
+): Promise<void> {
+  await request(fetcher, base, `/api/workspaces/${encodeURIComponent(workspaceId)}/exports`, {
+    token,
+    body: made,
+  });
+}
+
 /** The account's keys on the server; undefined when it has none yet. */
 export async function accountKeys(
   fetcher: Fetch,
