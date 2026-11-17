@@ -179,8 +179,9 @@ from the same file, such as:
 - **Enterprise features**, each off until you turn it on in the
   [admin console](../admin/): `NETHER_ENTERPRISE_AUDIT=on`, or `off`, sets
   that feature here instead, and the console shows it as set by its
-  variable. The others are `NETHER_ENTERPRISE_SSO`, `_SCIM`, `_POLICIES`,
-  `_ADMIN` and `_HA`.
+  variable. The others are `NETHER_ENTERPRISE_SSO`, `_SCIM`, `_POLICIES`
+  and `_ADMIN`. High availability, `NETHER_ENTERPRISE_HA`, is set here
+  alone, for a server of several nodes.
 
 ## Update it
 

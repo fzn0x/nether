@@ -31,6 +31,12 @@ server's settings to fix it there, or remove it to leave the switch to the
 console. A feature this server's build of Nether does not have yet shows
 **Not in this server's build of Nether yet.**
 
+**High availability** is the server's settings' alone, read as the
+server starts: `NETHER_ENTERPRISE_HA=on` on every node makes them one
+server, and the console shows it as set there. It describes how the
+server is deployed, as its database's address does, so the console has no
+switch for it.
+
 ## Nodes
 
 **Nodes** lists the server's nodes that wrote their heartbeat in the last
