@@ -12,7 +12,7 @@ import {
   deactivateAccount,
   reactivateAccount,
 } from "@nether/server/src/accounts.ts";
-import type { Policies } from "@nether/server/src/dataPolicies.ts";
+import type { DataPolicies } from "@nether/server/src/dataPolicies.ts";
 import {
   type Queryable,
   readBoolean,
@@ -445,10 +445,9 @@ export const heldMessage =
   "This account is in a workspace under legal hold: it stays deactivated until the hold ends.";
 
 /**
- * A directory's removal of a user, in the caller's transaction, under
- * the data policies read before it, none while that feature is off: the
+ * A directory's removal of a user, in the caller's transaction: the
  * account is deactivated, then, unless a workspace it is in is on legal
- * hold, it leaves every workspace, as an owner's removal does, with its
+ * hold, as the transaction reads the data policies now, it leaves every workspace, as an owner's removal does, with its
  * keys, grants, sites and webhooks there, and its groups; its identities
  * at providers go; and the directory lets it go. The account itself stays,
  * deactivated, as a record. `held` says the hold kept it.
@@ -457,7 +456,7 @@ export async function removeUser(
   tx: Queryable,
   context: UserContext,
   row: UserRow,
-  policies: Policies | undefined,
+  policies: DataPolicies,
 ): Promise<{ readonly held: boolean; readonly disconnect: boolean }> {
   const { directory, events, by } = context;
   const userId = row.userId;
@@ -468,11 +467,13 @@ export async function removeUser(
     "SELECT workspace_id, role FROM memberships WHERE user_id = $1 ORDER BY workspace_id",
     [userId],
   );
-  const holds = (workspace: string) =>
-    policies !== undefined && (policies.apart.get(workspace) ?? policies.every).legalHold;
-  if (places.some((place) => holds(readText(place, "workspace_id")))) {
-    return { held: true, disconnect };
-  }
+  // Read in this transaction, not from what is kept: a hold set a moment
+  // ago stops the removal.
+  const held = await policies.heldIn(
+    tx,
+    places.map((place) => readText(place, "workspace_id")),
+  );
+  if (held.size > 0) return { held: true, disconnect };
   for (const place of places) {
     const workspace = readText(place, "workspace_id");
     await deleteMembership(tx, workspace, userId);

@@ -424,12 +424,10 @@ export function registerScim(app: FastifyInstance, context: ScimContext): void {
 
     scim.delete<{ Params: UserParams }>(`${prefix}/Users/:id`, guarded, async (request, reply) => {
       const user = contextOf(request);
-      // Read before the transaction, as the policies are kept for a few seconds.
-      const policies = await dataPolicies.all();
       const removed = await changing(async (tx, closing) => {
         const row = await findUser(tx, user.directory.id, request.params.id, true);
         if (row === undefined) throw new ScimError(404, "There is no such user.");
-        const done = await removeUser(tx, user, row, policies);
+        const done = await removeUser(tx, user, row, dataPolicies);
         if (done.disconnect) closing.add(row.userId);
         return done;
       });
