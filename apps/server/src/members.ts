@@ -474,6 +474,26 @@ export function registerMembers(
           ORDER BY lower(u.name), lower(u.email)`,
         [workspace],
       );
+      // The groups that give each member a place here, with the role each gives (ADR 0085).
+      const placed = await db.query(
+        `SELECT gm.user_id, g.id, g.name, gw.role FROM group_workspaces gw
+           JOIN group_members gm ON gm.group_id = gw.group_id
+           JOIN groups g ON g.id = gw.group_id
+          WHERE gw.workspace_id = $1
+          ORDER BY array_position(ARRAY['owner', 'admin', 'member'], gw.role), lower(g.name), g.id`,
+        [workspace],
+      );
+      const groups = new Map<string, { id: string; name: string; role: string }[]>();
+      for (const row of placed.rows) {
+        const user = readText(row, "user_id");
+        const list = groups.get(user) ?? [];
+        list.push({
+          id: readText(row, "id"),
+          name: readText(row, "name"),
+          role: readText(row, "role"),
+        });
+        groups.set(user, list);
+      }
       return {
         members: rows.map((row) => ({
           id: readText(row, "id"),
@@ -483,6 +503,9 @@ export function registerMembers(
           joinedAt: readTime(row, "created_at").toISOString(),
           // Signs in no way until its directory turns it back on (ADR 0085).
           deactivated: readBoolean(row, "deactivated"),
+          // The groups that give it a place, the highest role first: below
+          // theirs, its role is the directory's to change.
+          groups: groups.get(readText(row, "id")) ?? [],
         })),
       };
     },

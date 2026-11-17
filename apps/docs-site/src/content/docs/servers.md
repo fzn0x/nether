@@ -137,6 +137,11 @@ Someone your organization's directory has deactivated shows as
 **Deactivated**. They sign in no way until it turns them back on, and keep
 their place and role meanwhile, so they come back as they were.
 
+Someone a group of the directory's gives a place shows **Through** the
+group. Owners may raise them above the group's role, but not lower them
+below it or remove them, and they cannot leave: the directory changes
+their groups.
+
 ## Editing together
 
 When others have a note open that you have open too, each edit reaches

@@ -15,6 +15,8 @@ import { cannotCount, tooManyTries } from "@nether/server/src/http.ts";
 import { bearerToken } from "@nether/server/src/sessions.ts";
 import { type Directory, directoryByToken, directoryIdPattern } from "./directories.ts";
 import {
+  groupResourceType,
+  groupSchema,
   listOf,
   mostResults,
   serviceProviderConfig,
@@ -22,8 +24,10 @@ import {
   userSchema,
 } from "./discovery.ts";
 import { ScimError, sendError, sendScim } from "./errors.ts";
+import { applyGroupPatch, groupFromResource } from "./groupDoc.ts";
+import { type GroupChanger, deleteGroup, lockGroup, writeGroup } from "./groupWrites.ts";
 import { findGroup, groupResource, listGroups, membersOf } from "./groups.ts";
-import { coreUserSchema, parseFilter } from "./paths.ts";
+import { coreGroupSchema, coreUserSchema, parseFilter } from "./paths.ts";
 import { applyPatch, docFromResource, operationsOf } from "./userDoc.ts";
 import {
   type UserContext,
@@ -228,7 +232,10 @@ export function registerScim(app: FastifyInstance, context: ScimContext): void {
       return sendScim(
         reply,
         200,
-        listOf([userResourceType(scimBase(config, directoryOf(request).id))]),
+        listOf([
+          userResourceType(scimBase(config, directoryOf(request).id)),
+          groupResourceType(scimBase(config, directoryOf(request).id)),
+        ]),
       );
     });
 
@@ -236,26 +243,29 @@ export function registerScim(app: FastifyInstance, context: ScimContext): void {
       `${prefix}/ResourceTypes/:name`,
       guarded,
       (request, reply) => {
-        if (request.params.name.toLowerCase() !== "user") {
-          throw new ScimError(404, `There is no resource type ${request.params.name}.`);
-        }
-        return sendScim(reply, 200, userResourceType(scimBase(config, directoryOf(request).id)));
+        const base = scimBase(config, directoryOf(request).id);
+        const name = request.params.name.toLowerCase();
+        if (name === "user") return sendScim(reply, 200, userResourceType(base));
+        if (name === "group") return sendScim(reply, 200, groupResourceType(base));
+        throw new ScimError(404, `There is no resource type ${request.params.name}.`);
       },
     );
 
     scim.get<{ Params: Params }>(`${prefix}/Schemas`, guarded, (request, reply) => {
       noFilter(request);
-      return sendScim(reply, 200, listOf([userSchema(scimBase(config, directoryOf(request).id))]));
+      const base = scimBase(config, directoryOf(request).id);
+      return sendScim(reply, 200, listOf([userSchema(base), groupSchema(base)]));
     });
 
     scim.get<{ Params: Params & { id: string } }>(
       `${prefix}/Schemas/:id`,
       guarded,
       (request, reply) => {
-        if (request.params.id.toLowerCase() !== coreUserSchema.toLowerCase()) {
-          throw new ScimError(404, `There is no schema ${request.params.id}.`);
-        }
-        return sendScim(reply, 200, userSchema(scimBase(config, directoryOf(request).id)));
+        const base = scimBase(config, directoryOf(request).id);
+        const id = request.params.id.toLowerCase();
+        if (id === coreUserSchema.toLowerCase()) return sendScim(reply, 200, userSchema(base));
+        if (id === coreGroupSchema.toLowerCase()) return sendScim(reply, 200, groupSchema(base));
+        throw new ScimError(404, `There is no schema ${request.params.id}.`);
       },
     );
 
@@ -317,7 +327,8 @@ export function registerScim(app: FastifyInstance, context: ScimContext): void {
       },
     );
 
-    // Groups, read: as Entra ID's test connection looks one up.
+    // Groups: as Entra ID's test connection looks one up, and as each
+    // provider pushes them. Each change settles the places it touches.
     scim.get<{ Params: Params; Querystring: ListQuery }>(
       `${prefix}/Groups`,
       guarded,
@@ -363,6 +374,95 @@ export function registerScim(app: FastifyInstance, context: ScimContext): void {
         );
       },
     );
+
+    const changerOf = (request: FastifyRequest): GroupChanger => {
+      const directory = directoryOf(request);
+      return {
+        directory: directory.id,
+        actor: { kind: "directory", id: directory.id, name: directory.name },
+        origin: originOf(request),
+        events,
+      };
+    };
+
+    async function answerGroup(
+      reply: FastifyReply,
+      directory: Directory,
+      groupId: string,
+      status: number,
+    ): Promise<FastifyReply> {
+      const row = await findGroup(db, directory.id, groupId);
+      if (row === undefined) throw new ScimError(404, "There is no such group.");
+      const members = await membersOf(db, [row.id]);
+      const resource = groupResource(
+        row,
+        members.get(row.id) ?? [],
+        scimBase(config, directory.id),
+      );
+      if (status === 201) {
+        const location = (resource.meta as { location?: string }).location;
+        if (location !== undefined) reply.header("location", location);
+      }
+      return sendScim(reply, status, resource);
+    }
+
+    scim.post<{ Params: Params }>(`${prefix}/Groups`, guarded, async (request, reply) => {
+      const changer = changerOf(request);
+      const doc = groupFromResource(request.body);
+      const written = await changing(async (tx, closing) => {
+        const done = await writeGroup(tx, changer, undefined, doc);
+        for (const user of done.closing) closing.add(user);
+        return done;
+      });
+      return answerGroup(reply, directoryOf(request), written.groupId, 201);
+    });
+
+    scim.put<{ Params: UserParams }>(`${prefix}/Groups/:id`, guarded, async (request, reply) => {
+      const changer = changerOf(request);
+      const doc = groupFromResource(request.body);
+      const written = await changing(async (tx, closing) => {
+        const row = await lockGroup(tx, changer.directory, request.params.id);
+        if (row === undefined) throw new ScimError(404, "There is no such group.");
+        const done = await writeGroup(tx, changer, row, doc);
+        for (const user of done.closing) closing.add(user);
+        return done;
+      });
+      return answerGroup(reply, directoryOf(request), written.groupId, 200);
+    });
+
+    // A group's PATCH answers 204, as Entra ID advises; Okta takes either.
+    scim.patch<{ Params: UserParams }>(`${prefix}/Groups/:id`, guarded, async (request, reply) => {
+      const changer = changerOf(request);
+      await changing(async (tx, closing) => {
+        const row = await lockGroup(tx, changer.directory, request.params.id);
+        if (row === undefined) throw new ScimError(404, "There is no such group.");
+        const members = await tx.query(
+          "SELECT user_id FROM group_members WHERE group_id = $1 ORDER BY created_at, user_id",
+          [row.id],
+        );
+        const doc = applyGroupPatch(
+          {
+            displayName: row.name,
+            externalId: row.externalId,
+            members: members.rows.map((each) => String(each.user_id)),
+          },
+          request.body,
+        );
+        const done = await writeGroup(tx, changer, row, doc);
+        for (const user of done.closing) closing.add(user);
+      });
+      return reply.code(204).send();
+    });
+
+    scim.delete<{ Params: UserParams }>(`${prefix}/Groups/:id`, guarded, async (request, reply) => {
+      const changer = changerOf(request);
+      await changing(async (tx, closing) => {
+        const row = await lockGroup(tx, changer.directory, request.params.id);
+        if (row === undefined) throw new ScimError(404, "There is no such group.");
+        for (const user of await deleteGroup(tx, changer, row)) closing.add(user);
+      });
+      return reply.code(204).send();
+    });
 
     scim.get<{ Params: UserParams; Querystring: ListQuery }>(
       `${prefix}/Users/:id`,

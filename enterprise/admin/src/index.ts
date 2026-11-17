@@ -34,6 +34,7 @@ const listQuery = {
   properties: {
     search: { type: "string", maxLength: 200 },
     after: { type: "string", minLength: 1, maxLength: 1000 },
+    ownerless: { type: "boolean" },
   },
 } as const;
 
@@ -123,11 +124,11 @@ export const adminModule: EnterpriseModule = {
     );
 
     const seeWorkspaces = instanceAdmin("see the server's workspaces");
-    app.get<{ Querystring: { search?: string; after?: string } }>(
+    app.get<{ Querystring: { search?: string; after?: string; ownerless?: boolean } }>(
       "/api/admin/workspaces",
       { schema: { querystring: listQuery }, preHandler: [whenOn, account, seeWorkspaces] },
       async (request, reply) => {
-        const { search, after } = request.query;
+        const { search, after, ownerless } = request.query;
         const cursor = after === undefined ? undefined : decodeCursor(after);
         if (after !== undefined && cursor === undefined) {
           return fail(reply, 400, "This is not a page of the list: start from its first.");
@@ -135,6 +136,7 @@ export const adminModule: EnterpriseModule = {
         return listWorkspaces(db, {
           ...(search === undefined ? {} : { search }),
           ...(cursor === undefined ? {} : { after: cursor }),
+          ...(ownerless === true ? { ownerless } : {}),
         });
       },
     );

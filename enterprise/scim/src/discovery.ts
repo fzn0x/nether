@@ -1,7 +1,7 @@
 // What a SCIM directory's address says of itself (RFC 7643, sections 5 to
 // 7): what the server supports, its resource types, and the schemas, with
 // the attributes Nether keeps.
-import { coreUserSchema } from "./paths.ts";
+import { coreGroupSchema, coreUserSchema } from "./paths.ts";
 
 export const listSchema = "urn:ietf:params:scim:api:messages:2.0:ListResponse";
 const configSchema = "urn:ietf:params:scim:schemas:core:2.0:ServiceProviderConfig";
@@ -132,6 +132,45 @@ export function userSchema(base: string | null) {
       }),
     ],
     meta: meta("Schema", base, `/Schemas/${coreUserSchema}`),
+  };
+}
+
+export function groupResourceType(base: string | null) {
+  return {
+    schemas: [resourceTypeSchema],
+    id: "Group",
+    name: "Group",
+    endpoint: "/Groups",
+    description: "A group of the directory's accounts, which may give them places in workspaces",
+    schema: coreGroupSchema,
+    meta: meta("ResourceType", base, "/ResourceTypes/Group"),
+  };
+}
+
+/** The core Group schema, with the attributes Nether keeps. */
+export function groupSchema(base: string | null) {
+  return {
+    schemas: [schemaSchema],
+    id: coreGroupSchema,
+    name: "Group",
+    description: "A group of the directory's accounts",
+    attributes: [
+      attribute("displayName", {
+        required: true,
+        uniqueness: "server",
+        description: "Unique within the directory, compared without regard to case.",
+      }),
+      attribute("members", {
+        type: "complex",
+        multiValued: true,
+        description: "The directory's users in the group; never another group.",
+        subAttributes: [
+          attribute("value", { mutability: "immutable", description: "A user's id." }),
+          attribute("display", { mutability: "readOnly", description: "The user's name." }),
+        ],
+      }),
+    ],
+    meta: meta("Schema", base, `/Schemas/${coreGroupSchema}`),
   };
 }
 

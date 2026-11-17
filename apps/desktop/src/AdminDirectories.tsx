@@ -5,6 +5,7 @@
 // shows its last characters and when it ends, and warns a month before.
 import { type SyntheticEvent, useCallback, useEffect, useState } from "react";
 import { t } from "./messages.ts";
+import { roleName } from "./server.ts";
 import { messageOf, webFetch, webServer } from "./web.ts";
 
 interface TokenView {
@@ -215,6 +216,202 @@ function TokenNotes(props: {
   );
 }
 
+interface GroupView {
+  readonly id: string;
+  readonly name: string;
+  readonly externalId: string | null;
+  readonly members: number;
+  readonly workspaces: readonly {
+    readonly id: string;
+    readonly name: string;
+    readonly role: string;
+  }[];
+}
+
+interface GroupsState {
+  readonly groups: readonly GroupView[];
+  readonly workspaces: readonly { readonly id: string; readonly name: string }[];
+}
+
+const groupRoles = ["member", "admin", "owner"] as const;
+
+/** One group's places, and the form that gives it one more. */
+function GroupPlaces(props: {
+  readonly directory: DirectoryView;
+  readonly group: GroupView;
+  readonly workspaces: GroupsState["workspaces"];
+  readonly busy: boolean;
+  readonly act: (work: () => Promise<string>) => void;
+}) {
+  const { directory, group, workspaces, busy, act } = props;
+  const [workspace, setWorkspace] = useState(workspaces[0]?.id ?? "");
+  const [role, setRole] = useState<string>("member");
+  const path = (to: string) =>
+    `/api/admin/directories/${directory.id}/groups/${group.id}/workspaces/${to}`;
+  const prefix = `group-${group.id}`;
+  return (
+    <li aria-labelledby={`${prefix}-name`}>
+      <h4 id={`${prefix}-name`}>
+        {group.name}{" "}
+        <span className="hint">{t("adminDirectoriesGroupMembers", { count: group.members })}</span>
+      </h4>
+      {group.workspaces.length === 0 ? (
+        <p className="hint">{t("adminDirectoriesGroupNoPlaces")}</p>
+      ) : (
+        <ul className="admin-directory-places">
+          {group.workspaces.map((place) => (
+            <li key={place.id}>
+              {t("adminDirectoriesGroupPlace", {
+                workspace: place.name,
+                role: roleName(place.role),
+              })}{" "}
+              <button
+                type="button"
+                className="quiet"
+                disabled={busy}
+                aria-label={t("adminDirectoriesGroupUnmapLabel", {
+                  group: group.name,
+                  workspace: place.name,
+                })}
+                onClick={() => {
+                  act(async () => {
+                    await send(path(place.id), "DELETE");
+                    return t("adminDirectoriesGroupUnmapped", {
+                      group: group.name,
+                      workspace: place.name,
+                    });
+                  });
+                }}
+              >
+                {t("adminDirectoriesGroupUnmap")}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      {workspaces.length === 0 ? null : (
+        <form
+          className="admin-directory-map"
+          onSubmit={(event) => {
+            event.preventDefault();
+            const name = workspaces.find((each) => each.id === workspace)?.name ?? "";
+            act(async () => {
+              await send(path(workspace), "PUT", { role });
+              return t("adminDirectoriesGroupMapped", { group: group.name, workspace: name });
+            });
+          }}
+        >
+          <label>
+            {t("adminDirectoriesGroupWorkspace")}
+            <select
+              value={workspace}
+              onChange={(event) => {
+                setWorkspace(event.target.value);
+              }}
+            >
+              {workspaces.map((each) => (
+                <option key={each.id} value={each.id}>
+                  {each.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            {t("adminDirectoriesGroupRole")}
+            <select
+              value={role}
+              onChange={(event) => {
+                setRole(event.target.value);
+              }}
+            >
+              {groupRoles.map((each) => (
+                <option key={each} value={each}>
+                  {roleName(each)}
+                </option>
+              ))}
+            </select>
+          </label>
+          <button
+            type="submit"
+            disabled={busy}
+            aria-label={t("adminDirectoriesGroupMapLabel", { group: group.name })}
+          >
+            {t("adminDirectoriesGroupMap")}
+          </button>
+        </form>
+      )}
+    </li>
+  );
+}
+
+/**
+ * A directory's groups, read when opened: the places each gives its
+ * members, mapped by an instance admin to workspaces at a role.
+ */
+function DirectoryGroups(props: { readonly directory: DirectoryView }) {
+  const { directory } = props;
+  const [state, setState] = useState<GroupsState | undefined>();
+  const [busy, setBusy] = useState(false);
+  const [status, setStatus] = useState<string | undefined>();
+  const [error, setError] = useState<string | undefined>();
+
+  const load = useCallback(async () => {
+    const answer = await send(`/api/admin/directories/${directory.id}/groups`, "GET");
+    setState((await answer.json()) as GroupsState);
+  }, [directory.id]);
+
+  const act = (work: () => Promise<string>) => {
+    setBusy(true);
+    setError(undefined);
+    setStatus(undefined);
+    work()
+      .then(async (done) => {
+        await load();
+        setStatus(done);
+      })
+      .catch((reason: unknown) => {
+        setError(reason instanceof Error ? reason.message : String(reason));
+      })
+      .finally(() => {
+        setBusy(false);
+      });
+  };
+
+  return (
+    <details
+      className="admin-directory-groups"
+      onToggle={(event) => {
+        if (event.currentTarget.open && state === undefined) {
+          load().catch((reason: unknown) => {
+            setError(reason instanceof Error ? reason.message : String(reason));
+          });
+        }
+      }}
+    >
+      <summary>{t("adminDirectoriesGroups")}</summary>
+      <p className="hint">{t("adminDirectoriesGroupsIntro")}</p>
+      {state === undefined ? null : state.groups.length === 0 ? (
+        <p>{t("adminDirectoriesNoGroups")}</p>
+      ) : (
+        <ul className="admin-directory-group-list">
+          {state.groups.map((group) => (
+            <GroupPlaces
+              key={group.id}
+              directory={directory}
+              group={group}
+              workspaces={state.workspaces}
+              busy={busy}
+              act={act}
+            />
+          ))}
+        </ul>
+      )}
+      {status === undefined ? null : <p role="status">{status}</p>}
+      {error === undefined ? null : <p role="alert">{error}</p>}
+    </details>
+  );
+}
+
 export function DirectoriesPage() {
   const [state, setState] = useState<DirectoriesState | undefined>();
   const [editing, setEditing] = useState<string | undefined>();
@@ -327,6 +524,7 @@ export function DirectoriesPage() {
                       </div>
                     </dl>
                     <TokenNotes directory={directory} made={made} />
+                    <DirectoryGroups directory={directory} />
                     <div className="dialog-actions">
                       {removing === directory.id ? (
                         <>

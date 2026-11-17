@@ -19,6 +19,8 @@ interface WorkspaceSummary {
   readonly name: string;
   readonly encryption: "none" | "end-to-end";
   readonly owners: readonly Owner[];
+  /** Its owners whose accounts are not deactivated. */
+  readonly activeOwners: number;
   readonly roles: {
     readonly owner: number;
     readonly admin: number;
@@ -76,9 +78,10 @@ async function answered<T>(answer: Response): Promise<T> {
   return (await answer.json()) as T;
 }
 
-function page(search: string, after?: string): Promise<Page> {
+function page(search: string, ownerless: boolean, after?: string): Promise<Page> {
   const query = new URLSearchParams();
   if (search !== "") query.set("search", search);
+  if (ownerless) query.set("ownerless", "true");
   if (after !== undefined) query.set("after", after);
   const suffix = query.toString() === "" ? "" : `?${query.toString()}`;
   return webFetch(`${webServer}/api/admin/workspaces${suffix}`).then((answer) =>
@@ -127,6 +130,9 @@ function List(props: {
                 </button>
                 {workspace.encryption === "end-to-end" ? (
                   <span className="hint admin-tag">{t("adminEncryptedTag")}</span>
+                ) : null}
+                {workspace.activeOwners === 0 ? (
+                  <span className="admin-tag admin-ownerless">{t("adminNoActiveOwner")}</span>
                 ) : null}
               </th>
               <td>
@@ -232,8 +238,10 @@ function Members(props: {
 
 export function WorkspacesPage() {
   const [search, setSearch] = useState("");
+  // Only the workspaces with no active owner, for an instance admin to give one (ADR 0085).
+  const [ownerless, setOwnerless] = useState(false);
   // The search the list shows, which its next pages keep.
-  const [asked, setAsked] = useState("");
+  const [asked, setAsked] = useState({ search: "", ownerless: false });
   const [list, setList] = useState<Page | undefined>();
   const [opened, setOpened] = useState<Opened | undefined>();
   const [busy, setBusy] = useState(false);
@@ -245,12 +253,12 @@ export function WorkspacesPage() {
   }, []);
 
   const find = useCallback(
-    (query: string) => {
+    (query: string, onlyOwnerless: boolean) => {
       setError(undefined);
       setList(undefined);
-      page(query)
+      page(query, onlyOwnerless)
         .then((found) => {
-          setAsked(query);
+          setAsked({ search: query, ownerless: onlyOwnerless });
           setList(found);
         })
         .catch(report);
@@ -259,14 +267,14 @@ export function WorkspacesPage() {
   );
 
   useEffect(() => {
-    find("");
+    find("", false);
   }, [find]);
 
   const more = () => {
     const next = list?.next;
     if (next === undefined || next === null) return;
     setBusy(true);
-    page(asked, next)
+    page(asked.search, asked.ownerless, next)
       .then((found) => {
         setList((current) => ({
           workspaces: [...(current?.workspaces ?? []), ...found.workspaces],
@@ -289,7 +297,7 @@ export function WorkspacesPage() {
     setOpened(undefined);
     setStatus(undefined);
     // Its owners or members may have changed while it was open.
-    find(asked);
+    find(asked.search, asked.ownerless);
   };
 
   const setRole = (member: Member, role: string) => {
@@ -339,7 +347,7 @@ export function WorkspacesPage() {
             role="search"
             onSubmit={(event) => {
               event.preventDefault();
-              find(search.trim());
+              find(search.trim(), ownerless);
             }}
           >
             <label className="field">
@@ -351,6 +359,17 @@ export function WorkspacesPage() {
                   setSearch(event.target.value);
                 }}
               />
+            </label>
+            <label className="field-check">
+              <input
+                type="checkbox"
+                checked={ownerless}
+                onChange={(event) => {
+                  setOwnerless(event.target.checked);
+                  find(search.trim(), event.target.checked);
+                }}
+              />
+              {t("adminOnlyOwnerless")}
             </label>
             <button type="submit">{t("adminFindButton")}</button>
           </form>

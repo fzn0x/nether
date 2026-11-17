@@ -23,10 +23,19 @@ import { useModal } from "./useModal.ts";
 
 const roles = ["owner", "admin", "member", "guest"] as const;
 
-/** The roles one at `actor` may give someone at `target`; none when they may not change it. */
-function rolesFor(actor: string, target: string): readonly string[] {
-  if (actor === "owner") return roles;
-  if (actor === "admin" && (target === "member" || target === "guest")) return ["member", "guest"];
+/**
+ * The roles one at `actor` may give someone at `target`, none below what
+ * the member's groups give, which is their directory's to change; none
+ * when they may not change it.
+ */
+function rolesFor(actor: string, target: string, groupRole: string | undefined): readonly string[] {
+  const floor = groupRole === undefined ? roles.length : roles.indexOf(groupRole as never);
+  const atLeast = (choices: readonly string[]) =>
+    choices.filter((role) => roles.indexOf(role as never) <= floor);
+  if (actor === "owner") return atLeast(roles);
+  if (actor === "admin" && (target === "member" || target === "guest")) {
+    return atLeast(["member", "guest"]);
+  }
   return [];
 }
 
@@ -127,7 +136,8 @@ export function MembersDialog(props: {
         {list === undefined ? null : (
           <ul className="member-list" aria-label={t("membersList")}>
             {list.map((member) => {
-              const choices = member.id === me ? [] : rolesFor(myRole, member.role);
+              const placed = member.groups[0];
+              const choices = member.id === me ? [] : rolesFor(myRole, member.role, placed?.role);
               return (
                 <li key={member.id}>
                   <span className="member-name">
@@ -136,6 +146,13 @@ export function MembersDialog(props: {
                     {member.deactivated ? (
                       <span className="hint">{t("accountDeactivated")}</span>
                     ) : null}
+                    {member.groups.length === 0 ? null : (
+                      <span className="hint">
+                        {t("membersThroughGroup", {
+                          group: member.groups.map((group) => group.name).join(", "),
+                        })}
+                      </span>
+                    )}
                   </span>
                   <span className="hint">{member.email}</span>
                   {choices.length === 0 ? (
@@ -170,7 +187,7 @@ export function MembersDialog(props: {
                       ))}
                     </select>
                   )}
-                  {member.id !== me && removes(myRole, member.role) ? (
+                  {member.id !== me && placed === undefined && removes(myRole, member.role) ? (
                     <button
                       type="button"
                       className="quiet danger"

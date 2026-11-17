@@ -69,7 +69,8 @@ part of a member's name or email address, and choose **Find**.
 
 Each workspace shows:
 
-- its name, and **End-to-end encrypted** when it is;
+- its name, **End-to-end encrypted** when it is, and **No active owner**
+  when its owners have left or been deactivated;
 - its **Owners**, by name, each marked **(deactivated)** when their
   account is;
 - how many **Members** it has, guests too;
@@ -79,7 +80,8 @@ Each workspace shows:
   server stores them;
 - its **Last change**, when a note in it last changed on the server.
 
-The console never shows a note's title or text.
+**Only those with no active owner** lists those alone, for you to give
+each a new owner. The console never shows a note's title or text.
 
 ### Giving a workspace a new owner
 
@@ -332,7 +334,32 @@ write; that is expected.
 **Removing a directory** leaves its accounts as they are, active or not,
 managed by no directory.
 
-Groups, and reading an LDAP directory, come next.
+### Groups
+
+A directory pushes its groups too: Okta through its group push, Entra ID
+with the groups assigned to the app. A group's members are accounts the
+same directory manages; a group is never a member of another. Open
+**Groups and their places** under a directory to see its groups, each
+with how many members it has.
+
+- **Give a place**: choose a workspace and a role, owner, admin or
+  member, and the group's members have that place there at once. A
+  group never makes a guest.
+- A member keeps the higher of its own role and the roles its groups
+  give. When the group lets them go, or loses its place, they keep only
+  their own role, or none: someone only a group placed leaves the
+  workspace, and their apps connect again and are refused.
+- **Take away** removes the group's place in that workspace, the same way.
+- A workspace's owners may raise a member above what its groups give,
+  which makes that role the member's own. They cannot lower it below its
+  groups or remove it, and the member cannot leave: the members list says
+  which group gives the place, and the directory changes it.
+- Someone a group places in an end-to-end encrypted workspace waits for a
+  member online to give them its key, as anyone new does.
+- **Removing a directory** keeps each place its groups gave, as the
+  member's own role.
+
+Reading an LDAP directory comes next.
 
 ## AI endpoints
 
