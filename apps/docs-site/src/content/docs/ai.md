@@ -106,3 +106,29 @@ instruction. Links, tags and formatting in the reply become the note's
 own. Nether records nothing of what is sent or received.
 
 Writing assist works on notes shown as blocks, not in source mode.
+
+## Asking your notes
+
+With a provider, the sidebar has an **Ask** tab, and the **View** menu has
+**Ask your notes**. Type a question and press Enter; Shift and Enter makes
+a new line. The tab says first where it goes, such as "Asks Ollama,
+llama3.2 on this computer".
+
+Nether finds the notes your question is about with the vault's own
+search, by its words, and by meaning too once search by meaning is on for
+the vault. It sends the question with at most eight passages of those
+notes, each under its heading, and the questions and answers before it.
+If no note has your words, nothing is sent: try others.
+
+The answer cites its passages by number, as [2]. Each citation is a link:
+choose it to open the note at that passage. A citation that names no
+passage Nether sent shows dotted and is no link, as the model wrote it
+unchecked. **Read from** under each answer lists every passage that was
+sent, those cited in bold.
+
+The questions stay while the vault is open. **Save as note** keeps them as
+a note, named by the first question, each answer's citations links to
+their notes' headings, which Obsidian reads too. **Clear** starts again.
+
+In the web app, asking goes through your server as writing assist does,
+and an end-to-end encrypted workspace has it in the desktop app only.
