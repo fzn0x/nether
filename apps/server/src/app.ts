@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import rateLimit from "@fastify/rate-limit";
 import Fastify, { type FastifyInstance } from "fastify";
@@ -30,6 +31,8 @@ import { DataPolicies } from "./dataPolicies.ts";
 import { registerSetup } from "./setup.ts";
 import { registerRelay } from "./relay.ts";
 import { type ClusterBus, ProcessBus } from "./cluster.ts";
+import { ClusterJobs } from "./jobs.ts";
+import { purgeNodes, registerNodes, startHeartbeat } from "./nodes.ts";
 import { registerSync } from "./sync.ts";
 import { registerLinks } from "./links.ts";
 import { registerPublished } from "./published.ts";
@@ -185,8 +188,13 @@ export async function buildApp(config: Config, services: Services): Promise<Fast
   registerVersions(app, services.db);
   registerNotifications(app, services.db, services.mailer);
   registerSearch(app, services.db);
-  // Versions older than the admin keeps them, and old notifications, go on
-  // start, then every hour.
+  // This node among the server's nodes (ADR 0082).
+  const node = { id: randomUUID(), name: config.nodeName, version };
+  registerNodes(app, services.db, node);
+  // Work that runs once across the nodes, claimed in the database.
+  const jobs = new ClusterJobs(services.db, node.id, app.log);
+  // Versions older than the admin keeps them, old notifications and
+  // deliveries, and nodes gone without saying so: once an hour.
   const purge = async () => {
     await purgeVersions(services.db, config.historyDays).catch((error: unknown) => {
       app.log.error({ err: error }, "Could not delete the versions kept too long");
@@ -197,9 +205,12 @@ export async function buildApp(config: Config, services: Services): Promise<Fast
     await purgeDeliveries(services.db).catch((error: unknown) => {
       app.log.error({ err: error }, "Could not delete the webhooks' old deliveries");
     });
+    await purgeNodes(services.db).catch((error: unknown) => {
+      app.log.error({ err: error }, "Could not forget the nodes gone");
+    });
   };
-  const hourly = setInterval(() => void purge(), 3_600_000);
-  hourly.unref();
+  jobs.every("purge", 3_600_000, purge);
+  let heartbeat: ReturnType<typeof startHeartbeat> | undefined;
   // Scheduled backups (ADR 0052): checked as the server starts, then every
   // ten minutes, one made when the last began longer ago than asked.
   const backup = config.backup;
@@ -237,15 +248,23 @@ export async function buildApp(config: Config, services: Services): Promise<Fast
         })();
   app.addHook("onReady", async () => {
     backups?.check();
-    await purge();
+    jobs.start();
+    heartbeat = startHeartbeat(services.db, node, {
+      log: app.log,
+      highlyAvailable: () => switches.on("ha"),
+    });
+    // Listed from the start.
+    await heartbeat.beat().catch((error: unknown) => {
+      app.log.error({ err: error }, "Could not write this node's heartbeat");
+    });
     // What was stored before search was, indexed once (ADR 0050).
     const indexed = await backfillSearch(services.db);
     if (indexed > 0) app.log.info({ documents: indexed }, "Indexed the stored notes for search");
   });
-  app.addHook("onClose", (_instance, done) => {
-    clearInterval(hourly);
+  app.addHook("onClose", async () => {
+    jobs.stop();
     if (backups !== undefined) clearInterval(backups.timer);
-    done();
+    await heartbeat?.stop();
   });
   if (services.blobs !== undefined) {
     registerAttachments(app, services.db, services.blobs, config.attachmentLimit, dataPolicies);
@@ -327,6 +346,7 @@ export async function buildApp(config: Config, services: Services): Promise<Fast
       disconnect: reconnect,
       security,
       aiEndpoints,
+      every: jobs.every,
       events,
       dataPolicies,
     },

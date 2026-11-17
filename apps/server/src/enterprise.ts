@@ -11,6 +11,7 @@ import type { Config } from "./config.ts";
 import type { DataPolicies } from "./dataPolicies.ts";
 import type { Database, Queryable } from "./db.ts";
 import type { ServerEvents } from "./events.ts";
+import type { Every } from "./jobs.ts";
 import type { SecuritySettings } from "./settings.ts";
 
 export const enterpriseFeatures = ["sso", "scim", "audit", "policies", "admin", "ha"] as const;
@@ -34,6 +35,11 @@ export interface EnterpriseServices {
   readonly security: SecuritySettings;
   /** The approved AI endpoints (ADR 0086), which the `policies` module's page reads and sets. */
   readonly aiEndpoints: AiEndpoints;
+  /**
+   * Runs work once in each period across the server's nodes, claimed in
+   * the database (ADR 0082), as a daily refresh or an hourly purge.
+   */
+  readonly every: Every;
   /**
    * The server's events (ADR 0081): what a module listens to, as audit logs
    * do, and tells of when it changes what the server's routes would, as the

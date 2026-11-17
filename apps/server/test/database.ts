@@ -3,7 +3,13 @@
 // schema of its own there, dropped when the test closes it.
 import { randomUUID } from "node:crypto";
 import { PGlite } from "@electric-sql/pglite";
-import { type Database, type Queryable, type Row, connectPostgres } from "../src/db.ts";
+import {
+  type Database,
+  type Queryable,
+  type Row,
+  connectPostgres,
+  processLocks,
+} from "../src/db.ts";
 
 // Without parameters node-postgres runs several statements at once, as the
 // migrations do; PGlite does that only through exec.
@@ -29,6 +35,7 @@ export async function testDatabase(): Promise<Database> {
     return {
       query: db.query.bind(db),
       transaction: db.transaction.bind(db),
+      lock: db.lock.bind(db),
       async close() {
         await db.close();
         await admin.query(`DROP SCHEMA ${schema} CASCADE`);
@@ -40,6 +47,7 @@ export async function testDatabase(): Promise<Database> {
   return {
     query: wrap(lite),
     transaction: (work) => lite.transaction((tx) => work({ query: wrap(tx) })),
+    lock: processLocks(),
     close: () => lite.close(),
   };
 }
