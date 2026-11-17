@@ -2,15 +2,18 @@
 // simulator, gives it a vault in its Documents with one note, the vault it
 // had open last, starts it, and waits for the page's marks in the system's
 // log: the vault open, and its notes read. Then the vault's index, in the
-// app's SQLite, holds the note with the SHA-256 the plugin worked out, and
+// app's SQLite, holds the note with the size and time the plugin listed, and
 // search finds it by a word of it: the page, the plugin and SQLite together.
+// The index learns a note's SHA-256 only as the note is opened or written,
+// not as the vault is listed and its notes read for search; the plugin's own
+// tests check the hash.
 //
 //   pnpm --filter @nether/mobile smoke:ios <path/to/App.app> [simulator UDID]
 //
 // It needs macOS with Xcode, and a booted simulator, or the UDID of one.
 import { execFileSync, spawn } from "node:child_process";
-import { createHash, randomUUID } from "node:crypto";
-import { existsSync, mkdirSync, readdirSync, writeFileSync } from "node:fs";
+import { randomUUID } from "node:crypto";
+import { existsSync, mkdirSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -40,6 +43,8 @@ async function until(what, check) {
 // The page's marks, from the plugin's log, with the milliseconds since the app's process started.
 const marks = new Map();
 let log;
+/** Reads the vault's index, once it is found, with the system's sqlite3. */
+let sql;
 
 try {
   simctl("terminate", device, app);
@@ -108,15 +113,19 @@ try {
     );
     return name === undefined ? undefined : join(databases, name);
   });
-  const sql = (query) =>
-    execFileSync("sqlite3", ["-readonly", db, query], { encoding: "utf8" }).trim();
-  const hash = createHash("sha256").update(note).digest("hex");
+  sql = (query) => execFileSync("sqlite3", ["-readonly", db, query], { encoding: "utf8" }).trim();
+  // Welcome.md is a note in the index, with the size and the time in
+  // milliseconds that the plugin listed: what the file has on the disk.
   const indexed = await until("the note in the index", () => {
-    const found = sql("SELECT ifnull(hash, '') FROM files WHERE path = 'Welcome.md'");
+    const found = sql(
+      "SELECT size || ' ' || modified FROM files WHERE path = 'Welcome.md' AND note IS NOT NULL",
+    );
     return found === "" ? undefined : found;
   });
-  if (indexed !== hash) {
-    throw new Error(`The index has Welcome.md with the hash ${indexed}, not ${hash}.`);
+  const file = statSync(join(vault, "Welcome.md"), { bigint: true });
+  const listed = `${file.size} ${file.mtimeNs / 1_000_000n}`;
+  if (indexed !== listed) {
+    throw new Error(`The index has Welcome.md at size and time ${indexed}, not ${listed}.`);
   }
   await until("search to find the note", () =>
     sql("SELECT count(*) FROM note_texts WHERE note_texts MATCH 'lighthouse'") === "1"
@@ -125,6 +134,16 @@ try {
   );
   console.log("The vault opened, its note is in the index, and search finds it.");
 } catch (error) {
+  // What the index holds, to tell a vault never listed from a note never indexed.
+  if (sql !== undefined) {
+    try {
+      const files = sql("SELECT path, ifnull(note, '-'), size, modified FROM files");
+      const texts = sql("SELECT count(*) FROM note_texts");
+      console.error(`The index's files:\n${files || "(none)"}\nIts notes for search: ${texts}`);
+    } catch (reason) {
+      console.error(`The index could not be read: ${reason}`);
+    }
+  }
   try {
     simctl("io", device, "screenshot", screenshot);
     console.error(`What the simulator showed: ${screenshot}`);
