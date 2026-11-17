@@ -540,6 +540,24 @@ export const messages = {
   aiWorkspaceAllows: "Members' apps may offer AI in {workspace}",
   aiWorkspaceAllowsHint: "As its owner or admin, you choose this for everyone in the workspace.",
   aiWorkspaceOff: "The owners or admins of {workspace} turned AI off for it.",
+  aiMeaning: "Search by meaning",
+  aiMeaningIntro:
+    "Finds notes by what they are about. The vault's notes go to an embedding model a passage at a time, and what comes back is kept on this computer.",
+  aiMeaningNeedsOpenai:
+    "Search by meaning needs an OpenAI-compatible provider: Anthropic offers no embedding models.",
+  aiMeaningProvider: "Provider",
+  aiMeaningModel: "Embedding model",
+  aiMeaningSends:
+    "Turning it on sends the whole vault's text to the provider once, then each passage that changes.",
+  aiMeaningTurnOn: "Turn on",
+  aiMeaningUse: "Use these",
+  aiMeaningTurnOff: "Turn off",
+  aiMeaningOn: "On, with {model} on {provider}: the vault is embedded.",
+  aiMeaningStarting: "Getting ready to embed the vault.",
+  aiMeaningWaitsVault: "Search by meaning waits: AI is off in this vault.",
+  aiMeaningWaitsWorkspace:
+    "Search by meaning waits: the workspace's owners or admins turned AI off.",
+  aiMeaningWaitsProvider: "Search by meaning waits: its provider is no longer set up here.",
   aiWorkspaceUnreachable: "{server} could not be reached to check {workspace}: {error}",
   aiNoWorkspace: "This account is no longer in {workspace}.",
   aiWorkspaceOffNow: "AI is off here now, for this vault or its workspace, so nothing was sent.",
