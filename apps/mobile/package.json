@@ -15,9 +15,11 @@
     "smoke:ios": "node scripts/smoke-ios.mjs"
   },
   "dependencies": {
+    "@aparajita/capacitor-secure-storage": "8.0.1",
     "@capacitor-community/sqlite": "8.1.1",
     "@capacitor/android": "8.6.0",
     "@capacitor/app": "8.1.2",
+    "@capacitor/browser": "8.0.5",
     "@capacitor/core": "8.6.0",
     "@capacitor/ios": "8.6.0",
     "@capawesome/capacitor-background-task": "8.0.3",
