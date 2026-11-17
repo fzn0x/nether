@@ -110,6 +110,14 @@ from the same file, such as:
 - **Webhooks to your own network**: webhooks reach public addresses only.
   `NETHER_WEBHOOK_PRIVATE=192.168.1.20` lets them reach that one, or a
   range as `10.0.0.0/8`, or `on` any; those may use `http://`.
+- **AI in the web app**, through the server: `NETHER_SECRET_KEY`, made
+  with `openssl rand -base64 32`, lets the server keep providers' keys,
+  sealed with it. Keep it safe: a restored backup needs the same one to
+  open them. `NETHER_AI_PRIVATE=loopback`, or an address or range, lets
+  the providers you set for everyone reach a model on your own network,
+  as Ollama beside the server; accounts' own providers reach public
+  addresses only. `NETHER_AI=admin` leaves only your providers, and
+  `NETHER_AI=off` turns AI through the server off. See [AI](../ai/).
 
 ## Update it
 

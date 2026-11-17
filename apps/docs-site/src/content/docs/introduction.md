@@ -62,8 +62,9 @@ webhooks tell other services when notes change; the app makes both.
 [PDFs](../pdfs/) open in a view of their own, to be highlighted and
 commented on, each highlight Markdown that Obsidian reads. [Writing
 assist](../ai/) rewrites, fixes, summarizes, translates or continues what
-you select, with an AI provider you bring. The [roadmap](../roadmap/)
-lists what each phase delivers.
+you select, with an AI provider you bring, in the desktop app and in the
+web app through its server. The [roadmap](../roadmap/) lists what each
+phase delivers.
 
 The full requirements, the architecture and the decision records live in
 the [repository](https://github.com/fzn0x/nether/tree/main/docs).
