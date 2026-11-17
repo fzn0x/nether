@@ -310,6 +310,17 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   and marks a provider elsewhere; the server refuses to keep or relay to
   one
   ([ADR 0086](docs/adr/0086-ai-is-locked-to-the-endpoints-an-instance-admin-approves-in-the-apps-and-the-relay.md)).
+- The page laid out for phones, the mobile apps' first part, in the web
+  app first: below 40rem, one note shows under a bar with the drawer's
+  button, its title, the quick switcher and the palette; the sidebar is a
+  drawer over the note, which closes as a note opens; menus and dialogs
+  are sheets along the bottom, above the on-screen keyboard; and while
+  writing, a bar over the keyboard inserts blocks and links, formats,
+  makes and indents lists, moves, duplicates and deletes the block, and
+  undoes. On a coarse pointer every control is at least 48 by 48 pixels,
+  and a property's handle opens a menu that moves it up or down, with no
+  drag. The phone's parts load only at a phone's width
+  ([ADR 0087](docs/adr/0087-the-mobile-apps-run-the-shared-page-in-capacitor-with-each-vaults-files-and-index-on-the-phone.md)).
 
 ### Changed
 
