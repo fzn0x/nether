@@ -1018,6 +1018,14 @@ export const messages = {
   adminExport: "Allow export",
   adminExportHint:
     "Off: the public API gives no notes' text, rows or search passages, and the apps offer no export. A desktop vault's files stay on its device.",
+  adminHistoryDays: "Keep history, in days",
+  adminHistoryDaysHint:
+    "Empty: as long as the server's NETHER_HISTORY_DAYS says, 30 unless set. From 1 to 3650.",
+  adminTrashDays: "Keep the apps' trash, in days",
+  adminTrashDaysHint: "Empty: as long as each vault keeps its own. From 1 to 3650.",
+  adminLegalHold: "Legal hold",
+  adminLegalHoldHint:
+    "Nothing of the workspace is deleted for good while it is on: not its history, its members' trash, or the audit log, whatever the days above.",
   adminUseEvery: "Use every workspace's",
   adminSetApartWhich: "Set a workspace apart",
   adminChooseWorkspace: "Choose a workspace",
