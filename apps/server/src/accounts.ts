@@ -60,10 +60,12 @@ export async function isDeactivated(db: Queryable, userId: string): Promise<bool
 
 /**
  * Deactivates an account, in the caller's transaction: it signs in no way
- * from then on, and its sessions, email codes and API tokens go now. The
- * server's last active instance admin is refused, with 403. The account's
- * rows and every active instance admin's are locked, in the order of their
- * IDs, so two deactivations cannot leave the server none.
+ * from then on, and its sessions, email codes and API tokens go now. Once
+ * the transaction commits, the caller closes its connections on every node
+ * with `disconnect` (EnterpriseServices), so its apps connect again and
+ * are refused. The server's last active instance admin is refused, with
+ * 403. The account's row and every active instance admin's are locked, in
+ * the order of their IDs, so two deactivations cannot leave the server none.
  */
 export async function deactivateAccount(
   tx: Queryable,

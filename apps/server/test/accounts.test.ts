@@ -2,10 +2,14 @@
 // answers; its sessions, codes and tokens end with it, and one started as
 // it is deactivated ends at its next request; it keeps its places, does
 // not count as an owner, waits for no key and gets no mail; the server's
-// last active instance admin is never deactivated; and reactivating brings
-// it back as it was.
+// last active instance admin is never deactivated; its open connections
+// close, and its apps are refused when they connect again; and
+// reactivating brings it back as it was.
 import { createHash, randomBytes, randomUUID } from "node:crypto";
+import type { AddressInfo } from "node:net";
+import { HocuspocusProvider } from "@hocuspocus/provider";
 import { afterEach, describe, expect, it } from "vitest";
+import * as Y from "yjs";
 import {
   type AccountChanger,
   deactivateAccount,
@@ -27,6 +31,7 @@ import {
   signIn,
   startServer,
 } from "./app.ts";
+import { freePort } from "./ports.ts";
 import { type TestProvider, startProvider } from "./provider.ts";
 
 const publicUrl = "https://nether.example.org";
@@ -42,8 +47,10 @@ type Test = TestServer &
 
 let running: TestServer | undefined;
 let provider: TestProvider | undefined;
+const syncing: HocuspocusProvider[] = [];
 
 afterEach(async () => {
+  for (const each of syncing.splice(0)) each.destroy();
   await running?.close();
   await provider?.close();
   running = undefined;
@@ -502,5 +509,60 @@ describe("a deactivated account", () => {
       [bea.id, cal.id].sort(),
     );
     expect(test.mailer.sent.map((message) => message.to)).toEqual(["cal@example.org"]);
+  });
+
+  it("has its sync and relay connections closed, and its apps refused when they connect again", async () => {
+    const test = await start();
+    const bea = await join(test, "Bea");
+    await test.server.listen({ host: "127.0.0.1", port: await freePort() });
+    const port = String((test.server.server.address() as AddressInfo).port);
+
+    let refused: string | undefined;
+    let closes = 0;
+    await new Promise<void>((resolve, reject) => {
+      const sync = new HocuspocusProvider({
+        url: `ws://127.0.0.1:${port}/api/sync`,
+        name: `${test.workspaceId}/vault`,
+        token: bea.token,
+        document: new Y.Doc(),
+        onSynced: () => {
+          resolve();
+        },
+        onClose: () => {
+          closes += 1;
+        },
+        onAuthenticationFailed: ({ reason }) => {
+          refused = reason;
+          reject(new Error(reason));
+        },
+      });
+      syncing.push(sync);
+    });
+    const relay = new WebSocket(`ws://127.0.0.1:${port}/api/relay`);
+    await new Promise<void>((resolve) => {
+      relay.addEventListener("open", () => {
+        relay.send(JSON.stringify({ type: "auth", token: bea.token }));
+      });
+      relay.addEventListener("message", () => {
+        resolve();
+      });
+    });
+    const relayClosed = new Promise<number>((resolve) => {
+      relay.addEventListener("close", (event) => {
+        resolve(event.code);
+      });
+    });
+
+    // As the scim module will: its sessions and tokens end with the change, then its connections.
+    expect(await deactivate(test, bea.id)).toBe("changed");
+    test.services.disconnect(bea.id);
+    expect(await relayClosed).toBeGreaterThanOrEqual(4000);
+    // The provider connects again, and is refused.
+    const deadline = Date.now() + 10_000;
+    while (refused === undefined && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+    expect(closes).toBeGreaterThan(0);
+    expect(refused).toBeDefined();
   });
 });
