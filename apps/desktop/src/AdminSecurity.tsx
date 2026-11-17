@@ -204,7 +204,8 @@ export function SecurityPage() {
           <p role="status">{t("adminOpening")}</p>
         ) : null
       ) : (
-        <form className="admin-security" onSubmit={save}>
+        // The page checks each range itself, to say so in an alert in its own words.
+        <form className="admin-security" noValidate onSubmit={save}>
           <fieldset>
             <legend>{t("adminSessions")}</legend>
             {field("sessionIdleDays")}
