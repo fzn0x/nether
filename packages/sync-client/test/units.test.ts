@@ -239,7 +239,14 @@ describe("syncing units", () => {
       "DELETE",
       `/api/workspaces/${served.workspaceId}/pages/${String(page.id)}`,
     );
-    await settle();
+    // Its notes go back to where it sat, and stay on every device: waited
+    // for, as a slow machine takes more than a few seconds to move them.
+    await until(
+      () =>
+        beas.vault.text(launch) === "the launch" &&
+        beas.vault.text(tasks) === "the tasks" &&
+        laptop.text(tasks) === "the tasks",
+    );
     await settle();
     expect(beas.vault.text(launch)).toBe("the launch");
     expect(beas.vault.text(tasks)).toBe("the tasks");
