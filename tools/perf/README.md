@@ -3,7 +3,7 @@
 Measures Nether's [performance targets](../../docs/requirements.md#non-functional-requirements)
 on the reference vault of 50,000 notes that
 [`@nether/vault-generator`](../vault-generator/) writes, and the server's
-under load. Five harnesses share the work, each measuring the targets that
+under load. Six harnesses share the work, each measuring the targets that
 need what it runs:
 
 | Harness | Targets | Where it runs |
@@ -13,6 +13,7 @@ need what it runs:
 | `pnpm --filter @nether/desktop perf:graph`, the desktop page in Chromium | The graph of 10,000 notes shows in under 3 s and moves at 30 frames a second or better | A maintainer's machine, before each phase's gate |
 | `tools/perf/desktop.ps1`, the desktop app on Windows | Opening to the last note under 1.5 s, idle memory under 300 MB, and picking up another app's edit within 2 s | A maintainer's machine, before each phase's gate |
 | `pnpm --filter @nether/perf sync`, the server in Docker | Co-editing under 200 ms, with 200 people writing at once on a server of 2 vCPU and 4 GB | A maintainer's machine with Docker, before each phase's gate |
+| `pnpm --filter @nether/perf android`, the Android app | Opening to the last note under 1.5 s at 5,000 notes and 3 s at 50,000, and idle memory under 300 MB ([ADR 0087](../../docs/adr/0087-the-mobile-apps-run-the-shared-page-in-capacitor-with-each-vaults-files-and-index-on-the-phone.md)) | An emulator for each change, a mid-range phone before the gate |
 
 Each writes what it measured and exits with 1 when a target is missed.
 None runs in CI, whose shared runners vary too much from run to run to
@@ -111,6 +112,25 @@ note into the vault and times it from the write to the `change-applied`
 that follows, then removes it. It measures a warm start, with the vault's
 files in the system's cache; a start just after the machine boots reads
 them from disk.
+
+## In the Android app
+
+```sh
+pnpm --filter @nether/mobile build                          # the page, copied into the app
+(cd apps/mobile/android && ./gradlew assemblePerf)          # optimized, its WebView open to DevTools
+pnpm --filter @nether/perf android -- --apk apps/mobile/android/app/build/outputs/apk/perf/app-perf.apk --notes 5000 --out perf-android-report.json
+```
+
+It installs the `perf` build on the device or emulator adb has, drives the
+page in its WebView as the smoke test does, and writes the reference vault
+into the app, note by note, through the app's own plugin. It opens the
+vault once, until `notes-read`, and a note; then it ends the app and
+starts it again five times, reading `am start`'s time to the first frame
+and the page's `note-shown`, which the plugin logs with the time since
+the process started. After 60 s idle it sums the PSS of the app's process
+and its WebView's renderer, a process of its own, from `dumpsys meminfo`;
+no other app's WebView may run meanwhile. An emulator's numbers compare
+one change with another; the targets are for a mid-range phone.
 
 ## What it took
 
