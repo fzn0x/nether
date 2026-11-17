@@ -582,13 +582,13 @@ test("comment and edit links let someone with no account comment and edit, as th
     await expect(thread).toContainText("Thanks, Robin.");
     expect(await violations(commenting)).toEqual([]);
 
-    // The owner and the other visitor see it, on the passage it is on.
+    // The owner and the other visitor see it, on the passage it is on, as a visitor's.
     for (const seen of [page, editing]) {
-      await expect(
-        seen
-          .getByRole("region", { name: "Comments" })
-          .getByRole("listitem", { name: "Comments on “Robin added this.”" }),
-      ).toContainText("Thanks, Robin.", { timeout: 20_000 });
+      const shown = seen
+        .getByRole("region", { name: "Comments" })
+        .getByRole("listitem", { name: "Comments on “Robin added this.”" });
+      await expect(shown).toContainText("Thanks, Robin.", { timeout: 20_000 });
+      await expect(shown).toContainText("Sam (by a link)");
     }
     await expect(owned.locator(".comment-highlight")).toHaveText("Robin added this.");
     expect(visitorProblems).toEqual([]);
