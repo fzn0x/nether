@@ -1501,6 +1501,76 @@ button {
   border-radius: 6px;
 }
 
+/* A PDF embedded in a note, drawn by pdf.js (ADR 0067), or a passage of it alone. */
+.pdf-embed {
+  max-width: 100%;
+  overflow: hidden;
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--text) 6%, var(--bg));
+}
+
+.pdf-embed-bar {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  padding: 0.25rem 0.5rem;
+  border-block-end: 1px solid var(--rule);
+  background: var(--bg);
+  font-size: 0.8125rem;
+}
+
+.pdf-embed-name {
+  flex: 1;
+  overflow: hidden;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pdf-embed-where {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.pdf-embed-pages {
+  position: relative;
+  padding: 8px;
+  overflow: auto;
+}
+
+.pdf-embed-pages .pdf-page {
+  margin: 0 auto 8px;
+}
+
+.pdf-embed-cut {
+  position: relative;
+  max-width: 100%;
+  overflow: hidden;
+  background: #fff;
+}
+
+.pdf-embed-shift {
+  position: absolute;
+  inset-block-start: 0;
+  left: 0;
+}
+
+.pdf-embed-shift .pdf-page {
+  margin: 0;
+  box-shadow: none;
+}
+
+.pdf-embed-waiting,
+.pdf-embed-error {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.875rem;
+}
+
 .nether-editor .file-audio {
   display: block;
   width: 100%;
@@ -4369,6 +4439,31 @@ kbd {
 .pdf-mark-focus {
   background: rgb(250 214 60 / 40%);
   outline: 2px dashed var(--accent);
+}
+
+/* An area being drawn (ADR 0067): a drag draws it, and the keyboard moves the box. */
+.pdf-draw {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  cursor: crosshair;
+  touch-action: none;
+}
+
+.pdf-mark-area {
+  background: rgb(80 150 255 / 18%);
+  outline: 2px dashed var(--accent);
+}
+
+.pdf-area {
+  z-index: 4;
+  padding: 0;
+  border: 0;
+  pointer-events: none;
+}
+
+.pdf-area:focus-visible {
+  outline: 3px solid var(--accent);
 }
 
 .pdf-highlights,
