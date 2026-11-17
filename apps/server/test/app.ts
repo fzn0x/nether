@@ -7,6 +7,7 @@ import { connectRedis } from "../src/redis.ts";
 import { readConfig } from "../src/config.ts";
 import type { BlobStore } from "../src/blobs.ts";
 import type { Database } from "../src/db.ts";
+import type { TxtResolver } from "../src/domains.ts";
 import type { Mailer, Message } from "../src/mail.ts";
 import { migrate } from "../src/migrations.ts";
 import type { Resolver } from "../src/outbound.ts";
@@ -75,6 +76,7 @@ export async function startServer(
     redis?: Redis;
     webhookWorker?: boolean;
     aiResolve?: Resolver;
+    resolveTxt?: TxtResolver;
   } = {},
 ): Promise<TestServer> {
   const db = await testDatabase();
@@ -90,6 +92,7 @@ export async function startServer(
     ...(redis === undefined ? {} : { redis }),
     ...(options.webhookWorker === undefined ? {} : { webhookWorker: options.webhookWorker }),
     ...(options.aiResolve === undefined ? {} : { aiResolve: options.aiResolve }),
+    ...(options.resolveTxt === undefined ? {} : { resolveTxt: options.resolveTxt }),
   });
   return {
     server,

@@ -31,6 +31,7 @@ import { backfillSearch, registerSearch } from "./search.ts";
 import { setSessionCookies, signInRoutes, wantsCookie } from "./cookies.ts";
 import { backupIfDue, backupTarget, noBlobs } from "./backups.ts";
 import type { Resolver } from "./outbound.ts";
+import type { TxtResolver } from "./domains.ts";
 import { registerWebApp } from "./web.ts";
 import { registerWebhooks } from "./webhooks.ts";
 import { registerWorkspaces } from "./workspaces.ts";
@@ -87,6 +88,8 @@ export interface Services {
   readonly webhookWorker?: boolean;
   /** What resolves AI providers' hosts, for the relay's checks; the system's unless a test gives another. */
   readonly aiResolve?: Resolver;
+  /** What looks up sites' domains' TXT records (ADR 0077); the system's unless a test gives another. */
+  readonly resolveTxt?: TxtResolver;
 }
 
 /** Builds the server: its routes, and the modules of the enterprise features that are switched on. */
@@ -215,8 +218,16 @@ export async function buildApp(config: Config, services: Services): Promise<Fast
     },
   });
   // Published sites, drawn for anyone at /p/<name>/ (ADR 0076).
-  const published = registerPublished(app, services.db, { blobs: services.blobs });
-  registerSites(app, services.db, { publicUrl: config.publicUrl, changed: published.changed });
+  // Their custom domains' requests, on any route, are theirs (ADR 0077).
+  const published = registerPublished(app, services.db, {
+    blobs: services.blobs,
+    publicUrl: config.publicUrl,
+  });
+  registerSites(app, services.db, {
+    publicUrl: config.publicUrl,
+    changed: published.changed,
+    resolveTxt: services.resolveTxt,
+  });
   // The public API, for personal access tokens (ADR 0059).
   registerTokens(app, services.db);
   const api = registerApi(app, services.db, sync);
