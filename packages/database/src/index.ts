@@ -42,3 +42,4 @@ export {
   viewIdOf,
   writeDatabase,
 } from "./schema.ts";
+export { deleteFromTriggers, renameInTriggers } from "./triggers.ts";

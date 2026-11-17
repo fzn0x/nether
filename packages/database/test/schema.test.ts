@@ -191,8 +191,15 @@ describe("writeDatabase", () => {
       properties: value.properties,
       views: [],
     });
-    expect(() =>
-      readDatabase({ ...value, triggers: [{ when: "x", is: 1, set: { completed: 1 } }] }, resolve),
-    ).toThrow('database.triggers[0].when names no property of the database: "x"');
+    // A rule on a property the database has not is kept, and does not run.
+    expect(
+      readDatabase({ ...value, triggers: [{ when: "x", is: 1, set: { completed: 1 } }] }, resolve)
+        .skippedTriggers,
+    ).toEqual([
+      {
+        value: { when: "x", is: 1, set: { completed: 1 } },
+        problem: 'when names no property of the database: "x"',
+      },
+    ]);
   });
 });
