@@ -87,3 +87,4 @@ record supersedes it and says so. Start a new one from
 | [0078](0078-building-with-ai-reads-a-checked-json-reply-into-an-import-plan-the-user-previews.md) | Building with AI reads a checked JSON reply into an import plan the user previews | Accepted |
 | [0079](0079-enterprise-features-are-in-every-image-off-and-switched-in-the-console-or-pinned-by-the-environment.md) | Enterprise features are in every image, off, and switched in the console or pinned by the environment | Accepted |
 | [0081](0081-audit-events-come-from-a-hook-the-server-emits-kept-in-a-chained-append-only-log-and-sent-to-a-siem.md) | Audit events come from a hook the server emits, kept in a chained, append-only log, and sent to a SIEM | Accepted |
+| [0083](0083-the-console-lists-every-workspace-and-an-instance-admin-may-set-its-members-roles.md) | The console lists every workspace, and an instance admin may set its members' roles | Accepted |

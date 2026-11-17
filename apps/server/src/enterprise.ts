@@ -16,9 +16,26 @@ export type EnterpriseFeature = (typeof enterpriseFeatures)[number];
 /** How the environment pins each feature: on, off, or not at all, when the console decides. */
 export type EnterprisePins = Readonly<Record<EnterpriseFeature, boolean | undefined>>;
 
-/** What a module's plugin is given. */
-export interface EnterpriseContext {
+/** What the server shares with every module, beside its switch. */
+export interface EnterpriseServices {
   readonly db: Database;
+  /**
+   * Closes an account's open sync connections, so its apps connect again
+   * and every document is checked anew, as a change of its role does.
+   */
+  readonly disconnect: (userId: string) => void;
+  /**
+   * The server's events (ADR 0081): what a module listens to, as audit logs
+   * do, and tells of when it changes what the server's routes would, as the
+   * console setting a member's role does.
+   */
+  readonly events: ServerEvents;
+  /** NETHER_SECRET_KEY's 32 bytes, for what a module keys or seals; null without one. */
+  readonly secretKey: Buffer | null;
+}
+
+/** What a module's plugin is given. */
+export interface EnterpriseContext extends EnterpriseServices {
   /**
    * Whether the module's feature is on now; asked within a transaction, as
    * a listener of the server's events is, it reads through it.
@@ -29,10 +46,6 @@ export interface EnterpriseContext {
     request: FastifyRequest,
     reply: FastifyReply,
   ) => Promise<FastifyReply | undefined>;
-  /** The server's events, which a module may listen to, as audit logs do (ADR 0081). */
-  readonly events: Pick<ServerEvents, "listen">;
-  /** NETHER_SECRET_KEY's 32 bytes, for what a module keys or seals; null without one. */
-  readonly secretKey: Buffer | null;
 }
 
 /** An enterprise feature's code: a Fastify plugin the server registers in every build that has it. */
@@ -166,16 +179,15 @@ function notFound(request: FastifyRequest, reply: FastifyReply): FastifyReply {
 }
 
 /**
- * Registers every module this build has, each with the way to ask for its
- * switch. A feature the environment pins on with no module in the build
- * is an error at startup, not a silent no.
+ * Registers every module this build has, each with what the server shares
+ * and the way to ask for its switch. A feature the environment pins on with
+ * no module in the build is an error at startup, not a silent no.
  */
 export async function registerEnterprise(
   app: FastifyInstance,
-  db: Database,
+  services: EnterpriseServices,
   switches: EnterpriseSwitches,
   modules: readonly EnterpriseModule[],
-  shared: Pick<EnterpriseContext, "events" | "secretKey">,
 ): Promise<void> {
   for (const feature of enterpriseFeatures) {
     if (switches.pinned(feature) === true && !switches.available(feature)) {
@@ -189,6 +201,6 @@ export async function registerEnterprise(
     const isOn = (db?: Queryable) => switches.on(module.feature, db);
     const whenOn = async (request: FastifyRequest, reply: FastifyReply) =>
       (await isOn()) ? undefined : notFound(request, reply);
-    await app.register(module.plugin, { db, isOn, whenOn, ...shared });
+    await app.register(module.plugin, { ...services, isOn, whenOn });
   }
 }

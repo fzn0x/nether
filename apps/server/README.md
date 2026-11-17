@@ -71,6 +71,9 @@ token as `Authorization: Bearer <token>`. Every error is
 | `GET /api/instance/features` | instance admin | Each enterprise feature: `on`, `pinned` (`on` or `off` when its variable sets it, else `null`) and `available` (this build has its module) (ADR 0079) |
 | `PUT /api/instance/features/:feature` | instance admin | Turns a feature `on` or off, at once; 409 when its variable pins it, or the build has no module for it |
 | `GET /api/admin/usage` | instance admin | With the `admin` feature on: accounts, those signed in in the last 30 days, workspaces and the encrypted ones, notes the server can read, attachments and their bytes, and the version |
+| `GET /api/admin/workspaces` | instance admin | With the `admin` feature on: 50 workspaces by name after the `after` cursor, found by `search` in their names or their members' names and emails; each with its owners, members by role, notes the server can read (`null` when encrypted), bytes of documents, history and attachments, and last change; and `next`, the cursor of the page after, or `null` (ADR 0083) |
+| `GET /api/admin/workspaces/:id` | instance admin | One workspace as the list has it, with its `members`: name, email, role and when each joined |
+| `PATCH /api/admin/workspaces/:id/members/:user` | instance admin | Sets a member's `role`, any of the four, keeping at least one owner (409 otherwise); closes the member's sync connections |
 | `GET /api/setup`, `POST /api/setup` | | First-run setup, above |
 | `GET /api/sign-in-methods` | | Which ways to sign in this server offers: `password`, `emailCode` when it can send email, and `oidc` with the provider's name |
 | `POST /api/sessions` | | Signs in with `email` and `password`; gives `token` and `expiresAt` |

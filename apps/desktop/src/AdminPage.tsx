@@ -1,12 +1,13 @@
 // The admin console, in the web app at /admin (ADR 0079), for the server's
 // instance admins. Its Features page is in every build: each enterprise
 // feature's switch, with why it is set as it is. The `admin` feature adds
-// the server's usage, counted when the page asks. Only its own code loads,
-// as a share link's page does.
+// the server's usage, counted when the page asks, and its workspaces
+// (ADR 0083). Only its own code loads, as a share link's page does.
 import { type ReactNode, useCallback, useEffect, useState } from "react";
+import { WorkspacesPage } from "./AdminWorkspaces.tsx";
 import { AdminAudit } from "./AdminAudit.tsx";
 import { t } from "./messages.ts";
-import { webFetch, webServer } from "./web.ts";
+import { messageOf, webFetch, webServer } from "./web.ts";
 
 type Feature = "sso" | "scim" | "audit" | "policies" | "admin" | "ha";
 
@@ -43,15 +44,6 @@ const bytes = new Intl.NumberFormat(undefined, {
   unit: "megabyte",
   maximumFractionDigits: 1,
 });
-
-async function messageOf(answer: Response): Promise<string> {
-  try {
-    const body = (await answer.json()) as { readonly message?: unknown };
-    return typeof body.message === "string" ? body.message : answer.statusText;
-  } catch {
-    return answer.statusText;
-  }
-}
 
 function isFeatureState(value: unknown): value is FeatureState {
   const state = value as Partial<FeatureState> | null;
@@ -257,7 +249,10 @@ export function AdminPage() {
             </ul>
           </section>
           {consoleOn ? (
-            <UsagePage usage={usage} onCount={count} />
+            <>
+              <UsagePage usage={usage} onCount={count} />
+              <WorkspacesPage />
+            </>
           ) : (
             <p className="hint">{t("adminConsoleOff")}</p>
           )}

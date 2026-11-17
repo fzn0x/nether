@@ -959,6 +959,50 @@ test("the admin console turns a feature on and off, for an instance admin alone"
   expect(problems).toEqual([]);
 });
 
+test("the admin console finds a workspace by a member and sets that member's role", async ({
+  page,
+}) => {
+  const problems = problemsOf(page);
+  // A name of its own, so a retry finds one person by it; it goes in an email, so no space.
+  const cy = await person(`Cy${String(Date.now() % 100_000)}`);
+  await signIn(page, { email: "ada@example.org", password: "a long password" });
+  await page.goto("/admin");
+  const pages = page.getByRole("checkbox", {
+    name: "The console's usage, workspaces and security pages",
+  });
+  await pages.check();
+  const workspaces = page.getByRole("region", { name: "Workspaces" });
+  try {
+    await expect(workspaces.getByRole("table")).toContainText("Team");
+    await workspaces
+      .getByRole("searchbox", {
+        name: "Find a workspace by its name, or by a member's name or email",
+      })
+      .fill(cy.email);
+    await workspaces.getByRole("button", { name: "Find", exact: true }).click();
+    const rows = workspaces.getByRole("table").getByRole("row");
+    // Its header, and Team alone: Cy is in no other workspace.
+    await expect(rows).toHaveCount(2);
+    await expect(rows.nth(1)).toContainText("Ada");
+    expect(await violations(page)).toEqual([]);
+
+    await workspaces.getByRole("button", { name: "Team" }).click();
+    await expect(workspaces.getByRole("heading", { name: "Members of Team" })).toBeVisible();
+    const role = workspaces.getByRole("combobox", { name: `Role of ${cy.name}` });
+    await expect(role).toHaveValue("member");
+    await role.selectOption("admin");
+    await expect(workspaces.getByRole("status")).toHaveText(`${cy.name}'s role in Team: Admin.`);
+    await expect(role).toHaveValue("admin");
+    expect(await violations(page)).toEqual([]);
+
+    await workspaces.getByRole("button", { name: "All workspaces" }).click();
+    await expect(workspaces.getByRole("table")).toContainText("Team");
+  } finally {
+    await pages.uncheck();
+  }
+  expect(problems).toEqual([]);
+});
+
 test("the audit log records sign-ins and its own switch, found and checked in the console", async ({
   page,
 }) => {

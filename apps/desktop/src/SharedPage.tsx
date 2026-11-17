@@ -25,7 +25,7 @@ import * as Y from "yjs";
 import { CommentsPanel } from "./CommentsPanel.tsx";
 import { t } from "./messages.ts";
 import { colorFor } from "./presence.ts";
-import { webServer } from "./web.ts";
+import { messageOf, webServer } from "./web.ts";
 
 /** What a link lets its visitors do: read, comment, or edit. */
 type Level = "view" | "comment" | "edit";
@@ -54,15 +54,6 @@ function isOpened(value: unknown): value is Opened {
     typeof opened.page === "string" &&
     (opened.level === "view" || opened.level === "comment" || opened.level === "edit")
   );
-}
-
-async function messageOf(answer: Response): Promise<string> {
-  try {
-    const body = (await answer.json()) as { readonly message?: unknown };
-    return typeof body.message === "string" ? body.message : answer.statusText;
-  } catch {
-    return answer.statusText;
-  }
 }
 
 /** Opens a link with its token, and its password if given. */
