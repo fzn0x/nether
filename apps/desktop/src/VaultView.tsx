@@ -25,7 +25,7 @@ import { CommandPalette } from "./CommandPalette.tsx";
 import { ContextMenu, type MenuEntry, type MenuPoint } from "./ContextMenu.tsx";
 import { type Menu, MenuBar } from "./MenuBar.tsx";
 import { IconButton } from "./IconButton.tsx";
-import { assistIcon, commandIcons, itemIcons, menuIcons } from "./icons.ts";
+import { askIcon, assistIcon, buildIcon, commandIcons, itemIcons, menuIcons } from "./icons.ts";
 import { NewFolderDialog } from "./NewFolderDialog.tsx";
 import { TextPromptDialog } from "./TextPromptDialog.tsx";
 import { myName, setMyName } from "./people.ts";
@@ -95,11 +95,14 @@ import { PluginsSettings } from "./PluginsSettings.tsx";
 import { PluginSettings } from "./PluginSettings.tsx";
 
 import { useAi } from "./useAi.ts";
+import { useMeaning } from "./useMeaning.ts";
+import type { MeaningSource } from "./askNotes.ts";
 import { useAppearance } from "./useAppearance.ts";
 import { useBookmarks } from "./useBookmarks.ts";
 import { TrashPanel } from "./TrashPanel.tsx";
 import type { NotePart } from "./noteLinks.ts";
 import type { NoteMode } from "./NoteView.tsx";
+import type { AskedTurn } from "./AskPanel.tsx";
 import { findTemplate, nameOf, periodicNote, periods, templateChoices } from "./templates.ts";
 import { useGraph } from "./useGraph.ts";
 import { hostOf, syncSummary } from "./sync.ts";
@@ -194,6 +197,14 @@ const AppearanceSettings = lazy(() =>
 // So does the AI tab, with the providers' code (ADR 0068).
 const AiSettings = lazy(() =>
   import("./AiSettings.tsx").then(({ AiSettings: tab }) => ({ default: tab })),
+);
+// And asking your notes, the first time its tab opens (ADR 0075).
+const AskPanel = lazy(() =>
+  import("./AskPanel.tsx").then(({ AskPanel: panel }) => ({ default: panel })),
+);
+// And building with AI, the first time it is asked for (ADR 0078).
+const BuildDialog = lazy(() =>
+  import("./BuildDialog.tsx").then(({ BuildDialog: dialog }) => ({ default: dialog })),
 );
 const ServersDialog = lazy(() =>
   import("./ServersDialog.tsx").then(({ ServersDialog: dialog }) => ({ default: dialog })),
@@ -323,6 +334,32 @@ export function VaultView(props: {
   const sync = useSync(vault);
   // The AI provider the vault uses, if any: with none, nothing of AI shows (ADR 0068).
   const ai = useAi(vault, sync.link);
+  // Search by meaning, when it is on for the vault (ADR 0074).
+  const meaning = useMeaning(vault, ai, sync.link);
+  // Asking your notes finds notes by meaning too, while search by meaning runs.
+  const meaningSearch = meaning.panel?.search;
+  const askMeaning = useMemo((): MeaningSource | undefined => {
+    if (meaningSearch === undefined) return undefined;
+    return async (question, limit) =>
+      (await meaningSearch(question)).slice(0, limit).map((hit) => {
+        const heading = hit.heading.split(" > ").at(-1);
+        return { note: hit.note.id, heading: heading === "" ? undefined : heading };
+      });
+  }, [meaningSearch]);
+  const meaningProvider = ai.settings.providers.find(
+    (provider) => provider.id === meaning.choice?.provider,
+  );
+  const askMeaningVia =
+    askMeaning === undefined || meaning.choice === undefined
+      ? undefined
+      : t("askMeaningVia", {
+          model: meaning.choice.model,
+          name: meaningProvider?.name ?? meaning.choice.provider,
+        });
+  // The questions asked of the vault's notes, kept while it is open, and
+  // the count that asks the question's box for focus.
+  const [askTurns, setAskTurns] = useState<readonly AskedTurn[]>([]);
+  const [askFocus, setAskFocus] = useState(0);
   const notifications = useNotifications(vault, sync.link);
   const people = usePeople(sync.link);
   // The vault's light or dark, theme and snippets, on the page while it is open.
@@ -407,6 +444,7 @@ export function VaultView(props: {
     | "history"
     | "export"
     | "import"
+    | "build"
     | "palette"
     | undefined
   >();
@@ -1530,6 +1568,7 @@ export function VaultView(props: {
             ai={ai}
             encrypted={sync.link?.encrypted === true}
             server={sync.link?.server}
+            meaning={meaning}
             onClose={closeDialog}
           />
         </Suspense>
@@ -1704,6 +1743,41 @@ export function VaultView(props: {
       enabled: () => assistNow.current !== undefined,
       run: () => {
         assistNow.current?.();
+      },
+    });
+  }, [registry, aiReady]);
+  // Asking your notes, a tab of the sidebar while the vault has a provider.
+  useEffect(() => {
+    if (!aiReady) return;
+    return registry.add({
+      id: "ask",
+      name: () => t("askCommand"),
+      menu: "view",
+      keys: [],
+      icon: askIcon,
+      enabled: () => true,
+      run: () => {
+        setTag(undefined);
+        setPanel("ask");
+        setAskFocus((count) => count + 1);
+      },
+    });
+  }, [registry, aiReady]);
+  useEffect(() => {
+    if (!aiReady && panel === "ask") setPanel("notes");
+  }, [aiReady, panel]);
+  // Building with AI, in the File menu while the vault has a provider.
+  useEffect(() => {
+    if (!aiReady) return;
+    return registry.add({
+      id: "build",
+      name: () => t("buildCommand"),
+      menu: "file",
+      keys: [],
+      icon: buildIcon,
+      enabled: () => true,
+      run: () => {
+        setDialog("build");
       },
     });
   }, [registry, aiReady]);
@@ -1904,6 +1978,17 @@ export function VaultView(props: {
               >
                 {t("trash")}
               </button>
+              {aiReady ? (
+                <button
+                  type="button"
+                  aria-pressed={panel === "ask"}
+                  onClick={() => {
+                    setPanel("ask");
+                  }}
+                >
+                  {t("askTab")}
+                </button>
+              ) : null}
               {sidebarPanels.map((each) => (
                 <button
                   key={each.id}
@@ -1933,12 +2018,33 @@ export function VaultView(props: {
               />
             ) : panel === "trash" ? (
               <TrashPanel vault={state.vault} onRestored={openRestored} />
+            ) : panel === "ask" && ai.resolution.provider !== undefined ? (
+              <Suspense fallback={null}>
+                <AskPanel
+                  vault={state.vault}
+                  provider={ai.resolution.provider}
+                  workspaceId={sync.link?.workspaceId}
+                  through={
+                    ai.settings.server === undefined || sync.link === undefined
+                      ? undefined
+                      : hostOf(sync.link.server)
+                  }
+                  allowedNow={ai.allowedNow}
+                  meaning={askMeaning}
+                  meaningVia={askMeaningVia}
+                  turns={askTurns}
+                  onTurns={setAskTurns}
+                  onOpen={openNote}
+                  focusRequest={askFocus}
+                />
+              </Suspense>
             ) : panel === "search" ? (
               <SearchPanel
                 vault={state.vault}
                 graph={state.indexer.graph}
                 onOpen={openNote}
                 input={searchInput}
+                meaning={meaning.panel}
               />
             ) : notes.length === 0 && folders.length === 0 ? (
               <p className="placeholder">{t("noNotes")}</p>
@@ -2085,6 +2191,29 @@ export function VaultView(props: {
             setDialog(undefined);
           }}
         />
+      ) : null}
+      {dialog === "build" && state.status === "open" && ai.resolution.provider !== undefined ? (
+        <Suspense fallback={null}>
+          <BuildDialog
+            vault={state.vault}
+            provider={ai.resolution.provider}
+            workspaceId={sync.link?.workspaceId}
+            through={
+              ai.settings.server === undefined || sync.link === undefined
+                ? undefined
+                : hostOf(sync.link.server)
+            }
+            allowedNow={ai.allowedNow}
+            templatesFolder={settings.folder}
+            onOpen={(path) => {
+              const note = state.vault.noteAt(path);
+              if (note !== undefined) openNote(note.id);
+            }}
+            onClose={() => {
+              setDialog(undefined);
+            }}
+          />
+        </Suspense>
       ) : null}
       {dialog === "import" && state.status === "open" ? (
         <Suspense fallback={null}>

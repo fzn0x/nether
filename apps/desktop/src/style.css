@@ -2092,6 +2092,55 @@ button {
   color: var(--text);
 }
 
+/* Search by meaning's section of the AI tab. */
+.ai-meaning-actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+/* Search by words or by meaning (ADR 0074), while search by meaning is on. */
+.search-modes {
+  display: flex;
+  gap: 0.25rem;
+  margin: 0 0.75rem 0.5rem;
+}
+
+.search-modes button {
+  flex: 1;
+  padding: 0.25rem 0.5rem;
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: 0.8125rem;
+  cursor: pointer;
+}
+
+.search-modes button[aria-pressed="true"] {
+  border-color: var(--accent);
+  box-shadow: inset 0 -2px 0 var(--accent);
+  font-weight: 600;
+}
+
+.search-form {
+  display: flex;
+  flex-direction: column;
+}
+
+.search-progress,
+.search-error {
+  margin: 0 0.75rem 0.5rem;
+  font-size: 0.8125rem;
+}
+
+.search-heading {
+  margin: 0.1rem 0 0;
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
 /* The quick switcher, over the vault. */
 .switcher-backdrop {
   position: fixed;
@@ -2469,8 +2518,31 @@ button {
 
 .share-link-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 0.5rem;
   margin-top: 0.25rem;
+}
+
+/* A published site's custom domain and indexing (ADR 0077). */
+.site-domain {
+  margin-top: 0.5rem;
+}
+
+.site-domain-record {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 0.2rem 0.75rem;
+  margin: 0.25rem 0;
+  font-size: 0.875rem;
+}
+
+.site-domain-record dt {
+  font-weight: 600;
+}
+
+.site-domain-record dd {
+  margin: 0;
+  overflow-wrap: anywhere;
 }
 
 .share-link-new {
@@ -3906,6 +3978,184 @@ kbd {
   padding: 0.75rem;
   border: 1px solid var(--rule);
   border-radius: 6px;
+}
+
+/* Asking your notes (ADR 0075), in the sidebar: questions and their answers,
+   each citation a link to its passage, then the question's box. */
+.ask-panel {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 0.5rem;
+  min-height: 0;
+  padding: 0.5rem 0;
+}
+
+.ask-panel p {
+  margin: 0;
+}
+
+.ask-turns {
+  display: grid;
+  flex: 1;
+  gap: 1rem;
+  align-content: start;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.ask-question {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.ask-answer {
+  margin-top: 0.25rem;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.ask-cite {
+  padding: 0 0.125rem;
+  border: 0;
+  border-radius: 3px;
+  border-block-end: 1px solid var(--accent);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.8125rem;
+  cursor: pointer;
+}
+
+.ask-unverified {
+  color: var(--muted);
+  text-decoration: underline dotted;
+}
+
+.ask-sources {
+  margin-top: 0.375rem;
+  font-size: 0.8125rem;
+}
+
+.ask-sources summary {
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.ask-sources ol {
+  margin: 0.25rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ask-sources button {
+  padding: 0.125rem 0;
+  border: 0;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+
+/* The passages the answer cites, stronger than those it only read. */
+.ask-sources button.cited {
+  font-weight: 600;
+}
+
+.ask-status {
+  min-block-size: 1.25rem;
+  color: var(--muted);
+  font-size: 0.8125rem;
+}
+
+.ask-form textarea {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 0.375rem 0.5rem;
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  resize: vertical;
+}
+
+.ask-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.375rem;
+}
+
+/* Building with AI (ADR 0078): what to build, then every note it would make. */
+.build-dialog {
+  width: min(40rem, calc(100vw - 2rem));
+  max-height: 85vh;
+  overflow-y: auto;
+}
+
+.build-describe {
+  display: grid;
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.build-describe textarea {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 0.375rem 0.5rem;
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  resize: vertical;
+}
+
+.build-preview {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.build-notes {
+  display: grid;
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.build-notes li {
+  display: grid;
+  gap: 0.125rem;
+  padding: 0.375rem 0.5rem;
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+}
+
+.build-notes p {
+  margin: 0;
+}
+
+.build-path {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.build-text {
+  max-block-size: 10rem;
+  margin: 0.25rem 0 0;
+  padding: 0.375rem;
+  overflow: auto;
+  border-radius: 4px;
+  background: var(--hover);
+  font-size: 0.8125rem;
+  white-space: pre-wrap;
 }
 
 /* Mentions (ADR 0045): the people offered as @ is typed in a comment, the

@@ -3,11 +3,23 @@
 // published as the one who published it: it shows the notes under its root
 // that they have full access to. Those with full access where the root is,
 // and the workspace's owners and admins, change and unpublish it; owners
-// and admins can turn publishing off for the workspace.
+// and admins can turn publishing off for the workspace. A site may also
+// claim a custom domain, which it holds once its DNS proves the claim
+// (ADR 0077), and ask search engines not to index it.
 import { randomUUID } from "node:crypto";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import { type Database, type Queryable, type Row, readText, readTime } from "./db.ts";
-import { fail, uuidField } from "./http.ts";
+import {
+  type TxtResolver,
+  claimToken,
+  domainName,
+  lookUpClaim,
+  ownHost,
+  recordName,
+  recordValue,
+  systemTxt,
+} from "./domains.ts";
+import { fail, limitByAddress, uuidField } from "./http.ts";
 import { accountOf, signedIn } from "./sessions.ts";
 import { accessible, unitOfDocument } from "./units.ts";
 import { membership } from "./workspaces.ts";
@@ -29,6 +41,10 @@ export interface Site {
   readonly rootNote: string | null;
   /** The folder it publishes, or null for a note's site. */
   readonly rootFolder: string | null;
+  /** The custom domain it holds, its claim proven; null without one. */
+  readonly domain: string | null;
+  /** Whether its pages let search engines index them. */
+  readonly indexed: boolean;
 }
 
 function siteOf(row: Row): Site {
@@ -40,6 +56,8 @@ function siteOf(row: Row): Site {
     title: readText(row, "title"),
     rootNote: typeof row.root_note === "string" ? row.root_note : null,
     rootFolder: typeof row.root_folder === "string" ? row.root_folder : null,
+    domain: row.domain_verified === true && typeof row.domain === "string" ? row.domain : null,
+    indexed: row.indexed !== false,
   };
 }
 
@@ -52,6 +70,16 @@ export async function siteNamed(db: Queryable, name: string): Promise<Site | und
     `SELECT s.* FROM sites s JOIN workspaces w ON w.id = s.workspace_id
       WHERE s.name = $1 AND w.publishing AND w.encryption = 'none'`,
     [name],
+  );
+  return rows[0] === undefined ? undefined : siteOf(rows[0]);
+}
+
+/** The site that holds a custom domain, while it would be found by its name; undefined otherwise. */
+export async function siteAtDomain(db: Queryable, domain: string): Promise<Site | undefined> {
+  const { rows } = await db.query(
+    `SELECT s.* FROM sites s JOIN workspaces w ON w.id = s.workspace_id
+      WHERE s.domain = $1 AND s.domain_verified AND w.publishing AND w.encryption = 'none'`,
+    [domain],
   );
   return rows[0] === undefined ? undefined : siteOf(rows[0]);
 }
@@ -107,6 +135,7 @@ interface NewSite {
 interface SiteChange {
   readonly name?: string;
   readonly title?: string;
+  readonly indexed?: boolean;
 }
 
 const newSiteBody = {
@@ -125,7 +154,14 @@ const changeBody = {
   type: "object",
   minProperties: 1,
   additionalProperties: false,
-  properties: { name: nameField, title: titleField },
+  properties: { name: nameField, title: titleField, indexed: { type: "boolean" } },
+} as const;
+
+const domainBody = {
+  type: "object",
+  required: ["domain"],
+  additionalProperties: false,
+  properties: { domain: { type: "string", minLength: 1, maxLength: 300 } },
 } as const;
 
 const noWorkspace = "This account is in no such workspace.";
@@ -135,6 +171,8 @@ const badName = "A site's name is 3 to 63 lowercase letters, digits and hyphens.
 const badFolder = "That is not a folder's path.";
 const noSite = "This workspace has no such site.";
 const noFull = "Publishing takes full access to what is published.";
+const badDomain =
+  "That is not a domain a site can have: a name such as docs.example.org, not an address or this server's own.";
 
 /**
  * The routes of a workspace's sites: listing, publishing, changing and
@@ -144,9 +182,15 @@ const noFull = "Publishing takes full access to what is published.";
 export function registerSites(
   app: FastifyInstance,
   db: Database,
-  options: { readonly publicUrl: string | null; readonly changed: (site: string) => void },
+  options: {
+    readonly publicUrl: string | null;
+    readonly changed: (site: string) => void;
+    /** What looks up a domain's TXT records, the system's resolver by default. */
+    readonly resolveTxt?: TxtResolver | undefined;
+  },
 ): void {
   const account = signedIn(db);
+  const own = ownHost(options.publicUrl);
 
   /** The workspace and what the account may do in it, or why it may do nothing. */
   async function placed(userId: string, workspace: string) {
@@ -177,16 +221,36 @@ export function registerSites(
     return unit !== undefined && place.levels.get(unit) === "full";
   }
 
-  const shown = (request: FastifyRequest, row: Row) => ({
-    id: readText(row, "id"),
-    name: readText(row, "name"),
-    title: readText(row, "title"),
-    note: typeof row.root_note === "string" ? row.root_note : null,
-    folder: typeof row.root_folder === "string" ? row.root_folder : null,
-    url: `${baseOf(request, options.publicUrl)}/p/${readText(row, "name")}/`,
-    publishedBy: { id: readText(row, "publisher_id"), name: readText(row, "publisher_name") },
-    createdAt: readTime(row, "created_at").toISOString(),
-  });
+  const shown = (request: FastifyRequest, row: Row) => {
+    const pathUrl = `${baseOf(request, options.publicUrl)}/p/${readText(row, "name")}/`;
+    const domain = typeof row.domain === "string" ? row.domain : null;
+    const verified = domain !== null && row.domain_verified === true;
+    return {
+      id: readText(row, "id"),
+      name: readText(row, "name"),
+      title: readText(row, "title"),
+      note: typeof row.root_note === "string" ? row.root_note : null,
+      folder: typeof row.root_folder === "string" ? row.root_folder : null,
+      // Its domain's address once it holds one; its address on the server always.
+      url: verified ? `https://${domain}/` : pathUrl,
+      pathUrl,
+      domain:
+        domain === null
+          ? null
+          : {
+              name: domain,
+              verified,
+              record: {
+                type: "TXT",
+                name: recordName(domain),
+                value: recordValue(readText(row, "domain_token")),
+              },
+            },
+      indexed: row.indexed !== false,
+      publishedBy: { id: readText(row, "publisher_id"), name: readText(row, "publisher_name") },
+      createdAt: readTime(row, "created_at").toISOString(),
+    };
+  };
 
   const columns = "s.*, u.name AS publisher_name";
 
@@ -324,7 +388,7 @@ export function registerSites(
         request.params.site,
       );
       if (!("site" in found)) return fail(reply, found[0], found[1]);
-      const { name, title } = request.body;
+      const { name, title, indexed } = request.body;
       if (name !== undefined && !siteName.test(name)) return fail(reply, 400, badName);
       if (name !== undefined && name !== found.site.name) {
         const { rows } = await db.query("SELECT 1 FROM sites WHERE name = $1", [name]);
@@ -332,8 +396,9 @@ export function registerSites(
       }
       const taken = await db
         .query(
-          "UPDATE sites SET name = COALESCE($2, name), title = COALESCE($3, title) WHERE id = $1",
-          [found.site.id, name ?? null, title?.trim() ?? null],
+          `UPDATE sites SET name = COALESCE($2, name), title = COALESCE($3, title),
+                  indexed = COALESCE($4, indexed) WHERE id = $1`,
+          [found.site.id, name ?? null, title?.trim() ?? null, indexed ?? null],
         )
         .then(
           () => false,
@@ -366,6 +431,143 @@ export function registerSites(
       await db.query("DELETE FROM sites WHERE id = $1", [found.site.id]);
       options.changed(found.site.id);
       return reply.code(204).send();
+    },
+  );
+
+  /** The site as those who may change it see it, after a change. */
+  async function reread(request: FastifyRequest, siteId: string) {
+    const { rows } = await db.query(
+      `SELECT ${columns} FROM sites s JOIN users u ON u.id = s.publisher_id WHERE s.id = $1`,
+      [siteId],
+    );
+    return shown(request, rows[0] ?? {});
+  }
+
+  // Claims a custom domain, with a TXT record to add; the site holds it once checked.
+  app.put<{ Params: { workspace: string; site: string }; Body: { readonly domain: string } }>(
+    "/api/workspaces/:workspace/sites/:site/domain",
+    { schema: { params: siteParams, body: domainBody }, preHandler: account },
+    async (request, reply) => {
+      const found = await managed(
+        accountOf(request).id,
+        request.params.workspace.toLowerCase(),
+        request.params.site,
+      );
+      if (!("site" in found)) return fail(reply, found[0], found[1]);
+      const domain = domainName(request.body.domain, own);
+      if (domain === undefined) return fail(reply, 400, badDomain);
+      // The same domain again keeps its claim, and the record already added.
+      if (found.row.domain !== domain) {
+        await db.query(
+          `UPDATE sites SET domain = $2, domain_token = $3, domain_verified = false
+            WHERE id = $1`,
+          [found.site.id, domain, claimToken()],
+        );
+        options.changed(found.site.id);
+      }
+      return reread(request, found.site.id);
+    },
+  );
+
+  // Gives the domain up: its requests are no site's at once.
+  app.delete<{ Params: { workspace: string; site: string } }>(
+    "/api/workspaces/:workspace/sites/:site/domain",
+    { schema: { params: siteParams }, preHandler: account },
+    async (request, reply) => {
+      const found = await managed(
+        accountOf(request).id,
+        request.params.workspace.toLowerCase(),
+        request.params.site,
+      );
+      if (!("site" in found)) return fail(reply, found[0], found[1]);
+      await db.query(
+        `UPDATE sites SET domain = NULL, domain_token = NULL, domain_verified = false
+          WHERE id = $1`,
+        [found.site.id],
+      );
+      options.changed(found.site.id);
+      return reread(request, found.site.id);
+    },
+  );
+
+  // Looks the claim's record up. Found, the site holds the domain, taking
+  // it from any other site that held it: whoever writes its DNS decides.
+  app.post<{ Params: { workspace: string; site: string } }>(
+    "/api/workspaces/:workspace/sites/:site/domain/check",
+    {
+      schema: { params: siteParams },
+      onRequest: limitByAddress(app, "site-domain-check", 30, "5 minutes"),
+      preHandler: account,
+    },
+    async (request, reply) => {
+      const found = await managed(
+        accountOf(request).id,
+        request.params.workspace.toLowerCase(),
+        request.params.site,
+      );
+      if (!("site" in found)) return fail(reply, found[0], found[1]);
+      const { row } = found;
+      if (typeof row.domain !== "string" || typeof row.domain_token !== "string") {
+        return fail(reply, 409, "This site claims no domain.");
+      }
+      const domain = row.domain;
+      if (row.domain_verified === true) return reread(request, found.site.id);
+      const looked = await lookUpClaim(options.resolveTxt ?? systemTxt, domain, row.domain_token);
+      if (!looked.found) {
+        return looked.failure === undefined
+          ? fail(
+              reply,
+              409,
+              `${recordName(domain)} has no TXT record with this site's value yet. DNS changes can take a few minutes to show.`,
+            )
+          : fail(reply, 502, `Looking up ${recordName(domain)} failed: ${looked.failure}.`);
+      }
+      const taken = await db
+        .transaction(async (tx) => {
+          const { rows: others } = await tx.query(
+            `UPDATE sites SET domain = NULL, domain_token = NULL, domain_verified = false
+              WHERE domain = $1 AND domain_verified AND id <> $2 RETURNING id`,
+            [domain, found.site.id],
+          );
+          await tx.query("UPDATE sites SET domain_verified = true WHERE id = $1 AND domain = $2", [
+            found.site.id,
+            domain,
+          ]);
+          return others.map((other) => readText(other, "id"));
+        })
+        .catch((error: unknown) => {
+          if (nameTaken(error)) return undefined;
+          throw error;
+        });
+      if (taken === undefined) {
+        return fail(reply, 409, "Another site took this domain just now: check again.");
+      }
+      for (const other of taken) options.changed(other);
+      options.changed(found.site.id);
+      return reread(request, found.site.id);
+    },
+  );
+
+  // What a proxy asks before it gets a certificate for a domain, as
+  // Caddy's on-demand TLS does: 200 for one a published site holds.
+  app.get<{ Querystring: { readonly domain: string } }>(
+    "/api/sites/domain",
+    {
+      schema: {
+        querystring: {
+          type: "object",
+          required: ["domain"],
+          properties: { domain: { type: "string", minLength: 1, maxLength: 300 } },
+        },
+      },
+    },
+    async (request, reply) => {
+      const domain = domainName(request.query.domain, own);
+      const site = domain === undefined ? undefined : await siteAtDomain(db, domain);
+      if (domain === undefined || site === undefined) {
+        return fail(reply, 404, "No published site holds this domain.");
+      }
+      return { domain };
     },
   );
 

@@ -18,6 +18,15 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   a workspace's owners and admins turn publishing off, and an encrypted
   workspace publishes nothing
   ([ADR 0076](docs/adr/0076-a-published-site-is-a-note-or-a-folder-drawn-by-the-server-as-it-is-now-linking-only-to-its-own-pages.md)).
+  A site opens on a custom domain too, claimed in the dialog and proven by
+  a TXT record at `_nether-site.<domain>`; the server answers that
+  domain's requests with the site alone, and
+  `GET /api/sites/domain` tells Caddy's on-demand TLS which domains to get
+  certificates for. Each page has its description, canonical address and
+  Open Graph card, each site its `sitemap.xml` and, on its domain,
+  `robots.txt`, and `noindex: true` or the site's switch asks search
+  engines to leave pages out
+  ([ADR 0077](docs/adr/0077-a-site-holds-a-custom-domain-its-dns-proves-and-tells-search-engines-what-each-page-is.md)).
 - The plugin API's first part, `@nether/plugin-api`, under the MIT
   license: a plugin's manifest, `definePlugin`, and the messages between a
   plugin and the app, within the page or through a port. Commands a
@@ -213,6 +222,36 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   web app's settings have the AI tab, and writing assist names the server
   the text goes through
   ([ADR 0070](docs/adr/0070-the-web-apps-ai-goes-through-its-server-which-seals-the-keys-and-reaches-only-what-it-may.md)).
+- Search by meaning, in the desktop app: turned on for a vault in the AI
+  tab, with an OpenAI-compatible provider and its embedding model, it
+  sends the vault's notes to the model a passage at a time, the text under
+  each heading, and keeps the vectors in the vault's index on this
+  computer, a byte a number. The search panel then searches **By
+  meaning** on Enter, each note found by its closest passage, which opens
+  at its heading; filters work as by words. Only changed passages are sent
+  again, and nothing of it is in memory until a search runs
+  ([ADR 0074](docs/adr/0074-search-by-meaning-keeps-passages-vectors-on-the-device-and-loads-them-only-to-search.md)).
+- Asking your notes: the sidebar's Ask tab, while the vault has an AI
+  provider, answers a question from passages of the notes the vault's own
+  search finds by its words, one search a word, fused by rank, with search
+  by meaning's ranking added once it is on. At most eight passages go, with
+  the question and the three turns before it; the tab says where first, and
+  lists what was read after. Each citation, `[2]`, links to its passage and
+  opens the note there; one that names no passage sent shows unverified.
+  Words no note has send nothing. The conversation saves as a note, its
+  citations links by heading. It runs through the server's relay in the
+  web app, and on the desktop alone for an encrypted workspace
+  ([ADR 0075](docs/adr/0075-asking-your-notes-answers-from-passages-the-vaults-search-finds-each-citation-checked.md)).
+- Building with AI, in the File menu while the vault has an AI provider:
+  a database, with sample rows only if asked, a template, or a project
+  plan, a folder of notes with a database of its tasks, from a
+  description. The model answers in JSON, read against the app's own
+  types: a database's schema as core checks it, and each row's values. A
+  reply that does not read is refused, saying why. What reads is an import
+  plan: the dialog lists every note it would make, at a name the vault
+  does not have, numbered as imports number them, lets the name change
+  and rows and notes be left out, and writes nothing until Make it
+  ([ADR 0078](docs/adr/0078-building-with-ai-reads-a-checked-json-reply-into-an-import-plan-the-user-previews.md)).
 - Database triggers: rules in a database's schema, under `triggers`, that
   set a row's properties when one of them becomes a value, as "when
   Status becomes Done, set Completed to `{{date}}`", added and removed in

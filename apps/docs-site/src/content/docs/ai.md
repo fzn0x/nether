@@ -1,6 +1,6 @@
 ---
 title: AI
-description: How to bring your own AI provider to Nether, an OpenAI-compatible endpoint such as Ollama or OpenAI, or Anthropic, and use writing assist on what you select.
+description: How to bring your own AI provider to Nether, an OpenAI-compatible endpoint such as Ollama or OpenAI, or Anthropic, use writing assist on what you select, ask your notes, search them by meaning, and build databases, templates and plans from a description.
 ---
 
 Nether's AI uses a provider you choose, with your own key: any
@@ -106,3 +106,83 @@ instruction. Links, tags and formatting in the reply become the note's
 own. Nether records nothing of what is sent or received.
 
 Writing assist works on notes shown as blocks, not in source mode.
+
+## Asking your notes
+
+With a provider, the sidebar has an **Ask** tab, and the **View** menu has
+**Ask your notes**. Type a question and press Enter; Shift and Enter makes
+a new line. The tab says first where it goes, such as "Asks Ollama,
+llama3.2 on this computer".
+
+Nether finds the notes your question is about with the vault's own
+search, by its words, and by meaning too once search by meaning is on for
+the vault. It sends the question with at most eight passages of those
+notes, each under its heading, and the questions and answers before it.
+If no note has your words, nothing is sent: try others.
+
+The answer cites its passages by number, as [2]. Each citation is a link:
+choose it to open the note at that passage. A citation that names no
+passage Nether sent shows dotted and is no link, as the model wrote it
+unchecked. **Read from** under each answer lists every passage that was
+sent, those cited in bold.
+
+The questions stay while the vault is open. **Save as note** keeps them as
+a note, named by the first question, each answer's citations links to
+their notes' headings, which Obsidian reads too. **Clear** starts again.
+
+In the web app, asking goes through your server as writing assist does,
+and an end-to-end encrypted workspace has it in the desktop app only.
+
+## Search by meaning
+
+Search by meaning finds notes by what they are about, not only by their
+words: "keeping tomatoes from splitting" finds a note on watering that
+never says "split". It is off until you turn it on for a vault.
+
+In the **AI** tab, under **Search by meaning**, choose an
+OpenAI-compatible provider and its embedding model, as the provider names
+it, such as `text-embedding-3-small` for OpenAI or `nomic-embed-text` for
+Ollama, then **Turn on**. Anthropic offers no embedding models.
+
+Nether then sends the vault's notes to that model, a passage at a time,
+the text under one heading, and keeps what comes back in the vault's index
+on this computer. That sends the whole vault once, then each passage that
+changes; a paid provider charges for what it is sent. A provider on this
+computer, such as Ollama, keeps the text on it. The tab shows how far it
+has come.
+
+In the sidebar's **Search**, choose **By meaning**, type what you are
+looking for, and press Enter. Each note found shows its passage closest in
+meaning, and opens at that passage's heading. Filters such as `tag:` and
+`path:` work as they do by words.
+
+Another model embeds the vault anew. **Turn off** stops, and keeps what
+was embedded, for turning it on again. While AI is off in the vault, or
+its workspace's owners and admins turned it off, search by meaning is off
+too. In a vault of an end-to-end encrypted workspace, choosing a provider
+here gives it the vault's text, as choosing one for AI in this vault does.
+
+## Building with AI
+
+With a provider, the **File** menu has **Build with AI**. Choose what to
+build, describe it, and choose **Build**:
+
+- **A database**: its properties and views; tick **With a few sample
+  rows** for a few rows to start from.
+- **A template**: a note in the templates folder, to start others from.
+- **A project plan**: a folder of notes, the first its outline, and a
+  database of its tasks.
+
+The dialog says first where the description goes. The model answers in a
+form Nether checks as it checks a database you make by hand: when the
+answer does not read, as a board with no property to group by, Nether says
+why and makes nothing, and you can try again or describe it another way.
+Relations and rollups to other databases are added once the database is
+made.
+
+What it would make shows before anything is written: every note, at its
+path, a database with its properties and views, a template or a note with
+its first lines. Change the **Name** and the paths follow; untick rows or
+notes to leave them out. Names the vault has already get a number, as
+imports do. **Make it** writes them and opens what was built; **Cancel**
+makes nothing.

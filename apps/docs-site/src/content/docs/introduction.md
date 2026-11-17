@@ -65,15 +65,21 @@ Firefox as Markdown.
 them, their words or areas highlighted and commented on, each highlight
 Markdown that Obsidian reads. [Writing assist](../ai/) rewrites, fixes,
 summarizes, translates or continues what you select, with an AI provider
-you bring, in the desktop app and in the web app through its server.
+you bring, in the desktop app and in the web app through its server, and
+[search by meaning](../ai/#search-by-meaning) finds notes by what they are
+about, and [asking your notes](../ai/#asking-your-notes) answers from them,
+each citation a link to its passage.
+[Building with AI](../ai/#building-with-ai) makes a database, a template
+or a project plan from a description, previewed before it is made.
 [Share links](../servers/#share-links) open a page to anyone with one,
 with no account, to read, to comment on or to edit.
 [Buttons](../buttons/) in a note, written as Obsidian's Meta Bind writes
 them, run commands, make notes from templates and set properties, and a
 database's [triggers](../databases/#triggers) set a row's properties when
 one becomes a value. A page or a folder [publishes](../publishing/) as a
-site the server draws for anyone, its links only between its own pages.
-The [roadmap](../roadmap/) lists what each phase delivers.
+site the server draws for anyone, on a domain of your own if you like, its
+links only between its own pages. The
+[roadmap](../roadmap/) lists what each phase delivers.
 
 The full requirements, the architecture and the decision records live in
 the [repository](https://github.com/fzn0x/nether/tree/main/docs).

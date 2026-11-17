@@ -101,8 +101,12 @@ token as `Authorization: Bearer <token>`. Every error is
 | `PUT /api/workspaces/:id/notes/:note/unit` | edit in both | Moves a note into `unit`, or `general` |
 | `GET /api/workspaces/:id/sites` | member | The workspace's published sites the account may change, whether `publishing` is on, and whether it `manages` the switch |
 | `POST /api/workspaces/:id/sites` | full where it is | Publishes a `note` with its subpages, or a `folder`, as a site at `/p/<name>/`, with a `title`; gives its `url` |
-| `PATCH /api/workspaces/:id/sites/:site` | full where it is; owner, admin | Renames it, which moves its address, or changes its `title` |
+| `PATCH /api/workspaces/:id/sites/:site` | full where it is; owner, admin | Renames it, which moves its address, changes its `title`, or whether search engines may index it, `indexed` |
 | `DELETE /api/workspaces/:id/sites/:site` | full where it is; owner, admin | Unpublishes it |
+| `PUT /api/workspaces/:id/sites/:site/domain` | full where it is; owner, admin | Claims a custom `domain`; gives the TXT `record` that proves it |
+| `POST /api/workspaces/:id/sites/:site/domain/check` | full where it is; owner, admin | Looks the record up; found, the site holds the domain, taking it from any other site |
+| `DELETE /api/workspaces/:id/sites/:site/domain` | full where it is; owner, admin | Gives the domain up |
+| `GET /api/sites/domain` | | 200 when a published site holds `domain`, 404 otherwise, for a proxy's on-demand TLS |
 | `PUT /api/workspaces/:id/publishing` | owner, admin | Turns publishing on or off for the workspace, with `enabled` |
 | `POST /api/workspaces` | yes | Makes a workspace the account owns, with `name`; `encryption: "end-to-end"` and the maker's `sealedKey` make it encrypted |
 | `PUT /api/me/keys`, `GET /api/me/keys` | yes | The account's `publicKey`, and its private key in a `recoveryBox` only its recovery phrase opens; kept once |
@@ -383,6 +387,25 @@ framed or sent, and only images, media and that stylesheet load. A
 publisher who leaves the workspace takes their sites; an owner or an
 admin turns publishing off, and an encrypted workspace publishes nothing.
 Each address may ask for 600 pages and files a minute.
+
+**Custom domains** ([ADR 0077](../../docs/adr/0077-a-site-holds-a-custom-domain-its-dns-proves-and-tells-search-engines-what-each-page-is.md)):
+a site claims a domain, and holds it once a TXT record at
+`_nether-site.<domain>` has the value the claim was given, which the
+server looks up with the system's resolver. One site holds a domain at a
+time, the last to prove it. A request whose host, as the trusted proxy
+gives it, is a domain a site holds is that site's on every path: `/`,
+its pages, `/.files/...`, `/.nether/site.css`, `/sitemap.xml` and
+`/robots.txt`, and nothing of the API or the web app. No site may hold
+`NETHER_PUBLIC_URL`'s host, an address or a `localhost` name.
+`GET /api/sites/domain?domain=` is what a proxy asks before it gets a
+domain a certificate, as Caddy's on-demand TLS does.
+
+**What search engines read**: each page's description, from its
+`description` property or its first paragraph, its canonical address, on
+its domain when it has one, and an Open Graph card with the `image`
+property's image or its first. A site's `sitemap.xml` lists the pages
+that may be indexed; `noindex: true` in a note, or a site's `indexed`
+turned off, asks with `<meta name="robots">` and `X-Robots-Tag`.
 
 ## The web app
 

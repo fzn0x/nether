@@ -1,6 +1,7 @@
 // Published sites, as the Share dialog asks the server for them (ADR 0076):
 // a page with its subpages, or a folder, drawn by the server for anyone at
-// /p/<name>/. Loaded with the dialog.
+// /p/<name>/, or on a custom domain its DNS proves (ADR 0077). Loaded with
+// the dialog.
 import { request } from "./server.ts";
 
 type Fetch = typeof fetch;
@@ -14,8 +15,22 @@ export interface PublishedSite {
   readonly note: string | null;
   /** The folder it publishes, or null for a note's site. */
   readonly folder: string | null;
+  /** Its address: its domain's once it holds one, else its address on the server. */
   readonly url: string;
+  /** Its address on the server, at /p/<name>/. */
+  readonly pathUrl: string;
+  /** The domain it claims, or holds once verified, with the TXT record that proves it. */
+  readonly domain: SiteDomain | null;
+  /** Whether its pages let search engines index them. */
+  readonly indexed: boolean;
   readonly publishedBy: string;
+}
+
+/** A site's custom domain, and the record its DNS needs. */
+export interface SiteDomain {
+  readonly name: string;
+  readonly verified: boolean;
+  readonly record: { readonly type: string; readonly name: string; readonly value: string };
 }
 
 /** A workspace's sites the account may change, and its switch. */
@@ -34,15 +49,30 @@ function text(value: unknown): string {
   return typeof value === "string" ? value : "";
 }
 
+function domainOf(value: unknown): SiteDomain | null {
+  if (typeof value !== "object" || value === null) return null;
+  const domain = record(value);
+  const found = record(domain.record);
+  return {
+    name: text(domain.name),
+    verified: domain.verified === true,
+    record: { type: text(found.type), name: text(found.name), value: text(found.value) },
+  };
+}
+
 function siteOf(value: unknown): PublishedSite {
   const site = record(value);
+  const url = text(site.url);
   return {
     id: text(site.id),
     name: text(site.name),
     title: text(site.title),
     note: typeof site.note === "string" ? site.note : null,
     folder: typeof site.folder === "string" ? site.folder : null,
-    url: text(site.url),
+    url,
+    pathUrl: typeof site.pathUrl === "string" ? site.pathUrl : url,
+    domain: domainOf(site.domain),
+    indexed: site.indexed !== false,
     publishedBy: text(record(site.publishedBy).name),
   };
 }
@@ -89,6 +119,74 @@ export async function unpublishSite(
     token,
     method: "DELETE",
   });
+}
+
+/** Lets search engines index a site's pages, or asks them not to. */
+export async function setSiteIndexed(
+  fetcher: Fetch,
+  base: string,
+  token: string,
+  workspaceId: string,
+  site: string,
+  indexed: boolean,
+): Promise<PublishedSite> {
+  return siteOf(
+    await request(fetcher, base, `/api/workspaces/${workspaceId}/sites/${site}`, {
+      token,
+      method: "PATCH",
+      body: { indexed },
+    }),
+  );
+}
+
+/** Claims a custom domain for a site: it holds it once its TXT record is checked. */
+export async function claimDomain(
+  fetcher: Fetch,
+  base: string,
+  token: string,
+  workspaceId: string,
+  site: string,
+  domain: string,
+): Promise<PublishedSite> {
+  return siteOf(
+    await request(fetcher, base, `/api/workspaces/${workspaceId}/sites/${site}/domain`, {
+      token,
+      method: "PUT",
+      body: { domain },
+    }),
+  );
+}
+
+/** Looks a site's claim's TXT record up; the server's reason when it is not there yet. */
+export async function checkDomain(
+  fetcher: Fetch,
+  base: string,
+  token: string,
+  workspaceId: string,
+  site: string,
+): Promise<PublishedSite> {
+  return siteOf(
+    await request(fetcher, base, `/api/workspaces/${workspaceId}/sites/${site}/domain/check`, {
+      token,
+      method: "POST",
+    }),
+  );
+}
+
+/** Gives a site's custom domain up. */
+export async function giveUpDomain(
+  fetcher: Fetch,
+  base: string,
+  token: string,
+  workspaceId: string,
+  site: string,
+): Promise<PublishedSite> {
+  return siteOf(
+    await request(fetcher, base, `/api/workspaces/${workspaceId}/sites/${site}/domain`, {
+      token,
+      method: "DELETE",
+    }),
+  );
 }
 
 /** Turns publishing on or off for a workspace, as its owners and admins do. */
