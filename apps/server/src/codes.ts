@@ -5,11 +5,12 @@
 // after the answer. Five wrong tries spend a code, and asking again
 // replaces it. Only a code's SHA-256 is kept.
 import { createHash, randomInt, randomUUID, timingSafeEqual } from "node:crypto";
-import type { FastifyBaseLogger, FastifyInstance } from "fastify";
+import type { FastifyBaseLogger, FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { type Database, readBoolean, readNumber, readText } from "./db.ts";
 import { emailField, emailKey, fail, limitBy, limitByAddress } from "./http.ts";
 import type { Mailer } from "./mail.ts";
 import { startSession } from "./sessions.ts";
+import type { SecuritySettings } from "./settings.ts";
 
 /** Minutes a code lasts. */
 export const codeMinutes = 15;
@@ -109,13 +110,23 @@ async function sendCode(
   });
 }
 
-/** The routes of signing in by email, which a server has only when it can send email. */
+/**
+ * The routes of signing in by email, which a server has only when it can
+ * send email, and while the security settings let codes sign in (ADR 0084).
+ */
 export function registerCodes(
   app: FastifyInstance,
   db: Database,
   mailer: Mailer,
+  security: SecuritySettings,
   publicUrl: string | null = null,
 ): void {
+  // Off, they answer as on a server without mail, before any try is counted.
+  const whenOn = async (request: FastifyRequest, reply: FastifyReply) => {
+    if ((await security.values()).emailCodes) return undefined;
+    const path = request.url.split("?")[0] ?? request.url;
+    return fail(reply, 404, `Route ${request.method}:${path} not found`);
+  };
   const sending = new Set<Promise<void>>();
   app.addHook("onClose", async () => {
     await Promise.allSettled(sending);
@@ -134,7 +145,7 @@ export function registerCodes(
     "/api/sign-in-codes",
     {
       schema: { body: askBody },
-      onRequest: limitByAddress(app, "sign-in-codes", 10, "15 minutes"),
+      onRequest: [whenOn, limitByAddress(app, "sign-in-codes", 10, "15 minutes")],
       // A few emails to one address, however many ask for them.
       preHandler: limitBy(app, "sign-in-codes-to", 3, "15 minutes", (request) =>
         emailKey((request.body as Ask).email),
@@ -152,7 +163,16 @@ export function registerCodes(
     "/api/sign-in-codes/redeem",
     {
       schema: { body: redeemBody },
-      onRequest: limitByAddress(app, "sign-in-code-redeem", 30, "5 minutes"),
+      // Redeeming a code tries it as signing in tries a password: the same limit per address.
+      onRequest: [
+        whenOn,
+        limitByAddress(
+          app,
+          "sign-in-code-redeem",
+          async () => (await security.values()).signInTriesAddress,
+          "5 minutes",
+        ),
+      ],
     },
     async (request, reply) => {
       const digits = digitsOf(request.body.code);

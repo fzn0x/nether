@@ -8,6 +8,7 @@
 import type { FastifyInstance, FastifyPluginAsync, FastifyReply, FastifyRequest } from "fastify";
 import type { Config } from "./config.ts";
 import type { Database } from "./db.ts";
+import type { SecuritySettings } from "./settings.ts";
 
 export const enterpriseFeatures = ["sso", "scim", "audit", "policies", "admin", "ha"] as const;
 
@@ -26,6 +27,8 @@ export interface EnterpriseServices {
    * and every document is checked anew, as a change of its role does.
    */
   readonly disconnect: (userId: string) => void;
+  /** The security settings (ADR 0084), which the console's Security page reads and sets. */
+  readonly security: SecuritySettings;
 }
 
 /** What a module's plugin is given. */
