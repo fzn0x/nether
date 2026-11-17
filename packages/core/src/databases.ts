@@ -1,6 +1,7 @@
 // Databases: a note with a schema, whose rows are the notes under it. Views
 // show the rows as a table, board, calendar, timeline, gallery or list, or
 // in a layout a plugin adds, named `plugin-id/layout` (ADR 0056).
+import { ModelError } from "./errors.ts";
 import { type ViewId, readViewId } from "./ids.ts";
 import { type JsonObject, type JsonValue, readJson, readJsonObject } from "./json.ts";
 import {
@@ -108,11 +109,25 @@ export interface Trigger {
   readonly set: JsonObject;
 }
 
+/**
+ * A rule a database has and does not run: one that names a property the
+ * database no longer has, or one worked out, after a hand edit or another
+ * app's, or that cannot be read. It is kept as written, so nothing is lost.
+ */
+export interface SkippedTrigger {
+  /** The rule as the schema has it. */
+  readonly value: JsonValue;
+  /** Why it does not run, from the rule's own field, as `when names no property…`. */
+  readonly problem: string;
+}
+
 export interface DatabaseSchema {
   readonly properties: readonly PropertyDefinition[];
   readonly views: readonly View[];
-  /** Its rules, when it has any. */
+  /** Its rules that run, when it has any. */
   readonly triggers?: readonly Trigger[];
+  /** Its rules that do not run, when it has any: a stale rule never hides the database. */
+  readonly skippedTriggers?: readonly SkippedTrigger[];
 }
 
 /** The types a trigger cannot watch or set: worked out from others, never written. */
@@ -313,13 +328,55 @@ export function readDatabaseSchema(value: unknown, path: string): DatabaseSchema
     }
     names.add(view.name);
   });
-  const triggers =
-    fields.triggers === undefined
-      ? []
-      : readArray(fields.triggers, `${path}.triggers`).map((item, index) =>
-          readTrigger(item, `${path}.triggers[${String(index)}]`, types),
-        );
-  return triggers.length === 0 ? { properties, views } : { properties, views, triggers };
+  const { triggers, skipped } = readTriggers(fields.triggers, `${path}.triggers`, types);
+  return {
+    properties,
+    views,
+    ...(triggers.length === 0 ? {} : { triggers }),
+    ...(skipped.length === 0 ? {} : { skippedTriggers: skipped }),
+  };
+}
+
+/** A rule as JSON, to keep: as it is, or as JSON writes what JSON cannot hold, as YAML's `.inf`. */
+function asJson(value: unknown, path: string): JsonValue {
+  try {
+    return readJson(value, path);
+  } catch {
+    return JSON.parse(JSON.stringify(value ?? null)) as JsonValue;
+  }
+}
+
+/**
+ * A database's rules: those that run, and those it keeps and does not run,
+ * each with why. A rule that is wrong never makes the schema unreadable.
+ */
+function readTriggers(
+  value: unknown,
+  path: string,
+  types: ReadonlyMap<string, PropertyType>,
+): { readonly triggers: Trigger[]; readonly skipped: SkippedTrigger[] } {
+  const triggers: Trigger[] = [];
+  const skipped: SkippedTrigger[] = [];
+  if (value === undefined) return { triggers, skipped };
+  const skip = (item: unknown, rulePath: string, error: unknown) => {
+    if (!(error instanceof ModelError)) throw error;
+    // Why, from the rule's own field: "when names no property of the database".
+    const problem = error.message.slice(rulePath.length).replace(/^[.\s]+/, "");
+    skipped.push({ value: asJson(item, rulePath), problem });
+  };
+  if (!Array.isArray(value)) {
+    skip(value, path, new ModelError(path, "must be a list of rules"));
+    return { triggers, skipped };
+  }
+  value.forEach((item: unknown, index) => {
+    const rulePath = `${path}[${String(index)}]`;
+    try {
+      triggers.push(readTrigger(item, rulePath, types));
+    } catch (error) {
+      skip(item, rulePath, error);
+    }
+  });
+  return { triggers, skipped };
 }
 
 /**
