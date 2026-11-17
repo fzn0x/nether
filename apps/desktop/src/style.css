@@ -2677,6 +2677,15 @@ button {
   max-width: 32rem;
 }
 
+/* Its kinds, apart enough to tap each. */
+.admin-sso-form fieldset {
+  display: grid;
+  gap: 0.75rem;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
 .admin-find {
   display: flex;
   flex-wrap: wrap;
