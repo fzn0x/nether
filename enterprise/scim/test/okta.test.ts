@@ -270,6 +270,15 @@ describe("Okta", () => {
       "application/json",
     );
     expect(made.statusCode).toBe(201);
+    const charset = await scim(
+      test,
+      directory,
+      "POST",
+      "/Users",
+      oktaUser("hal@corp.example", { externalId: "00u1hal" }),
+      "application/scim+json; charset=utf-8",
+    );
+    expect(charset.statusCode, charset.body).toBe(201);
     const broken = await test.server.inject({
       method: "POST",
       url: `${directory.base}/Users`,
