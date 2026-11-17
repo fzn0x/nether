@@ -649,6 +649,20 @@ export const migrations: readonly Migration[] = [
       );
     `,
   },
+  {
+    version: 23,
+    name: "work that runs once across nodes",
+    sql: `
+      -- Work that runs once across the server's nodes (ADR 0082): each job's
+      -- last start, and the node that claimed it, which a node claims when
+      -- that start is older than the job's period.
+      CREATE TABLE cluster_jobs (
+        name text PRIMARY KEY,
+        started_at timestamptz,
+        node text
+      );
+    `,
+  },
 ];
 
 /** The schema version this server writes and reads. */

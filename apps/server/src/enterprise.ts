@@ -9,6 +9,7 @@ import type { FastifyInstance, FastifyPluginAsync, FastifyReply, FastifyRequest 
 import type { AiEndpoints } from "./aiEndpoints.ts";
 import type { Config } from "./config.ts";
 import type { Database } from "./db.ts";
+import type { Every } from "./jobs.ts";
 import type { SecuritySettings } from "./settings.ts";
 
 export const enterpriseFeatures = ["sso", "scim", "audit", "policies", "admin", "ha"] as const;
@@ -32,6 +33,11 @@ export interface EnterpriseServices {
   readonly security: SecuritySettings;
   /** The approved AI endpoints (ADR 0086), which the `policies` module's page reads and sets. */
   readonly aiEndpoints: AiEndpoints;
+  /**
+   * Runs work once in each period across the server's nodes, claimed in
+   * the database (ADR 0082), as a daily refresh or an hourly purge.
+   */
+  readonly every: Every;
 }
 
 /** What a module's plugin is given. */

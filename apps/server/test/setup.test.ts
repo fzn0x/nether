@@ -46,6 +46,7 @@ describe("migrate", () => {
       "api_tokens",
       "attachments",
       "backup_state",
+      "cluster_jobs",
       "document_versions",
       "documents",
       "encrypted_updates",
