@@ -1,0 +1,17 @@
+Nether's server is starting: {{ include "nether.replicas" . }} node(s){{ if .Values.ha.enabled }}, with high availability{{ end }}.
+
+{{- if not .Values.secrets.existingSecret }}
+
+While the server has no account, set it up from the app with the setup code
+in its Secret:
+
+  kubectl get secret --namespace {{ .Release.Namespace }} {{ include "nether.fullname" . }} \
+    -o jsonpath='{.data.{{ .Values.secrets.keys.setupCode }}}' | base64 -d
+
+Keep the Secret's {{ .Values.secrets.keys.secretKey }} with your backups: a restore needs it.
+{{- end }}
+{{- if .Values.bundled.enabled }}
+
+bundled.enabled runs one PostgreSQL and one Valkey with no failover, to try
+Nether. Use your own for real data.
+{{- end }}

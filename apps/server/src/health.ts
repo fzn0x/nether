@@ -69,6 +69,13 @@ export function registerReadiness(
   valkey: Pick<Redis, "status"> | undefined,
   readiness: Readiness,
 ): void {
+  // While it drains, each answer closes its connection, so a client's next
+  // request opens a new one, which the load balancer sends to a node that
+  // stays, rather than reusing one to this node until it closes.
+  app.addHook("onSend", async (_request, reply, payload) => {
+    if (readiness.draining) reply.header("connection", "close");
+    return payload;
+  });
   app.get("/health/ready", { schema: readySchema }, async (_request, reply) => {
     const database = await databaseAnswers(db);
     const status = readiness.draining ? "draining" : database ? "ready" : "unready";

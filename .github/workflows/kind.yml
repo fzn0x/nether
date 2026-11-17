@@ -1,0 +1,77 @@
+name: Kubernetes
+
+# The chart on a kind cluster (ADR 0082), on changes to the chart or the
+# server, and nightly: the image built from this commit and loaded into
+# kind, installed with two nodes, high availability and the bundled
+# PostgreSQL and Valkey; sync through the Service, a pod deleted, and an
+# upgrade that replaces every pod while a client keeps asking.
+on:
+  pull_request:
+    paths:
+      - deploy/**
+      - apps/server/**
+      - apps/web/**
+      - enterprise/**
+      - packages/**
+      - pnpm-lock.yaml
+      - .github/workflows/kind.yml
+  push:
+    branches: [main]
+    paths:
+      - deploy/**
+      - apps/server/**
+      - apps/web/**
+      - enterprise/**
+      - packages/**
+      - pnpm-lock.yaml
+      - .github/workflows/kind.yml
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  kind:
+    name: The chart on kind
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+      - uses: docker/setup-buildx-action@v4
+      - name: Build the server's image
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: deploy/docker/Dockerfile
+          tags: ghcr.io/fzn0x/nether-server:kind
+          load: true
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Start kind v0.33.0 with Kubernetes 1.37
+        uses: helm/kind-action@v1.15.2
+        with:
+          version: v0.33.0
+          node_image: kindest/node:v1.37.0@sha256:a1ed56cfb0e7b93589bdf97c8cd566405a265939e3620fc4f5de89adff580ae5
+          cluster_name: nether-check
+          config: deploy/helm/kind-cluster.yaml
+      - uses: azure/setup-helm@v5.0.1
+        with:
+          version: v4.3.1
+      - name: Install the chart
+        run: |
+          kind load docker-image ghcr.io/fzn0x/nether-server:kind --name nether-check
+          kubectl apply -f deploy/helm/kind-claim.yaml
+          helm install nether deploy/helm/nether -f deploy/helm/nether/examples/kind.yaml \
+            --wait --timeout 10m
+      - name: Sync through it, delete a pod, and upgrade it
+        run: node deploy/helm/check.mjs
+      - name: What the cluster says
+        if: failure()
+        run: |
+          kubectl get all,pvc,secrets,events -o wide
+          kubectl logs -l app.kubernetes.io/instance=nether --all-containers --prefix --tail=200

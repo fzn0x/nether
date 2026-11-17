@@ -1,0 +1,20 @@
+apiVersion: v2
+name: nether
+description: The Nether server, sync and sharing for notes you own, on Kubernetes, one node or several (ADR 0082).
+type: application
+# The chart's own version; a release packages it at the release's version.
+version: 0.1.0
+# The server's image tag this chart runs unless image.tag says otherwise.
+appVersion: "0.1.0"
+home: https://github.com/fzn0x/nether
+sources:
+  - https://github.com/fzn0x/nether
+icon: https://raw.githubusercontent.com/fzn0x/nether/main/apps/web/public/icon.svg
+keywords:
+  - notes
+  - markdown
+  - sync
+  - self-hosted
+annotations:
+  licenses: AGPL-3.0-or-later
+kubeVersion: ">=1.30.0-0"

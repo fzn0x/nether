@@ -1,0 +1,11 @@
+# The attachments' claim for the chart's test on kind: one node, so both
+# server pods mount this ReadWriteOnce volume (examples/kind.yaml).
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: nether-files
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 1Gi

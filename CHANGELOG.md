@@ -30,7 +30,14 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   one of several: open documents and who is in them are shared through
   Valkey, the API reads other nodes' open copies, and a node stops at
   startup unless it has Valkey, attachments every node reads
-  (`NETHER_STORAGE_SHARED` for a shared volume) and a setup code
+  (`NETHER_STORAGE_SHARED` for a shared volume) and a setup code. While a
+  node drains, each answer closes its connection, so clients move to the
+  nodes that stay. The Helm chart, `oci://ghcr.io/fzn0x/charts/nether`,
+  runs the server on Kubernetes, one node or several, with a migration
+  Job before each upgrade, probes, rolling updates one node at a time, a
+  disruption budget, an optional autoscaler, an Ingress or Gateway API
+  route, and a bundled PostgreSQL and Valkey to try it; new guides cover
+  Kubernetes, high availability with a failover runbook, and upgrades
   ([ADR 0082](docs/adr/0082-several-nodes-share-sync-through-valkey-take-their-order-from-postgresql-and-roll-out-one-at-a-time.md)).
 - Publishing: a page with its subpages, or the folder it is in, published
   from its Share dialog as a site anyone opens at the server's

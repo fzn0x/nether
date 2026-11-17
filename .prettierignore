@@ -7,3 +7,6 @@ apps/desktop/src/mygo.ts
 
 # Evidence kept exactly as the spike produced it
 docs/adr/0002-editor-spike/
+
+# Helm's Go templates are not YAML until Helm renders them.
+deploy/helm/nether/templates/

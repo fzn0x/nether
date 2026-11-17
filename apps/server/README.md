@@ -381,11 +381,13 @@ rules.
 ## Stopping
 
 On SIGTERM, as Kubernetes and `docker stop` send it, the server drains
-(ADR 0082): `/health/ready` answers 503 at once; after
-`NETHER_DRAIN_SECONDS`, while the load balancer takes the node out, it
-closes every sync and relay socket with 1012, "service restart", stores
+(ADR 0082): `/health/ready` answers 503 at once, and each answer closes
+its connection, so a client's next request goes to a node that stays.
+After `NETHER_DRAIN_SECONDS`, while the load balancer takes the node out,
+it closes every sync and relay socket with 1012, "service restart", stores
 its open documents, finishes the requests under way, and exits. The apps
-connect again, to another node. On SIGINT, as Ctrl-C, it skips the wait;
+connect again, to another node. The Helm chart in
+[`deploy/helm`](../../deploy/helm/) runs several nodes on Kubernetes. On SIGINT, as Ctrl-C, it skips the wait;
 a second signal ends it at once.
 
 ## Backups and restoring
