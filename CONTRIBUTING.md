@@ -84,6 +84,26 @@ and inside a phase one feature at a time:
   `## [Unreleased]` in [CHANGELOG.md](CHANGELOG.md), in the
   [Keep a Changelog](https://keepachangelog.com) format.
 
+## Database migrations
+
+The server's schema is a list of numbered migrations in
+`apps/server/src/migrations.ts`. During a rolling upgrade the previous
+release's server runs on the new schema, so migrations expand, and
+contract a release later
+([ADR 0082](docs/adr/0082-several-nodes-share-sync-through-valkey-take-their-order-from-postgresql-and-roll-out-one-at-a-time.md)):
+
+- **A release's migrations only add**: tables, columns that are nullable
+  or have a default, indexes, functions. The server before it must still
+  read and write everything it did.
+- **Renames, drops and narrowed types are contract steps.** One comes in a
+  later release than the one that stopped using what it removes, and sets
+  `readableFrom` to that release's schema version. A server older than the
+  highest `readableFrom` refuses the database; any other server runs on it.
+- **A large backfill** runs in batches outside the migration's
+  transaction, not in the migration itself.
+- **Every new table and column** is checked in
+  `apps/server/test/setup.test.ts`.
+
 ## Dependencies
 
 Prefer fewer, well-maintained dependencies. Before adding one, check its

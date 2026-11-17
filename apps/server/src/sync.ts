@@ -437,8 +437,19 @@ export async function registerSync(
 ): Promise<SyncControl> {
   /** Who changed each vault document since it was last stored, by its name. */
   const changers = new Map<string, Changer[]>();
-  // A note's update may be large, as a pasted image's data is; 16 MiB at most.
-  await app.register(websocket, { options: { maxPayload: 16 * 1024 * 1024 } });
+  await app.register(websocket, {
+    // A note's update may be large, as a pasted image's data is; 16 MiB at most.
+    options: { maxPayload: 16 * 1024 * 1024 },
+    // As the server stops, every socket, sync's and the relay's, hears that
+    // it restarts (1012), and its app connects again, through the load
+    // balancer to another node (ADR 0082). New upgrades are refused.
+    preClose(done) {
+      const server = this.websocketServer;
+      for (const client of server.clients) client.close(1012, "Service restart");
+      server.close();
+      done();
+    },
+  });
 
   async function role(userId: string, workspaceId: string): Promise<string | undefined> {
     const { rows } = await db.query(

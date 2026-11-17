@@ -1,9 +1,10 @@
 // Starts the server, configured by environment variables: it brings the
 // database to its schema first, and while it has no account it takes
 // NETHER_SETUP_CODE as its setup code, or makes one and writes it to its
-// log. Its entries call it: `dist/main.js`, with no
-// enterprise module, and `enterprise/server`, the image's, with every one
-// (ADR 0079).
+// log. On SIGTERM it drains before it stops (ADR 0082); on SIGINT, as a
+// terminal's Ctrl-C, it skips the wait, and a second signal ends it. Its
+// entries call it: `dist/main.js`, with no enterprise module, and
+// `enterprise/server`, the image's, with every one (ADR 0079).
 import type { Redis } from "ioredis";
 import { buildApp } from "./app.ts";
 import { DiskBlobs, S3Blobs } from "./blobs.ts";
@@ -11,7 +12,8 @@ import { readConfig } from "./config.ts";
 import { connectPostgres } from "./db.ts";
 import type { EnterpriseModule } from "./enterprise.ts";
 import { smtpMailer } from "./mail.ts";
-import { migrate } from "./migrations.ts";
+import { Readiness, drain } from "./health.ts";
+import { migrate, schemaVersion } from "./migrations.ts";
 import { connectRedis, watchRedis } from "./redis.ts";
 import { newSetupCode, setupNeeded } from "./setup.ts";
 
@@ -35,9 +37,11 @@ export async function startServer(options: StartOptions = {}): Promise<void> {
       config.storage.kind === "disk"
         ? new DiskBlobs(config.storage.path)
         : new S3Blobs(config.storage);
+    const readiness = new Readiness();
     const app = await buildApp(config, {
       db,
       blobs,
+      readiness,
       ...(setupCode === undefined ? {} : { setupCode }),
       ...(mailer === undefined ? {} : { mailer }),
       ...(redis === undefined ? {} : { redis }),
@@ -45,7 +49,12 @@ export async function startServer(options: StartOptions = {}): Promise<void> {
         ? {}
         : { enterpriseModules: options.enterpriseModules }),
     });
-    if (migrated.from !== migrated.to) {
+    if (migrated.from > schemaVersion) {
+      app.log.info(
+        { database: migrated.from, server: schemaVersion },
+        "The database's schema is newer than this server's, and no step since needs a newer server: running on it",
+      );
+    } else if (migrated.from !== migrated.to) {
       app.log.info(migrated, "Migrated the database to the server's schema");
     }
     if (redis !== undefined) watchRedis(redis, app.log);
@@ -56,8 +65,15 @@ export async function startServer(options: StartOptions = {}): Promise<void> {
     });
     for (const signal of ["SIGINT", "SIGTERM"] as const) {
       process.once(signal, () => {
-        app.log.info(`Received ${signal}, shutting down`);
-        void app.close().then(() => process.exit(0));
+        const seconds = signal === "SIGTERM" ? config.drainSeconds : 0;
+        app.log.info({ seconds }, `Received ${signal}: draining, then shutting down`);
+        drain(app, readiness, seconds).then(
+          () => process.exit(0),
+          (error: unknown) => {
+            app.log.error({ err: error }, "Could not close in time; stopping anyway");
+            process.exit(1);
+          },
+        );
       });
     }
     await app.listen({ host: config.host, port: config.port });
