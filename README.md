@@ -45,8 +45,8 @@ no account, and a server of your own adds sync, sharing and the web app.
 | --- | --- |
 | Windows, macOS and Linux | The installers on the [latest release](https://github.com/fzn0x/nether/releases/latest) |
 | Linux, updating itself | `curl -fsSL https://github.com/fzn0x/nether/releases/latest/download/install.sh \| sh` |
-| Web | The web app, served by your Nether server |
-| Chrome and Firefox | The web clipper's files on the [latest release](https://github.com/fzn0x/nether/releases/latest) |
+| Any browser | Nothing to download: [host a server](#self-hosting), open its address in the browser, such as `https://nether.example.org`, and sign in. Chrome and Edge can install it as an app |
+| Web clipper, for Chrome, Edge, Brave and Firefox | Its ZIP on the [latest release](https://github.com/fzn0x/nether/releases/latest), loaded as the [clipper guide](https://fzn0x.github.io/nether/clipper/) shows |
 
 The [install guide](https://fzn0x.github.io/nether/install/) covers each
 system, updates, and the Android and iOS apps, which are in progress.
