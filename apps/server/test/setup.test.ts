@@ -47,6 +47,8 @@ describe("migrate", () => {
       "attachments",
       "audit_events",
       "backup_state",
+      "cluster_jobs",
+      "cluster_nodes",
       "document_versions",
       "documents",
       "encrypted_updates",

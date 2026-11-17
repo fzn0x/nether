@@ -942,6 +942,10 @@ test("the admin console turns a feature on and off, for an instance admin alone"
   await expect(pages).toBeEnabled();
   await expect(pages).not.toBeChecked();
   await expect(page.getByRole("region", { name: "Usage" })).toHaveCount(0);
+  // The server's one node, in every build, marked as the one that answered.
+  const nodes = page.getByRole("region", { name: "Nodes" }).getByRole("listitem");
+  await expect(nodes).toHaveCount(1);
+  await expect(nodes).toContainText("(answered this page)");
   expect(await violations(page)).toEqual([]);
 
   await pages.check();

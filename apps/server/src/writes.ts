@@ -203,21 +203,6 @@ const newRowBody = {
   },
 } as const;
 
-/** Runs `work` after every other started for the same key, so two makes of one path go one at a time. */
-function inTurn<T>(turns: Map<string, Promise<unknown>>, key: string, work: () => Promise<T>) {
-  const before = turns.get(key) ?? Promise.resolve();
-  const run = before.then(work, work);
-  const done = run.then(
-    () => undefined,
-    () => undefined,
-  );
-  turns.set(key, done);
-  void done.then(() => {
-    if (turns.get(key) === done) turns.delete(key);
-  });
-  return run;
-}
-
 /** The routes of the public API that write, with the checks `registerApi` gave. */
 export function registerWrites(
   app: FastifyInstance,
@@ -243,7 +228,6 @@ export function registerWrites(
   const preHandler = [checks.caller, checks.limit, writeLimit];
   // Room for a note of noteBytes, and its JSON's quotes and escapes.
   const bodyLimit = noteBytes * 2;
-  const turns = new Map<string, Promise<unknown>>();
 
   /** The workspace a write is to, if the caller may write and reaches it; else why not. */
   async function writable(caller: ApiCaller, workspace: string) {
@@ -267,7 +251,9 @@ export function registerWrites(
     if (unit === undefined) return [409, noPrivate];
     if (!writesAt(reached.levels.get(unit))) return [403, noWrite];
     const markdown = await markdownReader();
-    return inTurn(turns, reached.workspace, async () => {
+    // One make of a workspace at a time, on every node, so two makes of one
+    // path go one after the other (ADR 0082).
+    return db.lock(`api.make.${reached.workspace}`, async () => {
       if (await isTaken(db, reached.workspace, path)) return [409, pathTaken] as const;
       const id = randomUUID();
       if (unit !== general) {

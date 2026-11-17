@@ -1,5 +1,6 @@
 // The server's configuration, read from environment variables.
 import { isIP } from "node:net";
+import { hostname } from "node:os";
 import { fileURLToPath } from "node:url";
 import { endpointsVariable, maxEndpoints, readEndpoints } from "./aiEndpoints.ts";
 import { type EnterprisePins, enterpriseFeatures, switchVariable } from "./enterprise.ts";
@@ -19,6 +20,11 @@ export interface Config {
   readonly logLevel: LogLevel;
   /** The PostgreSQL database's address, as `postgres://user:password@host:5432/nether`. */
   readonly databaseUrl: string;
+  /**
+   * This node's name among the server's nodes, as the console lists them
+   * (ADR 0082): `NETHER_NODE_NAME`, or the machine's, as a pod's is.
+   */
+  readonly nodeName: string;
   /**
    * The Redis or Valkey server that keeps the rate limits' counts (ADR 0054),
    * as `redis://host:6379`; without one, each node keeps its own in memory.
@@ -225,6 +231,12 @@ function readDatabaseUrl(env: NodeJS.ProcessEnv): string {
     throw new ConfigError("NETHER_DATABASE_URL", "must be a postgres:// address");
   }
   return value;
+}
+
+/** This node's name: `NETHER_NODE_NAME`, or the machine's when unset or blank. */
+function readNodeName(env: NodeJS.ProcessEnv): string {
+  const value = env.NETHER_NODE_NAME?.trim() ?? "";
+  return value === "" ? hostname() : value;
 }
 
 function readRedisUrl(env: NodeJS.ProcessEnv): string | null {
@@ -540,6 +552,7 @@ export function readConfig(env: NodeJS.ProcessEnv): Config {
     port: readPort(env),
     logLevel: readLogLevel(env),
     databaseUrl: readDatabaseUrl(env),
+    nodeName: readNodeName(env),
     redisUrl: readRedisUrl(env),
     trustProxy: readTrustProxy(env),
     webhookPrivate: readPrivate(env, "NETHER_WEBHOOK_PRIVATE", "webhooks"),
