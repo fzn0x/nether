@@ -5,7 +5,8 @@ description: How a server's admin turns Nether's enterprise features on and off,
 
 Nether's enterprise features are free and open source, under the same
 license as the rest of it: single sign-on, provisioning, audit logs, data
-policies, the admin console's own pages and high availability. Every
+policies, advanced permissions, the admin console's own pages and high
+availability. Every
 server has them all, each off until you turn it on. There is no license
 key, no seat limit, and nothing the server reports to anyone: they work
 air-gapped.

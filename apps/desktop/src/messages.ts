@@ -871,6 +871,7 @@ export const messages = {
   adminFeatureScim: "Provisioning, by SCIM and LDAP",
   adminFeatureAudit: "Audit logs",
   adminFeaturePolicies: "Data policies",
+  adminFeaturePermissions: "Advanced permissions",
   adminFeatureAdmin: "The console's usage, workspaces and security pages",
   adminFeatureHa: "High availability",
   adminPinned: "Set by {variable}, in the server's environment.",
