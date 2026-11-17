@@ -48,12 +48,16 @@ function quoted(name: string): string {
   return `"${name.replaceAll('"', '""')}"`;
 }
 
-/** The tables of the schema, migrations' own record left out, parents before those whose keys point to them. */
+/**
+ * The tables of the schema, parents before those whose keys point to them:
+ * the migrations' own record left out, and the running nodes' heartbeats,
+ * which belong to the processes that wrote them (ADR 0082).
+ */
 async function tablesInOrder(db: Queryable): Promise<string[]> {
   const { rows } = await db.query(
     `SELECT table_name FROM information_schema.tables
      WHERE table_schema = current_schema() AND table_type = 'BASE TABLE'
-       AND table_name <> 'schema_migrations'
+       AND table_name NOT IN ('schema_migrations', 'cluster_nodes')
      ORDER BY table_name`,
   );
   const tables = rows.map((row) => String(row.table_name));

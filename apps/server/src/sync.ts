@@ -12,7 +12,7 @@
 // a document opens at its unit's level for the account, read-only below edit,
 // and the list of stored documents names only those of the account's units.
 import websocket from "@fastify/websocket";
-import { Hocuspocus } from "@hocuspocus/server";
+import { Hocuspocus, type LocalTransactionOrigin } from "@hocuspocus/server";
 import type { FastifyInstance } from "fastify";
 import * as Y from "yjs";
 import { type Database, type Queryable, readBytes, readCount, readText } from "./db.ts";
@@ -43,6 +43,12 @@ import {
 
 const uuid = "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}";
 const namePattern = new RegExp(`^(${uuid})/(vault|vault\\.${uuid}|${uuid}(?:\\.comments)?)$`);
+
+/**
+ * The origin of what a store merged in from the database, applied to the
+ * open document: stored already, so it starts no store of its own.
+ */
+const fromStore: LocalTransactionOrigin = { source: "local", skipStoreHooks: true };
 
 /**
  * A document's name: its workspace's ID, then `vault`, `vault.` and a unit's
@@ -178,6 +184,19 @@ export interface DocumentStore {
   readonly state: Uint8Array;
   /** What storing it tells of, and who changed it, when a module listens (ADR 0081). */
   readonly told?: StoreTold | undefined;
+  /**
+   * The number the storing node last read or stored the document at, when
+   * it keeps one. Stored since by another node or process, the state is
+   * merged with what is stored (ADR 0082). Without one, the state replaces
+   * what is stored.
+   */
+  readonly known?: number;
+}
+
+/** What a store did: its number, and the stored state it merged in, which the state given lacked. */
+export interface StoreResult {
+  readonly seq: number;
+  readonly lacked?: Uint8Array;
 }
 
 /**
@@ -194,23 +213,23 @@ export async function storeDocument(
   state: Uint8Array,
   told?: StoreTold,
 ): Promise<number> {
-  const [seq] = await storeDocuments(db, workspaceId, [{ document, state, told }]);
-  if (seq === undefined) throw new Error(`${document} was not numbered.`);
-  return seq;
+  const [stored] = await storeDocuments(db, workspaceId, [{ document, state, told }]);
+  if (stored === undefined) throw new Error(`${document} was not numbered.`);
+  return stored.seq;
 }
 
 /**
- * Stores documents of one workspace in one transaction, and gives their
- * numbers in the order given. Each is written as `storeDocument` writes
- * it, in the order of their names, so two transactions storing the same
- * documents lock their rows in one order; then the workspace's lock is
+ * Stores documents of one workspace in one transaction, and gives what
+ * each store did, in the order given. Each is written as `storeDocument`
+ * writes it, in the order of their names, so two transactions storing the
+ * same documents lock their rows in one order; then the workspace's lock is
  * taken, once, and every number is drawn under it (ADR 0082).
  */
 export async function storeDocuments(
   db: Database,
   workspaceId: string,
   stores: readonly DocumentStore[],
-): Promise<number[]> {
+): Promise<StoreResult[]> {
   if (new Set(stores.map((store) => store.document)).size !== stores.length) {
     throw new Error("A transaction stores each document once.");
   }
@@ -218,9 +237,8 @@ export async function storeDocuments(
     a.document < b.document ? -1 : a.document > b.document ? 1 : 0,
   );
   return db.transaction(async (tx) => {
-    for (const store of sorted) {
-      await keep(tx, workspaceId, store.document, store.state, store.told);
-    }
+    const lacked = new Map<string, Uint8Array | undefined>();
+    for (const store of sorted) lacked.set(store.document, await keep(tx, workspaceId, store));
     // Last, so its numbers are in the order the stores commit, and no row
     // lock comes after the workspace's.
     await lockNumbers(tx, workspaceId);
@@ -233,28 +251,72 @@ export async function storeDocuments(
       );
       numbers.set(store.document, readCount(rows[0], "seq"));
     }
-    return stores.map((store) => numbers.get(store.document) ?? 0);
+    return stores.map((store) => {
+      const merged = lacked.get(store.document);
+      return {
+        seq: numbers.get(store.document) ?? 0,
+        ...(merged === undefined ? {} : { lacked: merged }),
+      };
+    });
   });
 }
 
-/** Writes a document's state, its version, its outbox and its index, in a transaction, unnumbered. */
-async function keep(
+/** Two states of a document as one: everything either has. */
+function mergeStates(stored: Uint8Array, state: Uint8Array): Uint8Array {
+  const document = new Y.Doc();
+  try {
+    Y.applyUpdate(document, stored);
+    Y.applyUpdate(document, state);
+    return Y.encodeStateAsUpdate(document);
+  } finally {
+    document.destroy();
+  }
+}
+
+/** A document's stored state, its row locked already. */
+async function storedState(
   tx: Queryable,
   workspaceId: string,
   document: string,
-  state: Uint8Array,
-  told?: StoreTold,
-): Promise<void> {
+): Promise<Uint8Array> {
+  const { rows } = await tx.query(
+    "SELECT state FROM documents WHERE workspace_id = $1 AND name = $2",
+    [workspaceId, document],
+  );
+  return readBytes(rows[0], "state");
+}
+
+/**
+ * Writes a document's state, its version, its outbox and its index, in a
+ * transaction, unnumbered; gives the stored state it merged in, if any.
+ */
+async function keep(
+  tx: Queryable,
+  workspaceId: string,
+  store: DocumentStore,
+): Promise<Uint8Array | undefined> {
+  const { document, known, told } = store;
+  // The row, locked reading its number alone, which leaves its state where
+  // PostgreSQL keeps it: a store of an unchanged row costs what it did.
+  const { rows: found } = await tx.query(
+    "SELECT seq FROM documents WHERE workspace_id = $1 AND name = $2 FOR UPDATE",
+    [workspaceId, document],
+  );
+  const exists = found[0] !== undefined;
+  const changed = exists && known !== undefined && readCount(found[0], "seq") !== known;
   // A vault document's paths are compared with the state it replaces (ADR 0050).
-  const before = document.startsWith("vault")
-    ? await tx.query("SELECT state FROM documents WHERE workspace_id = $1 AND name = $2", [
-        workspaceId,
-        document,
-      ])
-    : undefined;
+  let before =
+    changed || (exists && document.startsWith("vault"))
+      ? await storedState(tx, workspaceId, document)
+      : undefined;
+  // Stored by another node or process since this one read it: merged with that.
+  let state = changed && before !== undefined ? mergeStates(before, store.state) : store.state;
+  let lacked = changed ? before : undefined;
   const watched = !isComments(document) && (await hasWebhooks(tx, workspaceId));
-  // Compared with the state stored, which the store replaces below.
-  if (watched && before === undefined) await keepNoteChange(tx, workspaceId, document, state);
+  // What compares the state replaced compares it with the state written, merged or not.
+  if (watched && !document.startsWith("vault")) {
+    await keepNoteChange(tx, workspaceId, document, state);
+  }
   if (!document.startsWith("vault") && !isComments(document)) {
     await tx.query(
       `INSERT INTO document_versions (workspace_id, name, state)
@@ -269,21 +331,45 @@ async function keep(
     );
   }
   // Numbered once everything else in the transaction is written.
-  await tx.query(
-    `INSERT INTO documents (workspace_id, name, state, seq)
-       VALUES ($1, $2, $3, 0)
-       ON CONFLICT (workspace_id, name)
-         DO UPDATE SET state = excluded.state, updated_at = now()`,
-    [workspaceId, document, state],
-  );
+  if (exists) {
+    await tx.query(
+      "UPDATE documents SET state = $3, updated_at = now() WHERE workspace_id = $1 AND name = $2",
+      [workspaceId, document, state],
+    );
+  } else {
+    const { rows: made } = await tx.query(
+      `INSERT INTO documents (workspace_id, name, state, seq) VALUES ($1, $2, $3, 0)
+         ON CONFLICT (workspace_id, name) DO NOTHING RETURNING name`,
+      [workspaceId, document, state],
+    );
+    if (made.length === 0) {
+      // Made by another node meanwhile, which committed first: locked, then
+      // merged with when this node keeps a number, else replaced, as an
+      // existing row is. A vault document's paths are compared with it.
+      await tx.query("SELECT seq FROM documents WHERE workspace_id = $1 AND name = $2 FOR UPDATE", [
+        workspaceId,
+        document,
+      ]);
+      const stored = await storedState(tx, workspaceId, document);
+      if (document.startsWith("vault")) before = stored;
+      if (known !== undefined) {
+        lacked = stored;
+        state = mergeStates(stored, store.state);
+      }
+      await tx.query(
+        "UPDATE documents SET state = $3, updated_at = now() WHERE workspace_id = $1 AND name = $2",
+        [workspaceId, document, state],
+      );
+    }
+  }
   // What search reads, kept with the state, so the two never disagree.
-  if (before !== undefined) {
+  if (document.startsWith("vault")) {
     const unit = document === "vault" ? general : document.slice("vault.".length);
-    const old = before.rows[0] === undefined ? undefined : readBytes(before.rows[0], "state");
     // Each side's paths, parsed once for everything that reads them: a
-    // vault document lists every note of its unit.
+    // vault document lists every note of its unit. The state is the one
+    // written, merged or not, and `before` the one it replaces.
     const now = pathsOf(state);
-    const was = pathsOf(old);
+    const was = pathsOf(before);
     // Read against the index's paths before it takes the new ones.
     if (watched) await keepListChanges(tx, workspaceId, unit, now, was);
     // Only while a module wants them, as audit logs do when on (ADR 0081),
@@ -295,6 +381,7 @@ async function keep(
   } else if (!isComments(document)) {
     await indexNote(tx, workspaceId, document, state);
   }
+  return lacked;
 }
 
 /** The headers of a Node request, as a fetch Request has them. */
@@ -358,6 +445,8 @@ export async function registerSync(
     return rows.length === 0 ? undefined : readText(rows[0], "role");
   }
 
+  /** The number this node last read or stored each open document at (ADR 0082). */
+  const known = new Map<string, number>();
   const hocuspocus = new Hocuspocus<SyncContext>({
     quiet: true,
     // Stored after two seconds without a change, and at least every ten.
@@ -420,10 +509,12 @@ export async function registerSync(
       const name = parseDocumentName(documentName);
       if (name === undefined) return document;
       const { rows } = await db.query(
-        "SELECT state FROM documents WHERE workspace_id = $1 AND name = $2",
+        "SELECT state, seq FROM documents WHERE workspace_id = $1 AND name = $2",
         [name.workspaceId, name.document],
       );
-      if (rows.length > 0) Y.applyUpdate(document, readBytes(rows[0], "state"));
+      if (rows[0] !== undefined) Y.applyUpdate(document, readBytes(rows[0], "state"));
+      // What this node read it at: a store finds whether another stored it since.
+      known.set(documentName, rows[0] === undefined ? 0 : readCount(rows[0], "seq"));
       return document;
     },
 
@@ -448,13 +539,20 @@ export async function registerSync(
       if (name === undefined) return;
       const changedBy = changers.get(documentName) ?? [];
       changers.delete(documentName);
-      const seq = await storeDocument(
-        db,
-        name.workspaceId,
-        name.document,
-        Y.encodeStateAsUpdate(document),
-        { events, changedBy },
-      );
+      const [result] = await storeDocuments(db, name.workspaceId, [
+        {
+          document: name.document,
+          state: Y.encodeStateAsUpdate(document),
+          known: known.get(documentName) ?? 0,
+          told: { events, changedBy },
+        },
+      ]);
+      if (result === undefined) return;
+      const { seq, lacked } = result;
+      known.set(documentName, seq);
+      // What another node or process stored, which this one lacked, reaches
+      // its own clients too.
+      if (lacked !== undefined) Y.applyUpdate(document, lacked, fromStore);
       if (name.document.startsWith("vault")) return;
       const stored: Stored = { type: "stored", document: name.document, seq };
       // Told only to those syncing the note's own unit.
@@ -462,6 +560,11 @@ export async function registerSync(
       hocuspocus.documents
         .get(`${name.workspaceId}/${vaultDocument(unit)}`)
         ?.broadcastStateless(JSON.stringify(stored));
+    },
+
+    async afterUnloadDocument({ documentName }) {
+      known.delete(documentName);
+      return Promise.resolve();
     },
   });
 

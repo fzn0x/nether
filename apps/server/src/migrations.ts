@@ -726,6 +726,29 @@ export const migrations: readonly Migration[] = [
   },
   {
     version: 25,
+    name: "work that runs once across nodes, and each node's heartbeat",
+    sql: `
+      -- Work that runs once across the server's nodes (ADR 0082): each job's
+      -- last start, and the node that claimed it, which a node claims when
+      -- that start is older than the job's period.
+      CREATE TABLE cluster_jobs (
+        name text PRIMARY KEY,
+        started_at timestamptz,
+        node text
+      );
+
+      -- Each node, written every half a minute while it runs, and gone when it stops.
+      CREATE TABLE cluster_nodes (
+        id text PRIMARY KEY,
+        name text NOT NULL,
+        version text NOT NULL,
+        started_at timestamptz NOT NULL,
+        seen_at timestamptz NOT NULL
+      );
+    `,
+  },
+  {
+    version: 26,
     name: "deactivated accounts, and the directories that provision accounts and groups",
     sql: `
       -- When an account was deactivated (ADR 0085): it signs in no way, and
