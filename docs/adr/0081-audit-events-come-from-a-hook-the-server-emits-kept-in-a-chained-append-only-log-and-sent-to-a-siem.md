@@ -435,6 +435,13 @@ of each, shown in the console with no control, as a feature's switch is.
   a wrong code or none asked for; by OpenID Connect, as the provider's
   error; at setup, as a wrong code. A share link that asks for its
   password first is not refused yet: only a wrong one is.
+- **Single sign-on's providers sign in as core's OpenID Connect does.**
+  Their method is `sso`, one more `SessionMethod`, with the provider's ID
+  as `details.provider`
+  ([ADR 0080](0080-single-sign-on-binds-saml-and-oidc-providers-to-email-domains-and-enforcement-refuses-other-ways-in.md)).
+  The module tells of the accounts it makes, its sign-ins and their
+  failures, by the same names and reasons, through the `events` its
+  context holds.
 - **A webhook's address is recorded by its origin alone**, since its path
   or query may hold a secret of the service it sends to.
 - **A new key is noticed at the first event after the server starts with
