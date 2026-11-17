@@ -10,8 +10,29 @@ your own Nether server.
 
 ## Install it
 
-The clipper is not in the browsers' stores yet. Until it is, build it from
-the repository and load it yourself:
+Each [release](https://github.com/fzn0x/nether/releases/latest) has the
+clipper, free and from this project alone:
+`nether-clipper-chrome-<version>.zip`, and for Firefox
+`nether-clipper-firefox-<version>.xpi` and the same files as
+`nether-clipper-firefox-<version>.zip`.
+
+- **Chrome**, and browsers built on Chromium, as Edge or Brave: unzip
+  the Chrome ZIP into a folder you keep. Open `chrome://extensions`, turn
+  on **Developer mode**, choose **Load unpacked**, and pick that folder.
+  The clipper stays installed; to update it, unzip the next release's ZIP
+  over the folder and choose **Reload** on its card.
+- **Firefox Developer Edition, Nightly or ESR**, 140 or later: open
+  `about:config` and set `xpinstall.signatures.required` to `false`, as
+  [Mozilla describes](https://support.mozilla.org/kb/add-on-signing-in-firefox).
+  Then open `about:addons`, choose **Install Add-on From File** in its
+  gear menu, and pick the `.xpi`. The clipper stays installed.
+- **Firefox**, any other: it installs only add-ons Mozilla signed, so
+  load the clipper for this session instead. Unzip the Firefox ZIP, open
+  `about:debugging#/runtime/this-firefox`, choose **Load Temporary
+  Add-on**, and pick its `manifest.json`. Firefox keeps it until it
+  closes.
+
+To build the clipper yourself instead, from the repository:
 
 ```sh
 git clone https://github.com/fzn0x/nether.git
@@ -20,13 +41,8 @@ pnpm install
 pnpm --filter @nether/clipper build
 ```
 
-- **Chrome**, and browsers built on Chromium, as Edge or Brave: open
-  `chrome://extensions`, turn on **Developer mode**, choose **Load
-  unpacked**, and pick `apps/clipper/dist/chrome`.
-- **Firefox** 140 or later: open `about:debugging#/runtime/this-firefox`,
-  choose **Load Temporary Add-on**, and pick
-  `apps/clipper/dist/firefox/manifest.json`. Firefox keeps a temporary
-  add-on until it closes.
+It writes the same ZIPs to `apps/clipper/dist/`, and the unpacked builds
+to `apps/clipper/dist/chrome` and `apps/clipper/dist/firefox`.
 
 ## Connect it to your server
 
