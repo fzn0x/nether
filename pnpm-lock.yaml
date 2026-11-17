@@ -574,6 +574,9 @@ importers:
       lowlight:
         specifier: ^3.3.0
         version: 3.3.0
+      lucide-react:
+        specifier: 1.55.0
+        version: 1.55.0(@types/react@19.3.0)(react@19.3.1)
       y-protocols:
         specifier: ^1.0.7
         version: 1.0.7(yjs@13.6.33)

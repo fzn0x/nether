@@ -69,6 +69,7 @@ import { NoteTagsDialog } from "./NoteTagsDialog.tsx";
 import { NoteList } from "./NoteList.tsx";
 import { type Dragged, NoteTree } from "./NoteTree.tsx";
 import { QuickSwitcher } from "./QuickSwitcher.tsx";
+import { notOnPhones, phoneQuery, useMedia } from "./phone.ts";
 import { RenameNoteDialog } from "./RenameNoteDialog.tsx";
 import { TabStrip } from "./TabStrip.tsx";
 import {
@@ -242,6 +243,8 @@ const TokensDialog = lazy(() =>
 const WebhooksDialog = lazy(() =>
   import("./WebhooksDialog.tsx").then(({ WebhooksDialog: dialog }) => ({ default: dialog })),
 );
+// The bar above the note, only at a phone's width (ADR 0087).
+const PhoneBar = lazy(() => import("./PhoneBar.tsx"));
 
 const numbers = new Intl.NumberFormat();
 
@@ -440,6 +443,26 @@ export function VaultView(props: {
   // Whether the dialog that asks for the name this device goes by is open.
   const [namingMe, setNamingMe] = useState(false);
   const [switcher, setSwitcher] = useState(false);
+  // On a phone, one note shows at a time, and the sidebar is a drawer over
+  // it, opened from the bar above it, which closes as a note opens (ADR 0087).
+  const phone = useMedia(phoneQuery);
+  const [drawer, setDrawer] = useState(false);
+  const drawerOpen = phone && drawer;
+  const shownNow = `${activeTab(layout) ?? ""} ${paneView ?? ""}`;
+  useEffect(() => {
+    setDrawer(false);
+  }, [shownNow]);
+  // The drawer takes the focus as it opens, and gives it back to its button as it closes.
+  const drawerWas = useRef(false);
+  useEffect(() => {
+    if (drawerOpen === drawerWas.current) return;
+    drawerWas.current = drawerOpen;
+    if (drawerOpen) {
+      document.querySelector<HTMLElement>("#sidebar .drawer-close")?.focus();
+    } else if (phone) {
+      document.getElementById("phone-menu")?.focus();
+    }
+  }, [drawerOpen, phone]);
   const searchInput = useRef<HTMLInputElement>(null);
   const [tag, setTag] = useState<string | undefined>();
   const [dialog, setDialog] = useState<
@@ -1000,20 +1023,25 @@ export function VaultView(props: {
         openFile(path);
       },
     },
-    {
-      label: t("menuOpenNewTab"),
-      icon: itemIcons.openNewTab,
-      run: () => {
-        openFile(path, "tab");
-      },
-    },
-    {
-      label: t("menuOpenRight"),
-      icon: itemIcons.openRight,
-      run: () => {
-        openFile(path, "right");
-      },
-    },
+    // A phone shows one note at a time, without tabs.
+    ...(phone
+      ? []
+      : [
+          {
+            label: t("menuOpenNewTab"),
+            icon: itemIcons.openNewTab,
+            run: () => {
+              openFile(path, "tab");
+            },
+          },
+          {
+            label: t("menuOpenRight"),
+            icon: itemIcons.openRight,
+            run: () => {
+              openFile(path, "right");
+            },
+          },
+        ]),
     "separator",
     {
       label: t("moveToTrash"),
@@ -1120,20 +1148,25 @@ export function VaultView(props: {
             openNote(id);
           },
         },
-        {
-          label: t("menuOpenNewTab"),
-          icon: itemIcons.openNewTab,
-          run: () => {
-            openNote(id, undefined, "tab");
-          },
-        },
-        {
-          label: t("menuOpenRight"),
-          icon: itemIcons.openRight,
-          run: () => {
-            openNote(id, undefined, "right");
-          },
-        },
+        // A phone shows one note at a time, without tabs.
+        ...(phone
+          ? []
+          : [
+              {
+                label: t("menuOpenNewTab"),
+                icon: itemIcons.openNewTab,
+                run: () => {
+                  openNote(id, undefined, "tab");
+                },
+              },
+              {
+                label: t("menuOpenRight"),
+                icon: itemIcons.openRight,
+                run: () => {
+                  openNote(id, undefined, "right");
+                },
+              },
+            ]),
         "separator",
         {
           label: t("menuRename"),
@@ -1256,7 +1289,7 @@ export function VaultView(props: {
         },
       ];
     },
-    [state, info.path, openNote, trashNote, copyText, bookmarks, toggleBookmark],
+    [state, info.path, openNote, trashNote, copyText, bookmarks, toggleBookmark, phone],
   );
 
   /** What each command does, and whether it can now: those about a note need one open. */
@@ -1819,13 +1852,14 @@ export function VaultView(props: {
   );
   const menus: readonly Menu[] = [...coreMenus, { name: "plugins" as const, entries: [] }].flatMap(
     ({ name, entries }) => {
-      const own = shownEntries(entries, (id) => registry.get(id) !== undefined).flatMap(
-        (id): MenuEntry[] => {
-          if (id === "separator") return [id];
-          const command = registry.get(id);
-          return command === undefined ? [] : [menuItem(command)];
-        },
-      );
+      const own = shownEntries(
+        entries,
+        (id) => registry.get(id) !== undefined && !(phone && notOnPhones.has(id)),
+      ).flatMap((id): MenuEntry[] => {
+        if (id === "separator") return [id];
+        const command = registry.get(id);
+        return command === undefined ? [] : [menuItem(command)];
+      });
       const added = pluginCommands.filter((command) => command.menu === name).map(menuItem);
       const items = [
         ...own,
@@ -1841,7 +1875,7 @@ export function VaultView(props: {
   return (
     <ExportPolicyContext.Provider value={exportPolicy}>
       <div
-        className="vault"
+        className={drawerOpen ? "vault drawer-open" : "vault"}
         style={{ "--sidebar-width": `${String(sidebarWidth)}px` } as CSSProperties}
       >
         {(() => {
@@ -1852,7 +1886,18 @@ export function VaultView(props: {
             </Suspense>
           );
         })()}
-        <aside id="sidebar" className="sidebar" aria-label={info.name}>
+        <aside
+          id="sidebar"
+          className="sidebar"
+          aria-label={info.name}
+          // Closed on a phone, the drawer is out of sight and out of reach.
+          inert={phone && !drawerOpen}
+          onKeyDown={(event) => {
+            if (!drawerOpen || event.key !== "Escape" || event.defaultPrevented) return;
+            event.preventDefault();
+            setDrawer(false);
+          }}
+        >
           <SidebarResizer width={sidebarWidth} onResize={setSidebarWidth} controls="sidebar" />
           <header className="sidebar-header">
             <h2 title={info.path}>{info.name}</h2>
@@ -1860,6 +1905,18 @@ export function VaultView(props: {
               <button type="button" className="quiet" onClick={onClose}>
                 {t("closeVault")}
               </button>
+              {phone ? (
+                <button
+                  type="button"
+                  className="icon-button drawer-close"
+                  aria-label={t("phoneSidebarClose")}
+                  onClick={() => {
+                    setDrawer(false);
+                  }}
+                >
+                  <span aria-hidden="true">×</span>
+                </button>
+              ) : null}
             </div>
           </header>
           {state.status === "open" ? <MenuBar label={t("menus")} menus={menus} /> : null}
@@ -2184,6 +2241,36 @@ export function VaultView(props: {
             </>
           )}
         </aside>
+        {drawerOpen ? (
+          // A tap beside the open drawer closes it; its button and Escape do too.
+          <div
+            className="drawer-scrim"
+            aria-hidden="true"
+            onClick={() => {
+              setDrawer(false);
+            }}
+          />
+        ) : null}
+        {phone ? (
+          <Suspense fallback={<div className="phone-bar" />}>
+            <PhoneBar
+              title={
+                (selected === undefined ? undefined : vault?.note(selected)?.title) ?? info.name
+              }
+              drawerOpen={drawerOpen}
+              inert={drawerOpen}
+              onDrawer={() => {
+                setDrawer((open) => !open);
+              }}
+              onSwitcher={() => {
+                setSwitcher(true);
+              }}
+              onPalette={() => {
+                setDialog("palette");
+              }}
+            />
+          </Suspense>
+        ) : null}
         {switcher && state.status === "open" ? (
           <QuickSwitcher
             vault={state.vault}
@@ -2530,7 +2617,7 @@ export function VaultView(props: {
         {dialog === "palette" ? (
           <CommandPalette
             commands={commands
-              .filter((command) => command.enabled())
+              .filter((command) => command.enabled() && !(phone && notOnPhones.has(command.id)))
               .map((command) => ({
                 id: command.id,
                 name: (command.nameNow ?? command.name)(),
@@ -2544,7 +2631,7 @@ export function VaultView(props: {
             }}
           />
         ) : null}
-        <main className="pane">
+        <main className="pane" inert={drawerOpen}>
           {state.status === "open" && shownView !== undefined ? (
             <PaneViewOutput
               processor={shownView}
@@ -2566,14 +2653,16 @@ export function VaultView(props: {
             />
           ) : state.status === "open" && layout.panes.some((pane) => pane.tabs.length > 0) ? (
             noteView === undefined ? null : (
-              <div className={`panes${layout.panes.length > 1 ? " split" : ""}`}>
+              <div className={`panes${!phone && layout.panes.length > 1 ? " split" : ""}`}>
                 {layout.panes.map((pane, index) => {
+                  // A phone shows the focused pane alone, without its tabs.
+                  if (phone && index !== layout.focused) return null;
                   const shown = shownIn(pane);
                   const id = noteOf(shown);
                   const file = filePathOf(shown);
                   const fileView = file === undefined ? undefined : views.forFile(file);
                   const paneAsks = asks[pane.key] ?? noAsks;
-                  const split = layout.panes.length > 1;
+                  const split = !phone && layout.panes.length > 1;
                   const side = index === 0 ? "Left" : "Right";
                   const panelId = `pane-${String(pane.key)}`;
                   const tabId = (tab: number) => `pane-${String(pane.key)}-tab-${String(tab)}`;
@@ -2588,34 +2677,40 @@ export function VaultView(props: {
                       onFocusCapture={focusHere}
                       onMouseDownCapture={focusHere}
                     >
-                      <TabStrip
-                        pane={pane}
-                        label={split ? t(`openNotes${side}`) : t("openNotes")}
-                        panelId={panelId}
-                        tabId={tabId}
-                        titleOf={(tab) => {
-                          const file = filePathOf(tab);
-                          return file === undefined
-                            ? (state.vault.note(tab as NoteId)?.title ?? "")
-                            : file.slice(file.lastIndexOf("/") + 1).replace(/\.[^.]+$/, "");
-                        }}
-                        onChoose={(tab) => {
-                          changeLayout((current) => chooseTab(current, index, tab));
-                        }}
-                        onClose={(tab) => {
-                          changeLayout((current) => closeTab(current, index, tab));
-                        }}
-                        onMenu={(tab, at) => {
-                          const file = filePathOf(tab);
-                          if (file === undefined) openMenu(tab as NoteId, at);
-                          else setFileMenu({ path: file, at });
-                        }}
-                      />
+                      {phone ? null : (
+                        <TabStrip
+                          pane={pane}
+                          label={split ? t(`openNotes${side}`) : t("openNotes")}
+                          panelId={panelId}
+                          tabId={tabId}
+                          titleOf={(tab) => {
+                            const file = filePathOf(tab);
+                            return file === undefined
+                              ? (state.vault.note(tab as NoteId)?.title ?? "")
+                              : file.slice(file.lastIndexOf("/") + 1).replace(/\.[^.]+$/, "");
+                          }}
+                          onChoose={(tab) => {
+                            changeLayout((current) => chooseTab(current, index, tab));
+                          }}
+                          onClose={(tab) => {
+                            changeLayout((current) => closeTab(current, index, tab));
+                          }}
+                          onMenu={(tab, at) => {
+                            const file = filePathOf(tab);
+                            if (file === undefined) openMenu(tab as NoteId, at);
+                            else setFileMenu({ path: file, at });
+                          }}
+                        />
+                      )}
                       <div
                         className={`pane-body${file === undefined ? "" : " view-body"}`}
-                        role="tabpanel"
-                        id={panelId}
-                        aria-labelledby={tabId(pane.active)}
+                        {...(phone
+                          ? {}
+                          : {
+                              role: "tabpanel",
+                              id: panelId,
+                              "aria-labelledby": tabId(pane.active),
+                            })}
                       >
                         {file !== undefined ? (
                           fileView === undefined ? (
@@ -2650,6 +2745,7 @@ export function VaultView(props: {
                             plugins={plugins}
                             id={id}
                             titleId={index === 0 ? "note-title" : "note-title-right"}
+                            keyboardBar={phone}
                             focus={paneAsks.focus}
                             onOpenNote={openNote}
                             onOpenFile={openLinkedFile}

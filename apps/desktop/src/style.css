@@ -979,23 +979,6 @@ button {
   color: var(--text);
 }
 
-/* Below this width the notes sit above the note. */
-@media (max-width: 40rem) {
-  .vault {
-    grid-template-columns: 1fr;
-    grid-template-rows: minmax(12rem, 40vh) 1fr;
-  }
-
-  .sidebar {
-    border-inline-end: 0;
-    border-bottom: 1px solid var(--rule);
-  }
-
-  .sidebar-resizer {
-    display: none;
-  }
-}
-
 /* The editor. */
 .note-editor {
   position: relative;
@@ -5348,4 +5331,261 @@ kbd {
 .assigned-meta {
   color: var(--muted);
   font-size: 0.75rem;
+}
+
+/*
+ * A phone (ADR 0087): below 40rem, as phone.ts has it, one note at a time
+ * under a bar, the sidebar a drawer over it, and dialogs and menus sheets
+ * along the bottom, above the on-screen keyboard, whose height the bar keeps
+ * in --keyboard-inset. The page keeps clear of notches and the home
+ * indicator by the safe areas.
+ */
+@media (max-width: 40rem) {
+  .vault {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
+    height: 100dvh;
+  }
+
+  .phone-bar {
+    display: flex;
+    gap: 0.25rem;
+    align-items: center;
+    min-height: 3.5rem;
+    padding-block: max(0.25rem, env(safe-area-inset-top)) 0.25rem;
+    padding-inline: max(0.5rem, env(safe-area-inset-left), env(safe-area-inset-right));
+    border-block-end: 1px solid var(--rule);
+    background: var(--bg);
+  }
+
+  .phone-bar .icon-button {
+    border-color: transparent;
+  }
+
+  .phone-title {
+    flex: 1;
+    min-width: 0;
+    margin: 0;
+    overflow: hidden;
+    font-weight: 600;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .sidebar {
+    position: fixed;
+    z-index: 35;
+    inset-block: 0;
+    inset-inline-start: 0;
+    width: min(20rem, 85vw);
+    padding-block: env(safe-area-inset-top) env(safe-area-inset-bottom);
+    box-shadow: var(--panel-shadow);
+    transform: translateX(-100%);
+    visibility: hidden;
+    /* Hidden once it has slid away; shown at once as it opens, to take the focus. */
+    transition:
+      transform 0.2s ease,
+      visibility 0s 0.2s;
+  }
+
+  [dir="rtl"] .sidebar {
+    transform: translateX(100%);
+  }
+
+  .vault.drawer-open .sidebar {
+    transform: none;
+    visibility: visible;
+    transition: transform 0.2s ease;
+  }
+
+  /* A block's handle has no room beside it: the keyboard's bar moves blocks. */
+  .block-handle {
+    display: none;
+  }
+
+  .drawer-close span {
+    font-size: 1.5rem;
+    line-height: 1;
+  }
+
+  .drawer-scrim {
+    position: fixed;
+    z-index: 34;
+    inset: 0;
+    background: rgb(0 0 0 / 30%);
+  }
+
+  .sidebar-resizer {
+    display: none;
+  }
+
+  .pane,
+  .pane-body {
+    padding-block: 1rem calc(1rem + env(safe-area-inset-bottom));
+    padding-inline: max(1rem, env(safe-area-inset-left), env(safe-area-inset-right));
+  }
+
+  /* Dialogs: a sheet the width of the window, from its bottom. */
+  .switcher-backdrop {
+    align-items: flex-end;
+    padding: 0 0 var(--keyboard-inset, 0px);
+  }
+
+  .switcher-backdrop > .switcher {
+    width: 100%;
+    max-height: 85dvh;
+    border-block-end: 0;
+    border-radius: 12px 12px 0 0;
+    padding-block-end: env(safe-area-inset-bottom);
+  }
+
+  .context-menu.sheet {
+    inset: auto 0 var(--keyboard-inset, 0px);
+    width: 100%;
+    min-width: 0;
+    max-height: 70dvh;
+    border-block-end: 0;
+    border-radius: 12px 12px 0 0;
+    padding-block-end: max(0.25rem, env(safe-area-inset-bottom));
+  }
+
+  /* The editor's bar, over the keyboard, and room for it below the note. */
+  .keyboard-bar {
+    position: fixed;
+    z-index: 25;
+    inset-inline: 0;
+    inset-block-end: var(--keyboard-inset, 0px);
+    display: flex;
+    gap: 0.125rem;
+    overflow-x: auto;
+    padding-block: 0.25rem
+      max(0.25rem, calc(env(safe-area-inset-bottom) - var(--keyboard-inset, 0px)));
+    padding-inline: max(0.25rem, env(safe-area-inset-left), env(safe-area-inset-right));
+    border-block-start: 1px solid var(--rule);
+    background: var(--bg);
+    scrollbar-width: none;
+  }
+
+  .keyboard-bar button {
+    display: grid;
+    flex: none;
+    place-items: center;
+    width: 3rem;
+    height: 3rem;
+    padding: 0;
+    border: 0;
+    border-radius: 6px;
+    background: none;
+    color: var(--text);
+  }
+
+  .keyboard-bar button[aria-pressed="true"] {
+    background: var(--pressed);
+  }
+
+  .keyboard-bar button[aria-disabled="true"] {
+    color: var(--muted);
+  }
+
+  .note-editor:has(> .keyboard-bar) {
+    padding-block-end: 4.5rem;
+  }
+
+  /* A board's columns, one at a time, a swipe apart. */
+  .database-board {
+    grid-auto-columns: minmax(15rem, 85%);
+    scroll-snap-type: inline mandatory;
+  }
+
+  .database-column {
+    scroll-snap-align: start;
+  }
+}
+
+@media (max-width: 40rem) and (prefers-reduced-motion: reduce) {
+  .sidebar {
+    transition: none;
+  }
+}
+
+/*
+ * A finger (ADR 0087): every control at least 48 by 48 CSS pixels, a dp on
+ * Android and above iOS's 44 points, whatever the page's width.
+ */
+@media (pointer: coarse) {
+  .icon-button {
+    width: 3rem;
+    height: 3rem;
+  }
+
+  .quiet,
+  .primary,
+  .menu-bar > button,
+  .sidebar-tabs button,
+  .view-switch button,
+  .tree-add,
+  .context-menu button,
+  .slash-item,
+  .database-tabs [role="tab"] {
+    min-width: 3rem;
+    min-height: 3rem;
+  }
+
+  .menu-bar > button,
+  .context-menu button {
+    align-items: center;
+  }
+
+  .slash-item {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0 0.5rem;
+    align-items: center;
+  }
+
+  .view-switch button {
+    font-size: 0.875rem;
+  }
+
+  input:not([type="checkbox"], [type="radio"]),
+  select {
+    min-height: 3rem;
+  }
+
+  input[type="checkbox"],
+  input[type="radio"] {
+    width: 1.5rem;
+    height: 1.5rem;
+  }
+
+  /* A property's handle shows in its own column, and opens its menu when pressed. */
+  .property {
+    grid-template-columns: 3rem minmax(6rem, 10rem) 6.5rem minmax(0, 1fr) auto;
+  }
+
+  .property-handle {
+    position: static;
+    width: 3rem;
+    height: 3rem;
+    opacity: 1;
+  }
+
+  .property-chip button {
+    min-width: 3rem;
+    min-height: 3rem;
+  }
+
+  @container (max-width: 35rem) {
+    .property {
+      grid-template-columns: 3rem 6.5rem minmax(0, 1fr) auto;
+    }
+
+    .property .property-key {
+      grid-column: 2 / -1;
+    }
+
+    .property .property-type {
+      grid-column: 2;
+    }
+  }
 }

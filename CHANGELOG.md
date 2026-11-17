@@ -375,6 +375,17 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   and offers no Delete for good or Empty trash, saying why. The trash and
   the vault's own history are purged half a minute after a vault opens,
   not as it opens, once the app has asked the server.
+- The page laid out for phones, the mobile apps' first part, in the web
+  app first: below 40rem, one note shows under a bar with the drawer's
+  button, its title, the quick switcher and the palette; the sidebar is a
+  drawer over the note, which closes as a note opens; menus and dialogs
+  are sheets along the bottom, above the on-screen keyboard; and while
+  writing, a bar over the keyboard inserts blocks and links, formats,
+  makes and indents lists, moves, duplicates and deletes the block, and
+  undoes. On a coarse pointer every control is at least 48 by 48 pixels,
+  and a property's handle opens a menu that moves it up or down, with no
+  drag. The phone's parts load only at a phone's width
+  ([ADR 0087](docs/adr/0087-the-mobile-apps-run-the-shared-page-in-capacitor-with-each-vaults-files-and-index-on-the-phone.md)).
 
 ### Changed
 

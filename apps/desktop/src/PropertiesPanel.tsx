@@ -18,6 +18,7 @@ import {
   useSyncExternalStore,
 } from "react";
 import type * as Y from "yjs";
+import { ContextMenu, type MenuPoint, pointBelow } from "./ContextMenu.tsx";
 import { t } from "./messages.ts";
 import { PropertyValueOutput } from "./PropertyValueOutput.tsx";
 import { type PropertyTypeRegistry, usePropertyTypes } from "./plugins/propertyTypes.ts";
@@ -222,6 +223,10 @@ export function PropertiesPanel(props: {
   const [dropAt, setDropAt] = useState<DropAt | undefined>();
   // The property the arrow keys just moved, whose handle keeps the focus.
   const [moved, setMoved] = useState<string | undefined>();
+  // A handle's menu, which moves its property up or down without a drag, as a finger needs.
+  const [handleMenu, setHandleMenu] = useState<
+    { readonly key: string; readonly at: MenuPoint } | undefined
+  >();
   const [announcement, setAnnouncement] = useState("");
   const section = useRef<HTMLElement>(null);
   const hint = useId();
@@ -367,7 +372,11 @@ export function PropertiesPanel(props: {
               draggable
               aria-label={t("moveProperty", { name: entry.key })}
               aria-describedby={hint}
+              aria-haspopup="menu"
               title={t("movePropertyHint")}
+              onClick={(event) => {
+                setHandleMenu({ key: entry.key, at: pointBelow(event.currentTarget) });
+              }}
               onDragStart={(event) => {
                 event.dataTransfer.setData(dragType, entry.key);
                 event.dataTransfer.effectAllowed = "move";
@@ -483,6 +492,34 @@ export function PropertiesPanel(props: {
       <p className="visually-hidden" aria-live="polite">
         {announcement}
       </p>
+      {(() => {
+        if (handleMenu === undefined) return null;
+        const { key } = handleMenu;
+        const at = shown.findIndex((entry) => entry.key === key);
+        const step = (up: boolean) => () => {
+          const neighbour = shown[up ? at - 1 : at + 1];
+          if (neighbour === undefined) return;
+          move(key, neighbour.key, up ? "before" : "after");
+          setMoved(key);
+        };
+        return (
+          <ContextMenu
+            label={t("moveProperty", { name: key })}
+            at={handleMenu.at}
+            entries={[
+              { label: t("movePropertyUp", { name: key }), disabled: at <= 0, run: step(true) },
+              {
+                label: t("movePropertyDown", { name: key }),
+                disabled: at < 0 || at >= shown.length - 1,
+                run: step(false),
+              },
+            ]}
+            onClose={() => {
+              setHandleMenu(undefined);
+            }}
+          />
+        );
+      })()}
     </section>
   );
 }
