@@ -5,6 +5,7 @@
 // built-in plugin's version changes with what it does, not with the app's.
 // Their order is the order of their panels and slash menu entries.
 import assigned from "./assigned/manifest.json";
+import automations from "./automations/manifest.json";
 import backlinks from "./backlinks/manifest.json";
 import canvas from "./canvas/manifest.json";
 import graph from "./graph/manifest.json";
@@ -19,6 +20,7 @@ import tags from "./tags/manifest.json";
 export const builtinPlugins: readonly BuiltinPlugin[] = [
   { manifest: mermaid, load: () => import("./mermaid/plugin.ts") },
   { manifest: query, load: () => import("./query/plugin.tsx") },
+  { manifest: automations, load: () => import("./automations/plugin.tsx") },
   { manifest: tags, load: () => import("./tags/plugin.tsx") },
   { manifest: assigned, load: () => import("./assigned/plugin.tsx") },
   { manifest: outline, load: () => import("./outline/plugin.tsx") },

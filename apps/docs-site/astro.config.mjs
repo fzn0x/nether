@@ -28,6 +28,7 @@ export default defineConfig({
             "databases",
             "formulas",
             "queries",
+            "buttons",
             "templates",
             "links",
             "graph",

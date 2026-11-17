@@ -43,7 +43,9 @@ Notion exports. Self-hosting is available for enterprise.
 > provider you bring, OpenAI-compatible or Anthropic, its key in the
 > desktop's keychain or sealed on your server for the web app; share links
 > open a page to anyone with one, with no account, to read, comment on or
-> edit; a page or a folder
+> edit; [buttons](https://fzn0x.github.io/nether/buttons/) in a note, as
+> Meta Bind writes them, run commands, make notes from templates and set
+> properties; a page or a folder
 > [publishes](https://fzn0x.github.io/nether/publishing/) as a site the
 > server draws for anyone, linking only between its own pages; and the
 > [roadmap](docs/roadmap.md#phase-4-platform) ticks off the rest as it
