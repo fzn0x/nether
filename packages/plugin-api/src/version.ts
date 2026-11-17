@@ -2,7 +2,7 @@
 // manifest names it by.
 
 /** The version of the API this SDK speaks. */
-export const apiVersion = "0.1.0";
+export const apiVersion = "0.1.1";
 
 interface Version {
   readonly major: number;

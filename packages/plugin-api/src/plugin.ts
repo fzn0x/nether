@@ -3,12 +3,25 @@
 // async, each value is JSON, and a function the app will call is sent as
 // a number.
 import { type Json, type JsonObject, isJsonObject } from "./json.ts";
+import { type Service, isService } from "./manifest.ts";
 import { Endpoint, type Transport } from "./protocol.ts";
 import { apiVersion, satisfies } from "./version.ts";
 
 /** Undoes a registration. */
 export interface Disposable {
   dispose(): Promise<void>;
+}
+
+/**
+ * The note something is drawn for or beside, as the vault names it, with
+ * the day it stands for when it is a daily note, as `2026-11-17`.
+ */
+export interface NoteContext {
+  readonly id: string;
+  readonly title: string;
+  readonly path: string;
+  /** The day a daily note is for, as the vault's daily notes settings read its path. */
+  readonly day?: string;
 }
 
 /** The commands a plugin's manifest declares, attached to what they do. */
@@ -29,6 +42,8 @@ export interface CodeBlockContext {
   /** Whether the page it shows on is light or dark. */
   readonly theme: "light" | "dark";
   readonly target: CodeBlockTarget;
+  /** The note the block is in, when the app knows it. */
+  readonly note?: NoteContext;
 }
 
 /**
@@ -91,8 +106,8 @@ export interface Blocks {
 export interface PanelProps {
   /** Whether the page it shows on is light or dark. */
   readonly theme: "light" | "dark";
-  /** Beside a note, the note open, as the vault names it. */
-  readonly note?: { readonly id: string; readonly title: string; readonly path: string };
+  /** Beside a note, the note open, as the vault names it, with its day for a daily note. */
+  readonly note?: NoteContext;
 }
 
 /** A mounted panel, which the app updates and unmounts. */
@@ -288,6 +303,102 @@ export interface PluginVault {
   onChange(listener: (paths: readonly string[]) => void): Promise<Disposable>;
 }
 
+/**
+ * The person's access to one account at one service, as a plugin sees it
+ * (ADR 0090): never its token, its password, or a feed's secret address.
+ */
+export interface Connection {
+  readonly id: string;
+  readonly service: Service;
+  /** What the person calls it, as "Work calendar". */
+  readonly name: string;
+  /** Who it acts as there, as `octocat`, when the service says. */
+  readonly account?: string;
+  /** The base address its requests go under, without its secret: an ICS feed's host alone. */
+  readonly address: string;
+  /** The service's web host, for links to it, as `github.com`. */
+  readonly web?: string;
+  /** Where the app keeps it: on this device, or on the account's server. */
+  readonly where: "device" | "server";
+}
+
+/**
+ * The person's connections to the services the manifest asks for, as
+ * `connection:<service>` permissions. The app adds them, in a dialog of its
+ * own, and keeps their secrets.
+ */
+export interface Connections {
+  /** The connections to the services the plugin asked for. */
+  list(): Promise<readonly Connection[]>;
+  /** Asks the app to show the person how to add a connection to a service. */
+  add(service: Service): Promise<void>;
+  /** Calls `listener` with the connections again when they change. */
+  onChange(listener: (connections: readonly Connection[]) => void): Promise<Disposable>;
+}
+
+/** The methods a request through the app may use. */
+export const httpMethods = [
+  "GET",
+  "HEAD",
+  "POST",
+  "PUT",
+  "PATCH",
+  "DELETE",
+  "PROPFIND",
+  "REPORT",
+] as const;
+
+export type HttpMethod = (typeof httpMethods)[number];
+
+/** A request the app sends for a plugin, with a connection's credential. */
+export interface HttpRequest {
+  /** The connection's ID. */
+  readonly connection: string;
+  /**
+   * Resolved against the connection's address: none or `""` is the address
+   * itself, as an ICS feed; a path goes under it; a full address must be at
+   * one of the connection's origins.
+   */
+  readonly url?: string;
+  /** `GET` unless it says another. */
+  readonly method?: HttpMethod;
+  /** Its headers, but for `Authorization`, `Cookie`, `Host` and `Proxy-*`, which the app refuses. */
+  readonly headers?: Readonly<Record<string, string>>;
+  /** Up to 1 MB. */
+  readonly body?: string;
+  /** How the answer's body is given: as text, unless `bytes`. */
+  readonly as?: "text" | "bytes";
+}
+
+/** What a request through the app was answered with. */
+export interface HttpResponse {
+  readonly status: number;
+  /** The headers a plugin needs, by their lowercase names. */
+  readonly headers: Readonly<Record<string, string>>;
+  /** Its body as text, unless the request asked for bytes. */
+  readonly text?: string;
+  readonly bytes?: Uint8Array;
+}
+
+/** Requests the app sends for a plugin to the services its connections reach. */
+export interface Http {
+  /** Sends a request with its connection's credential; rejects with why the app would not. */
+  fetch(request: HttpRequest): Promise<HttpResponse>;
+}
+
+/**
+ * What a plugin keeps on this device for a vault, as a cache: JSON values
+ * by key, outside the vault's folder, so it never syncs. Up to 5 MB.
+ */
+export interface PluginStore {
+  /** A value kept; undefined when none is. */
+  get(key: string): Promise<Json | undefined>;
+  set(key: string, value: Json): Promise<void>;
+  delete(key: string): Promise<void>;
+  /** The keys of the values kept. */
+  keys(): Promise<readonly string[]>;
+}
+
 /** What a plugin is given when it starts. */
 export interface PluginContext {
   /** The plugin's ID, from its manifest. */
@@ -307,6 +418,12 @@ export interface PluginContext {
   readonly propertyTypes: PropertyTypes;
   readonly settings: Settings;
   readonly vault: PluginVault;
+  /** The person's connections, as far as the manifest asks (ADR 0090). */
+  readonly connections: Connections;
+  /** Requests through the app, with a connection's credential. */
+  readonly http: Http;
+  /** What the plugin keeps on this device for the vault. */
+  readonly store: PluginStore;
 }
 
 /** A plugin, as its module's default export is. */
@@ -369,6 +486,53 @@ function fromBase64(text: string): Uint8Array {
 
 function readTexts(value: Json): string[] {
   return Array.isArray(value) ? value.filter((each) => typeof each === "string") : [];
+}
+
+/** Connections as the app lists them; any it gives that do not read are left out. */
+export function readConnections(value: Json): Connection[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((each): Connection[] => {
+    if (!isJsonObject(each)) return [];
+    const { id, service, name, account, address, web, where } = each;
+    if (
+      typeof id !== "string" ||
+      !isService(service) ||
+      typeof name !== "string" ||
+      typeof address !== "string" ||
+      (where !== "device" && where !== "server")
+    ) {
+      return [];
+    }
+    return [
+      {
+        id,
+        service,
+        name,
+        address,
+        where,
+        ...(typeof account === "string" ? { account } : {}),
+        ...(typeof web === "string" ? { web } : {}),
+      },
+    ];
+  });
+}
+
+/** An answer to a request through the app, as it crosses. */
+function readResponse(value: Json): HttpResponse {
+  if (!isJsonObject(value) || typeof value.status !== "number" || !isJsonObject(value.headers)) {
+    throw new Error("The app gave no answer to the request.");
+  }
+  const headers: Record<string, string> = {};
+  for (const [name, text] of Object.entries(value.headers)) {
+    if (typeof text === "string") headers[name] = text;
+  }
+  const { status, text, base64 } = value;
+  return {
+    status,
+    headers,
+    ...(typeof text === "string" ? { text } : {}),
+    ...(typeof base64 === "string" ? { bytes: fromBase64(base64) } : {}),
+  };
 }
 
 function readNotes(value: Json): VaultNote[] {
@@ -480,11 +644,64 @@ export async function startPlugin(
     for (const listener of settingsListeners) listener(values);
     return null;
   });
+  const connectionListeners = new Set<(connections: readonly Connection[]) => void>();
+  endpoint.handle("connections.changed", (value) => {
+    const changed = readConnections(value ?? null);
+    for (const listener of connectionListeners) listener(changed);
+    return null;
+  });
   const context: PluginContext = {
     id: hello.id,
     api: hello.api,
     language: hello.language,
     direction: hello.direction,
+    connections: {
+      list: async () => readConnections(await endpoint.call("connections.list")),
+      async add(service) {
+        await endpoint.call("connections.add", service);
+      },
+      async onChange(listener) {
+        // A new function each time, so that each has its own disposal.
+        const each = (connections: readonly Connection[]) => {
+          listener(connections);
+        };
+        if (connectionListeners.size === 0) await endpoint.call("connections.watch");
+        connectionListeners.add(each);
+        return {
+          async dispose() {
+            if (!connectionListeners.delete(each)) return;
+            if (connectionListeners.size === 0) await endpoint.call("connections.unwatch");
+          },
+        };
+      },
+    },
+    http: {
+      async fetch(request) {
+        const { connection, url, method, headers, body, as } = request;
+        const answer = await endpoint.call("http.fetch", {
+          connection,
+          url: url ?? "",
+          method: method ?? "GET",
+          headers: { ...headers },
+          ...(body === undefined ? {} : { body }),
+          as: as ?? "text",
+        });
+        return readResponse(answer);
+      },
+    },
+    store: {
+      async get(key) {
+        const answer = await endpoint.call("store.get", key);
+        return isJsonObject(answer) && "value" in answer ? answer.value : undefined;
+      },
+      async set(key, value) {
+        await endpoint.call("store.set", key, value);
+      },
+      async delete(key) {
+        await endpoint.call("store.delete", key);
+      },
+      keys: async () => readTexts(await endpoint.call("store.keys")),
+    },
     settings: {
       values: () => settings,
       onChange(listener) {

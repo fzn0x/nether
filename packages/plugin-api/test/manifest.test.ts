@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { localize, readManifest, settingValues } from "../src/manifest.ts";
+import {
+  connectionServices,
+  isService,
+  localize,
+  permissions,
+  readManifest,
+  serviceOf,
+  settingValues,
+} from "../src/manifest.ts";
 
 const good = {
   id: "word-count",
@@ -72,9 +80,23 @@ describe("readManifest", () => {
     expect(manifest?.permissions).toEqual(["network", "vault:write"]);
   });
 
+  it("reads the connections a plugin asks for, and the services they name", () => {
+    const { manifest } = readManifest({
+      ...good,
+      permissions: ["connection:caldav", "vault:read", "connection:ics"],
+    });
+    expect(manifest?.permissions).toEqual(["vault:read", "connection:ics", "connection:caldav"]);
+    expect(manifest === undefined ? [] : connectionServices(manifest)).toEqual(["ics", "caldav"]);
+    expect(serviceOf("network")).toBeUndefined();
+    expect(serviceOf("connection:github")).toBe("github");
+    expect(isService("slack")).toBe(true);
+    expect(isService("dropbox")).toBe(false);
+  });
+
   it("says when its permissions are not the app's, or one is there twice", () => {
-    const problem = "permissions are not some of network, vault:read, vault:write, each once.";
-    for (const asked of ["network", ["camera"], ["network", "network"]]) {
+    const problem = `permissions are not some of ${permissions.join(", ")}, each once.`;
+    expect(problem).toContain("network, vault:read, vault:write, connection:ics, ");
+    for (const asked of ["network", ["camera"], ["network", "network"], ["connection:dropbox"]]) {
       expect(readManifest({ ...good, permissions: asked }).problems).toEqual([problem]);
     }
   });

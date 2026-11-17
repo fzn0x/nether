@@ -168,15 +168,64 @@ export interface Manifest {
 }
 
 /**
- * What a plugin from a vault may reach, as its manifest asks: the network,
- * and the vault's notes and files to read and to change (ADR 0058).
+ * The services a plugin may reach through the person's connections, which
+ * the app keeps (ADR 0090): calendars from ICS feeds and CalDAV servers,
+ * Google's Calendar and Drive, GitHub and Slack.
  */
-export const permissions = ["network", "vault:read", "vault:write"] as const;
+export const services = [
+  "ics",
+  "caldav",
+  "google-calendar",
+  "google-drive",
+  "github",
+  "slack",
+] as const;
+
+export type Service = (typeof services)[number];
+
+/** Whether a value is one of the services connections reach. */
+export function isService(value: unknown): value is Service {
+  return (services as readonly unknown[]).includes(value);
+}
+
+/**
+ * What a plugin may reach, as its manifest asks: the network, the vault's
+ * notes and files to read and to change (ADR 0058), and the person's
+ * connections to a service (ADR 0090), which only Nether's own plugins
+ * may use for now.
+ */
+export const permissions = [
+  "network",
+  "vault:read",
+  "vault:write",
+  "connection:ics",
+  "connection:caldav",
+  "connection:google-calendar",
+  "connection:google-drive",
+  "connection:github",
+  "connection:slack",
+] as const;
 
 export type Permission = (typeof permissions)[number];
 
 function isPermission(value: unknown): value is Permission {
   return (permissions as readonly unknown[]).includes(value);
+}
+
+/** The service a `connection:<service>` permission names; none for another permission. */
+export function serviceOf(permission: Permission): Service | undefined {
+  const service = permission.startsWith("connection:")
+    ? permission.slice("connection:".length)
+    : undefined;
+  return isService(service) ? service : undefined;
+}
+
+/** The services a manifest's permissions let its plugin use connections to, in the app's order. */
+export function connectionServices(manifest: Pick<Manifest, "permissions">): readonly Service[] {
+  return manifest.permissions.flatMap((permission) => {
+    const service = serviceOf(permission);
+    return service === undefined ? [] : [service];
+  });
 }
 
 /** A manifest, or what is wrong with one. */
