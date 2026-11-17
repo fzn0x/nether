@@ -108,13 +108,16 @@ export async function tokenCaller(db: Database, token: string): Promise<ApiCalle
   if (row === undefined) return undefined;
   const info = tokenInfo(row);
   const userId = readText(row, "user_id");
-  const refusal = await signInGuards(db).check({
-    userId,
-    email: readText(row, "email"),
-    instanceAdmin: readBoolean(row, "instance_admin"),
-    method: sessionMethodOf(readTextOrNull(row, "method")),
-    provider: readTextOrNull(row, "provider"),
-  });
+  const refusal = await signInGuards(db).check(
+    {
+      userId,
+      email: readText(row, "email"),
+      instanceAdmin: readBoolean(row, "instance_admin"),
+      method: sessionMethodOf(readTextOrNull(row, "method")),
+      provider: readTextOrNull(row, "provider"),
+    },
+    db,
+  );
   if (refusal !== undefined) {
     await db.query("DELETE FROM api_tokens WHERE id = $1", [info.id]);
     return undefined;

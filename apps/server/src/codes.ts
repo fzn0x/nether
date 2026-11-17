@@ -77,13 +77,16 @@ async function sendCode(
   const userId = readText(user, "id");
   // None for an account whose codes no longer sign it in, as single sign-on
   // may require (ADR 0080); the answer is the same either way.
-  const refusal = await signInGuards(db).check({
-    userId,
-    email: readText(user, "email"),
-    instanceAdmin: readBoolean(user, "instance_admin"),
-    method: "code",
-    provider: null,
-  });
+  const refusal = await signInGuards(db).check(
+    {
+      userId,
+      email: readText(user, "email"),
+      instanceAdmin: readBoolean(user, "instance_admin"),
+      method: "code",
+      provider: null,
+    },
+    db,
+  );
   if (refusal !== undefined) return;
   const code = newCode();
   await db.transaction(async (tx) => {

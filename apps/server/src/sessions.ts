@@ -97,13 +97,16 @@ export async function startSession(
 ): Promise<NewSession> {
   const provider = start.provider ?? null;
   const users = await db.query("SELECT email, instance_admin FROM users WHERE id = $1", [userId]);
-  const refusal = await start.guards.check({
-    userId,
-    email: readText(users.rows[0], "email"),
-    instanceAdmin: readBoolean(users.rows[0], "instance_admin"),
-    method: start.method,
-    provider,
-  });
+  const refusal = await start.guards.check(
+    {
+      userId,
+      email: readText(users.rows[0], "email"),
+      instanceAdmin: readBoolean(users.rows[0], "instance_admin"),
+      method: start.method,
+      provider,
+    },
+    db,
+  );
   if (refusal !== undefined) throw new SignInRefused(refusal);
   const token = newToken();
   const client = (request.headers["user-agent"] ?? "").slice(0, 200);
@@ -141,13 +144,16 @@ export async function sessionAccount(db: Database, token: string): Promise<Accou
   const sessionId = readText(row, "session_id");
   const method = sessionMethodOf(readTextOrNull(row, "method"));
   const provider = readTextOrNull(row, "provider");
-  const refusal = await signInGuards(db).check({
-    userId: readText(row, "id"),
-    email: readText(row, "email"),
-    instanceAdmin: readBoolean(row, "instance_admin"),
-    method,
-    provider,
-  });
+  const refusal = await signInGuards(db).check(
+    {
+      userId: readText(row, "id"),
+      email: readText(row, "email"),
+      instanceAdmin: readBoolean(row, "instance_admin"),
+      method,
+      provider,
+    },
+    db,
+  );
   if (refusal !== undefined) {
     await db.query("DELETE FROM sessions WHERE id = $1", [sessionId]);
     return undefined;
@@ -219,13 +225,16 @@ function decoyHash(): Promise<string> {
 
 /** Whether an account's password still signs it in, as the server's guards say. */
 export async function passwordCounts(db: Database, account: Account): Promise<boolean> {
-  const refusal = await signInGuards(db).check({
-    userId: account.id,
-    email: account.email,
-    instanceAdmin: account.instanceAdmin,
-    method: "password",
-    provider: null,
-  });
+  const refusal = await signInGuards(db).check(
+    {
+      userId: account.id,
+      email: account.email,
+      instanceAdmin: account.instanceAdmin,
+      method: "password",
+      provider: null,
+    },
+    db,
+  );
   return refusal === undefined;
 }
 

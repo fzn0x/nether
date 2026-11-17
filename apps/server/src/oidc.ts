@@ -408,13 +408,16 @@ export function registerOidc(
           const users = await tx.query("SELECT email, instance_admin FROM users WHERE id = $1", [
             resolved.userId,
           ]);
-          const refusal = await guards.check({
-            userId: resolved.userId,
-            email: readText(users.rows[0], "email"),
-            instanceAdmin: readBoolean(users.rows[0], "instance_admin"),
-            method: "oidc",
-            provider: null,
-          });
+          const refusal = await guards.check(
+            {
+              userId: resolved.userId,
+              email: readText(users.rows[0], "email"),
+              instanceAdmin: readBoolean(users.rows[0], "instance_admin"),
+              method: "oidc",
+              provider: null,
+            },
+            tx,
+          );
           // Refused, the account it made or linked and the invitation it took are not kept.
           if (refusal !== undefined) throw new SignInRefused(refusal);
           const code = newToken();

@@ -5,7 +5,7 @@
 // session begun a way its account may no longer use ends at its next
 // request. Core never imports a module: a module adds its guard to the
 // services it is given, which are these.
-import type { Database } from "./db.ts";
+import type { Database, Queryable } from "./db.ts";
 import type { SessionMethod } from "./events.ts";
 
 /** Who would sign in, and how. */
@@ -37,8 +37,12 @@ export interface SignInGuard {
    * domain alone, so saying so tells nothing of accounts.
    */
   requiredFor(email: string): Promise<RequiredProvider | undefined>;
-  /** Whether an account may have a session begun this way: when it starts, and each time it is used. */
-  check(attempt: SignInAttempt): Promise<Refusal | undefined>;
+  /**
+   * Whether an account may have a session begun this way: when it starts,
+   * and each time it is used. What it reads, it reads through `db`, the
+   * transaction a session starts in, if it starts in one.
+   */
+  check(attempt: SignInAttempt, db: Queryable): Promise<Refusal | undefined>;
 }
 
 /** A sign-in a guard refused, as `startSession` throws it. */
@@ -72,9 +76,9 @@ export class SignInGuards {
     return undefined;
   }
 
-  async check(attempt: SignInAttempt): Promise<Refusal | undefined> {
+  async check(attempt: SignInAttempt, db: Queryable): Promise<Refusal | undefined> {
     for (const guard of this.#guards) {
-      const refusal = await guard.check(attempt);
+      const refusal = await guard.check(attempt, db);
       if (refusal !== undefined) return refusal;
     }
     return undefined;
