@@ -775,6 +775,112 @@ export const migrations: readonly Migration[] = [
       ALTER TABLE sso_providers ADD COLUMN required boolean NOT NULL DEFAULT false;
     `,
   },
+  {
+    version: 27,
+    name: "deactivated accounts, and the directories that provision accounts and groups",
+    sql: `
+      -- When an account was deactivated (ADR 0085): it signs in no way, and
+      -- keeps its memberships, roles, grants and sealed keys. Core enforces
+      -- it whether the scim feature is on or off.
+      ALTER TABLE users ADD COLUMN deactivated_at timestamptz;
+
+      -- A membership's own role, when its groups give it more: role stays
+      -- what every check reads, the highest of the two. Empty, role is its
+      -- own and no group gives more, as every row made before; none, its
+      -- groups alone give it.
+      ALTER TABLE memberships ADD COLUMN own_role text
+        CHECK (own_role IN ('owner', 'admin', 'member', 'guest', 'none'));
+
+      -- Where accounts and groups come from: a SCIM client, as Okta or
+      -- Entra ID, or an LDAP server the server reads, by a short name of
+      -- the admin's, which a SCIM directory's address carries. The tables
+      -- are in every schema, as the module is in every image (ADR 0079).
+      CREATE TABLE directories (
+        id text PRIMARY KEY,
+        kind text NOT NULL CHECK (kind IN ('scim', 'ldap')),
+        name text NOT NULL,
+        -- Whether it may make accounts at addresses outside its domains.
+        other_domains boolean NOT NULL DEFAULT false,
+        -- What reaching and reading it takes, as the module keeps it.
+        settings jsonb NOT NULL DEFAULT '{}',
+        -- An LDAP directory's bind password, sealed with NETHER_SECRET_KEY.
+        secrets bytea,
+        -- A SCIM directory's bearer token: its SHA-256, its last characters
+        -- for the admin to tell it by, and when it ends.
+        token_hash text UNIQUE,
+        token_hint text,
+        token_expires_at timestamptz,
+        -- How its last sync went, as the module keeps it, and until when a
+        -- node runs one, so one node reads it at a time.
+        sync_state jsonb NOT NULL DEFAULT '{}',
+        syncing_until timestamptz,
+        created_at timestamptz NOT NULL DEFAULT now(),
+        updated_at timestamptz NOT NULL DEFAULT now()
+      );
+
+      -- The email domains a directory speaks for: one directory at most each.
+      CREATE TABLE directory_domains (
+        domain text PRIMARY KEY,
+        directory_id text NOT NULL REFERENCES directories (id) ON DELETE CASCADE
+      );
+
+      CREATE INDEX directory_domains_by_directory ON directory_domains (directory_id);
+
+      -- Each account a directory manages, one directory at most: its
+      -- userName, unique in the directory without regard to case, its
+      -- externalId, and what the directory sent of its name and addresses.
+      CREATE TABLE directory_accounts (
+        user_id uuid PRIMARY KEY REFERENCES users (id) ON DELETE CASCADE,
+        directory_id text NOT NULL REFERENCES directories (id) ON DELETE CASCADE,
+        user_name text NOT NULL,
+        external_id text,
+        attributes jsonb NOT NULL DEFAULT '{}',
+        created_at timestamptz NOT NULL DEFAULT now(),
+        updated_at timestamptz NOT NULL DEFAULT now()
+      );
+
+      CREATE UNIQUE INDEX directory_accounts_user_names
+        ON directory_accounts (directory_id, lower(user_name));
+      CREATE INDEX directory_accounts_by_external ON directory_accounts (directory_id, external_id);
+      CREATE INDEX directory_accounts_in_order ON directory_accounts (directory_id, created_at, user_id);
+
+      -- A group of accounts, the instance's and not a workspace's, by an ID
+      -- of the server's that never changes; its name is unique in its
+      -- directory.
+      CREATE TABLE groups (
+        id uuid PRIMARY KEY,
+        directory_id text REFERENCES directories (id) ON DELETE CASCADE,
+        name text NOT NULL,
+        external_id text,
+        created_at timestamptz NOT NULL DEFAULT now(),
+        updated_at timestamptz NOT NULL DEFAULT now()
+      );
+
+      CREATE UNIQUE INDEX groups_names ON groups (directory_id, lower(name));
+      CREATE INDEX groups_in_order ON groups (directory_id, created_at, id);
+
+      CREATE TABLE group_members (
+        group_id uuid NOT NULL REFERENCES groups (id) ON DELETE CASCADE,
+        user_id uuid NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+        created_at timestamptz NOT NULL DEFAULT now(),
+        PRIMARY KEY (group_id, user_id)
+      );
+
+      CREATE INDEX group_members_by_user ON group_members (user_id);
+
+      -- A group's members' role in a workspace, as an instance admin maps it:
+      -- guests come by pages, so no group makes one.
+      CREATE TABLE group_workspaces (
+        group_id uuid NOT NULL REFERENCES groups (id) ON DELETE CASCADE,
+        workspace_id uuid NOT NULL REFERENCES workspaces (id) ON DELETE CASCADE,
+        role text NOT NULL CHECK (role IN ('owner', 'admin', 'member')),
+        created_at timestamptz NOT NULL DEFAULT now(),
+        PRIMARY KEY (group_id, workspace_id)
+      );
+
+      CREATE INDEX group_workspaces_by_workspace ON group_workspaces (workspace_id);
+    `,
+  },
 ];
 
 /** The schema version this server writes and reads. */

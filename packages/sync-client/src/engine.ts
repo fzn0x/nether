@@ -37,6 +37,7 @@ import {
   removeVaultFile,
   setVaultFile,
   sha256,
+  vaultFile,
   vaultFiles,
 } from "./files.ts";
 import {
@@ -442,13 +443,21 @@ export class VaultSync {
       JSON.stringify(list.map((unit) => [unit.id, unit.level, unit.name, unit.rootNote]));
     if (key(units) === key(this.#units)) return false;
     this.#units = units;
-    // A unit no longer opened is let go: its notes leave this vault as removed elsewhere.
+    // A unit no longer opened is let go: its notes leave this vault as
+    // removed elsewhere, unless another unit lists them. A page no longer
+    // shared on its own has its notes listed where it sat first, and that
+    // list can reach this device after the server says the page's unit is
+    // gone: the units still opened sync again before the next round reads
+    // them (#179).
+    let letGo = false;
     for (const [id, document] of [...this.#documents]) {
       if (units.some((unit) => unit.id === id)) continue;
       document.destroy();
       this.#documents.delete(id);
+      letGo = true;
     }
     this.#openUnits();
+    if (letGo) this.#channel?.resync();
     this.#saveSoon();
     return true;
   }
@@ -566,13 +575,17 @@ export class VaultSync {
         this.#base.delete(id);
       }
       // A note listed in a unit its path is no longer in, as one under a page
-      // just shared on its own, goes to its path's unit.
+      // just shared on its own, goes to its path's unit. One listed there
+      // too stays where it is: as a page stops being shared on its own, the
+      // server lists its notes where it sat before it drops its unit, and
+      // taking them out of that list would leave them listed nowhere (#179).
       const local = vault.paths();
       for (const [id, path] of listed.paths) {
         if (local.get(id) !== path) continue;
         const from = this.#unit(listed.units.get(id));
         const to = placer(path);
-        if (!narrows(from, to) || from === undefined) continue;
+        if (!narrows(from, to) || from === undefined || to === undefined) continue;
+        if (vaultPath(this.#documentOf(to.id), id) === path) continue;
         await this.#move(id, path, from, to);
       }
       for (const { id, path } of plan.moveLocal) {
@@ -724,12 +737,14 @@ export class VaultSync {
         removeVaultFile(this.#documentOf(from.id), path);
         base.delete(path);
       }
-      // A file listed in a unit its path is no longer in goes to its path's unit.
+      // A file listed in a unit its path is no longer in goes to its path's
+      // unit, unless listed there too, as notes are.
       for (const [path, file] of remote) {
         const from = this.#unit(listed.units.get(path));
         const to = placer(path);
         if (!narrows(from, to) || from === undefined || to === undefined) continue;
         if (local.get(path) !== file.hash || !writes(from) || !writes(to)) continue;
+        if (vaultFile(this.#documentOf(to.id), path)?.hash === file.hash) continue;
         removeVaultFile(this.#documentOf(from.id), path);
         setVaultFile(this.#documentOf(to.id), path, file);
       }

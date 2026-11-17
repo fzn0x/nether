@@ -366,6 +366,11 @@ export class RelayChannel implements Channel {
     // Nothing to add or let go.
   }
 
+  /** With General alone, no unit is let go, and nothing waits on its list. */
+  resync(): void {
+    // Nothing to sync again.
+  }
+
   state(): Record<string, DocumentState> {
     return Object.fromEntries(this.#documents);
   }

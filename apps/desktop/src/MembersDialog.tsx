@@ -1,7 +1,8 @@
 // The members of the workspace the vault syncs with: who is in it, at which
 // role, and for its owners and admins, changing roles, removing members and
 // inviting people by a link. Anyone may leave, after which the vault keeps
-// its notes and syncs no more.
+// its notes and syncs no more. An account a directory deactivated is
+// marked (ADR 0085).
 import { useCallback, useEffect, useRef, useState } from "react";
 import { backend } from "./backend.ts";
 import { t } from "./messages.ts";
@@ -132,6 +133,9 @@ export function MembersDialog(props: {
                   <span className="member-name">
                     {member.name}
                     {member.id === me ? <span className="hint">{t("membersYou")}</span> : null}
+                    {member.deactivated ? (
+                      <span className="hint">{t("accountDeactivated")}</span>
+                    ) : null}
                   </span>
                   <span className="hint">{member.email}</span>
                   {choices.length === 0 ? (

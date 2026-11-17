@@ -3,7 +3,8 @@
 // once within 15 minutes. Asking answers the same whether or not the
 // address has an account, and as fast, since the code is made and sent
 // after the answer. Five wrong tries spend a code, and asking again
-// replaces it. Only a code's SHA-256 is kept.
+// replaces it. Only a code's SHA-256 is kept. A deactivated account is
+// sent none, with the answer every address gets (ADR 0085).
 import { createHash, randomInt, randomUUID, timingSafeEqual } from "node:crypto";
 import type { FastifyBaseLogger, FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { type Database, readBoolean, readNumber, readText } from "./db.ts";
@@ -62,7 +63,7 @@ const redeemBody = {
 
 const wrongCode = "That code is not this address's, or has been used or has expired.";
 
-/** Makes a code for an address that has an account, and emails it. */
+/** Makes a code for an address that has an account, not deactivated, and emails it. */
 async function sendCode(
   db: Database,
   mailer: Mailer,
@@ -70,7 +71,7 @@ async function sendCode(
   publicUrl: string | null,
 ): Promise<void> {
   const { rows } = await db.query(
-    "SELECT id, name, email, instance_admin FROM users WHERE email_key = $1",
+    "SELECT id, name, email, instance_admin FROM users WHERE email_key = $1 AND deactivated_at IS NULL",
     [emailKey(email)],
   );
   const user = rows[0];
@@ -224,7 +225,7 @@ export function registerCodes(
         try {
           session = await startSession(tx, id, request, { method: "code", events, guards });
         } catch (error) {
-          // Spent, as any try is: the account signs in through a provider now.
+          // Spent, as any try is: the account is deactivated, or signs in through a provider now.
           if (error instanceof SignInRefused) return { failed: error.refusal.reason, userId: id };
           throw error;
         }

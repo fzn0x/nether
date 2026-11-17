@@ -1,11 +1,26 @@
 // Sync units (ADR 0042), through a real Nether server: a teamspace's notes
 // reach its members alone, with their comments; a note moved into a
-// teamspace's folder leaves the vaults of those outside it; and a guest
-// syncs the page shared with them, its subpages, and nothing else.
+// teamspace's folder leaves the vaults of those outside it; a guest syncs
+// the page shared with them, its subpages, and nothing else; and a page no
+// longer shared on its own keeps its notes on every device, in whatever
+// order a device hears of it.
+import type { Database } from "@nether/server/src/db.ts";
 import { afterEach, describe, expect, it } from "vitest";
+import * as Y from "yjs";
 import type { SyncRecord } from "../src/engine.ts";
+import { vaultFiles } from "../src/files.ts";
+import { vaultPaths } from "../src/paths.ts";
 import { unitForPath } from "../src/units.ts";
-import { MemoryVault, database, device, startServer, stopAll, until } from "./harness.ts";
+import {
+  MemoryStore,
+  MemoryVault,
+  database,
+  device,
+  slowLink,
+  startServer,
+  stopAll,
+  until,
+} from "./harness.ts";
 
 afterEach(stopAll);
 
@@ -78,8 +93,53 @@ async function untilStored(name: string): Promise<void> {
   }
 }
 
+/** What a device last kept of a unit's vault document: the notes and files it lists. */
+function listedIn(record: SyncRecord | undefined, unit: string) {
+  const document = new Y.Doc();
+  const state = record?.vaults?.[unit];
+  if (state !== undefined) Y.applyUpdate(document, state);
+  const listed = { notes: vaultPaths(document), files: vaultFiles(document) };
+  document.destroy();
+  return listed;
+}
+
 /** Waits a moment more, for anything still on its way. */
 const settle = () => new Promise((resolve) => setTimeout(resolve, 1500));
+
+/**
+ * A server that, once armed, waits a moment between moving an unshared
+ * page's list to where it sat and dropping its unit: the apps hear of the
+ * list while the unit is still there, as they do whenever the database
+ * takes its time.
+ */
+function slowUnsharing() {
+  const gate = { armed: false };
+  const held = new Error("Held for a moment");
+  const wrap = (database: Database): Database => ({
+    ...database,
+    transaction: async (work) => {
+      try {
+        return await database.transaction((tx) =>
+          work({
+            query: (text, params) => {
+              // Its first step, before it has changed anything.
+              if (gate.armed && text.startsWith("DELETE FROM note_units WHERE unit_id")) {
+                gate.armed = false;
+                throw held;
+              }
+              return tx.query(text, params);
+            },
+          }),
+        );
+      } catch (error) {
+        if (error !== held) throw error;
+        await new Promise((resolve) => setTimeout(resolve, 1500));
+        return database.transaction(work);
+      }
+    },
+  });
+  return { gate, wrap };
+}
 
 describe("unitForPath", () => {
   const units = [
@@ -213,14 +273,22 @@ describe("syncing units", () => {
   });
 
   it("keeps a page's notes on every device when it is no longer shared on its own", async () => {
-    const served = await startServer();
+    // The apps hear of the page's notes listed where it sat while its unit
+    // is still there (#179): none may take them back into the unit, which
+    // would leave them listed nowhere once it goes.
+    const { gate, wrap } = slowUnsharing();
+    const served = await startServer({}, wrap);
     const bea = await invitee(served, "Bea");
     const laptop = new MemoryVault();
     const launch = laptop.write("Projects/Launch.md", "the launch");
     const tasks = laptop.write("Projects/Launch/Tasks.md", "the tasks");
+    const sketch = "Projects/Launch/Sketch.txt";
+    laptop.attach(sketch, "a sketch");
     const first = await device(served, served.token, laptop);
     const beas = await device(served, bea.token);
-    await until(() => beas.vault.text(tasks) === "the tasks");
+    await until(
+      () => beas.vault.text(tasks) === "the tasks" && beas.vault.file(sketch) !== undefined,
+    );
 
     const page = await api(
       served,
@@ -231,11 +299,17 @@ describe("syncing units", () => {
         note: launch,
       },
     );
-    // Once both devices sync the page's unit, it stops being shared on its own.
+    // Once both devices list its notes and file in the page's unit, it
+    // stops being shared on its own.
+    const inPage = (record: SyncRecord | undefined) => {
+      const { notes, files } = listedIn(record, page.id as string);
+      return notes.has(launch) && notes.has(tasks) && files.has(sketch);
+    };
     const syncsPage = (record: SyncRecord | undefined) =>
       record?.vaults?.[page.id as string] !== undefined;
-    await until(() => syncsPage(first.store.record) && syncsPage(beas.store.record));
+    await until(() => inPage(first.store.record) && inPage(beas.store.record));
     await settle();
+    gate.armed = true;
     await api(
       served,
       served.token,
@@ -252,12 +326,82 @@ describe("syncing units", () => {
         !syncsPage(beas.store.record) &&
         beas.vault.text(launch) === "the launch" &&
         beas.vault.text(tasks) === "the tasks" &&
-        laptop.text(tasks) === "the tasks",
+        laptop.text(tasks) === "the tasks" &&
+        beas.vault.file(sketch) === "a sketch" &&
+        laptop.file(sketch) === "a sketch",
     );
     await settle();
+    expect(gate.armed).toBe(false);
     expect(beas.vault.text(launch)).toBe("the launch");
     expect(beas.vault.text(tasks)).toBe("the tasks");
     expect(laptop.text(tasks)).toBe("the tasks");
+    expect(beas.vault.file(sketch)).toBe("a sketch");
+    expect(laptop.file(sketch)).toBe("a sketch");
+    // Not sent to the trash and fetched again either.
+    expect(beas.vault.removed).toEqual([]);
+    expect(laptop.removed).toEqual([]);
+  });
+
+  it("keeps a page's notes on a device that hears its unit is gone before their new list", async () => {
+    const served = await startServer();
+    const bea = await invitee(served, "Bea");
+    const laptop = new MemoryVault();
+    const launch = laptop.write("Projects/Launch.md", "the launch");
+    const tasks = laptop.write("Projects/Launch/Tasks.md", "the tasks");
+    const first = await device(served, served.token, laptop);
+    // Bea's link is slow, as the desktop app's through Go can be (#179).
+    const slow = slowLink();
+    const beas = await device(
+      served,
+      bea.token,
+      new MemoryVault(),
+      new MemoryStore(),
+      undefined,
+      slow.WebSocket,
+    );
+    await until(() => beas.vault.text(tasks) === "the tasks");
+    const page = await api(
+      served,
+      served.token,
+      "POST",
+      `/api/workspaces/${served.workspaceId}/pages`,
+      {
+        note: launch,
+      },
+    );
+    const inPage = (record: SyncRecord | undefined) => {
+      const { notes } = listedIn(record, page.id as string);
+      return notes.has(launch) && notes.has(tasks);
+    };
+    const syncsPage = (record: SyncRecord | undefined) =>
+      record?.vaults?.[page.id as string] !== undefined;
+    await until(() => inPage(first.store.record) && inPage(beas.store.record));
+    await settle();
+
+    slow.link.delay = 1000;
+    await api(
+      served,
+      served.token,
+      "DELETE",
+      `/api/workspaces/${served.workspaceId}/pages/${String(page.id)}`,
+    );
+    // An edit there starts a round, which hears the unit is gone before the
+    // socket brings General's list with the page's notes.
+    beas.vault.write("Ideas.md", "an idea");
+    await until(() => !syncsPage(beas.store.record));
+    slow.link.delay = 0;
+    await until(
+      () =>
+        beas.vault.text(launch) === "the launch" &&
+        beas.vault.text(tasks) === "the tasks" &&
+        beas.engine.status.state === "synced" &&
+        beas.engine.status.pending === 0,
+    );
+    await settle();
+    expect(beas.vault.removed).toEqual([]);
+    expect(beas.vault.text(launch)).toBe("the launch");
+    expect(beas.vault.text(tasks)).toBe("the tasks");
+    expect(laptop.removed).toEqual([]);
   });
 
   it("gives a guest the page shared with them and its subpages, to edit and add to", async () => {

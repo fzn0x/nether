@@ -64,7 +64,8 @@ part of a member's name or email address, and choose **Find**.
 Each workspace shows:
 
 - its name, and **End-to-end encrypted** when it is;
-- its **Owners**, by name;
+- its **Owners**, by name, each marked **(deactivated)** when their
+  account is;
 - how many **Members** it has, guests too;
 - its **Notes**: **Encrypted** for an encrypted workspace, whose notes the
   server cannot read;
@@ -77,12 +78,14 @@ The console never shows a note's title or text.
 ### Giving a workspace a new owner
 
 Choose a workspace's name to see its members: each one's name, email,
-role and the day they joined. Set a member's **Role** there, to owner,
+role and the day they joined, and **Deactivated** beside an account that
+signs in no way. Set a member's **Role** there, to owner,
 admin, member or guest. This is how a workspace whose owners have left
 gets a new one.
 
-- A workspace keeps at least one owner: make someone else an owner first,
-  then change the last one's role.
+- A workspace keeps at least one active owner: make someone else an owner
+  first, then change the last one's role. An owner whose account is
+  deactivated does not count.
 - The member's apps connect again at once, and work by the new role.
 - The console does not add or remove members, and does not make you one.
   A workspace's owners invite and remove people, as before.

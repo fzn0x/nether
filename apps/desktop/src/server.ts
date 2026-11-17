@@ -616,6 +616,8 @@ export interface Member {
   readonly name: string;
   readonly email: string;
   readonly role: string;
+  /** Whether a directory deactivated the account, which then signs in no way (ADR 0085). */
+  readonly deactivated: boolean;
 }
 
 /** A workspace's members, by name; a guest is refused the list. */
@@ -636,6 +638,7 @@ export async function members(
       name: text(member.name, base),
       email: text(member.email, base),
       role: text(member.role, base),
+      deactivated: member.deactivated === true,
     };
   });
 }
