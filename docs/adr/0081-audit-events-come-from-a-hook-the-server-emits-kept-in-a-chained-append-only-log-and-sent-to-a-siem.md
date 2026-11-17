@@ -420,6 +420,13 @@ of each, shown in the console with no control, as a feature's switch is.
   through the members' one `setRole`, recorded with `as: instance-admin`.
 - **A module reads its switch through the event's transaction**, so a
   listener never waits on a query outside the change it records.
+- **Work done only to tell of something waits on `wanted`.** A listener
+  says, through its switch, whether it wants events now, and a route asks
+  before work it would do only for them. Storing a vault document finds
+  the notes it no longer lists only while audit logs are on, from the
+  paths search already parses: each side's once, for search, webhooks and
+  audit logs alike, so a server with audit logs off parses no more than
+  before.
 - **Names are read when the event is recorded**, in its transaction: an
   account's name and email, a workspace's name, and a target's name when
   the route gave none, for an account or a note the server can read.
