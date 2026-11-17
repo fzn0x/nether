@@ -3,8 +3,9 @@
 // note, which opens a folded panel; the plugin's view fills it, a built-in
 // plugin's live view or a view mounted in an element of its own.
 import type { PanelProps } from "@nether/plugin-api";
-import { Suspense, useCallback, useEffect, useId, useMemo, useState } from "react";
+import { Suspense, useCallback, useContext, useEffect, useId, useMemo, useState } from "react";
 import { Failed, errorText, shownDark } from "./CodeOutput.tsx";
+import { NoteDayContext } from "./noteDay.ts";
 import { PluginMount } from "./PluginMount.tsx";
 import type { PanelDrawing, PanelProcessor, PanelViewProps } from "./plugins/panels.ts";
 
@@ -57,15 +58,16 @@ function MountedPanel(props: {
   const { mount, viewProps, plugin } = props;
   const note = viewProps.note === undefined ? undefined : viewProps.vault.note(viewProps.note);
   const { id, title, path } = note ?? {};
-  const panelProps = useMemo(
-    (): PanelProps => ({
+  const dayOf = useContext(NoteDayContext);
+  const panelProps = useMemo((): PanelProps => {
+    const day = path === undefined ? undefined : dayOf(path);
+    return {
       theme: shownDark() ? "dark" : "light",
       ...(id === undefined || title === undefined || path === undefined
         ? {}
-        : { note: { id, title, path } }),
-    }),
-    [id, title, path],
-  );
+        : { note: { id, title, path, ...(day === undefined ? {} : { day }) } }),
+    };
+  }, [id, title, path, dayOf]);
   const start = useCallback(
     (element: HTMLElement, first: PanelProps) => mount(element, first),
     [mount],

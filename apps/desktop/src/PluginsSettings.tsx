@@ -4,7 +4,8 @@
 // One turned off takes away what it adds, in this vault, until it is
 // turned on again. Turning on a plugin from a folder approves its code, as
 // it is now, on this device. Below them, the directory installs plugins
-// into that folder (ADR 0065).
+// into that folder (ADR 0065). Nether's integrations are listed apart, off
+// until turned on, with the connections each reaches (ADR 0090).
 import { type Manifest, type Permission, localize } from "@nether/plugin-api";
 import type { Vault } from "@nether/storage";
 import { type SyntheticEvent, useCallback, useState } from "react";
@@ -18,6 +19,12 @@ const askedFor: Readonly<Record<Permission, MessageKey>> = {
   network: "pluginAsksNetwork",
   "vault:read": "pluginAsksVaultRead",
   "vault:write": "pluginAsksVaultWrite",
+  "connection:ics": "pluginAsksConnectionIcs",
+  "connection:caldav": "pluginAsksConnectionCaldav",
+  "connection:google-calendar": "pluginAsksConnectionGoogleCalendar",
+  "connection:google-drive": "pluginAsksConnectionGoogleDrive",
+  "connection:github": "pluginAsksConnectionGithub",
+  "connection:slack": "pluginAsksConnectionSlack",
 };
 
 /** What a plugin asks for, as a sentence. */
@@ -30,8 +37,10 @@ function asks(manifest: Manifest): string {
 }
 
 export function PluginsSettings(props: {
-  /** The plugins that come with the app. */
+  /** The plugins that come with the app, on unless the vault turned them off. */
   readonly plugins: readonly Manifest[];
+  /** Nether's integrations, off until the vault turns them on (ADR 0090). */
+  readonly integrations?: readonly Manifest[];
   readonly state: PluginState;
   /**
    * Keeps which are on, and what this device approved; a rejection shows
@@ -48,9 +57,11 @@ export function PluginsSettings(props: {
   readonly onInstalled: () => void;
 }) {
   const { plugins, state, onSave, onClose, vault, onInstalled } = props;
+  const integrations = props.integrations ?? [];
   const { folders } = state;
   const [draft, setDraft] = useState<Readonly<Record<string, boolean>>>(() => ({
     ...Object.fromEntries(plugins.map((plugin) => [plugin.id, isOn(state, plugin.id)])),
+    ...Object.fromEntries(integrations.map((plugin) => [plugin.id, isOn(state, plugin.id, true)])),
     ...Object.fromEntries(folders.map((entry) => [entry.folder, isFolderOn(state, entry)])),
   }));
   const [error, setError] = useState<string | undefined>();
@@ -60,6 +71,7 @@ export function PluginsSettings(props: {
     const on: Record<string, boolean> = { ...state.on };
     const approvals = new Map(Object.entries(state.approvals));
     for (const plugin of plugins) on[plugin.id] = draft[plugin.id] ?? true;
+    for (const plugin of integrations) on[plugin.id] = draft[plugin.id] ?? false;
     for (const entry of folders) {
       const approval = approvalOf(entry);
       // One that cannot run keeps what the vault and this device had.
@@ -118,6 +130,34 @@ export function PluginsSettings(props: {
             </li>
           ))}
         </ul>
+        {integrations.length === 0 ? null : (
+          <>
+            <h4>{t("pluginsIntegrations")}</h4>
+            <p className="hint">{t("pluginsIntegrationsIntro")}</p>
+            <ul className="plugin-list">
+              {integrations.map((plugin) => (
+                <li key={plugin.id}>
+                  <label className="field-check">
+                    <input
+                      type="checkbox"
+                      checked={draft[plugin.id] ?? false}
+                      onChange={(event) => {
+                        toggle(plugin.id, event.target.checked);
+                      }}
+                    />
+                    {localize(plugin.name, language)}
+                  </label>
+                  <p className="hint">
+                    {plugin.description === undefined ? null : (
+                      <>{localize(plugin.description, language)} </>
+                    )}
+                    {t("pluginVersion", { version: plugin.version })} {asks(plugin)}
+                  </p>
+                </li>
+              ))}
+            </ul>
+          </>
+        )}
         <h4>{t("pluginsFromVault")}</h4>
         <p className="hint">{t("pluginsFromVaultIntro")}</p>
         {folders.length === 0 ? (

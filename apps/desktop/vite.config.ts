@@ -1,4 +1,4 @@
-import { readFileSync, readdirSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -57,8 +57,15 @@ function pluginFramePage(network: boolean): string {
 `;
 }
 
-/** A script of the app's own, with what it imports, as one classic script. */
-async function classicScript(entry: string, define: Record<string, string> = {}): Promise<string> {
+/**
+ * A script of the app's own, with what it imports, as one classic script,
+ * or as one ES module.
+ */
+async function classicScript(
+  entry: string,
+  define: Record<string, string> = {},
+  format: "iife" | "es" = "iife",
+): Promise<string> {
   const built = await build({
     configFile: false,
     root: fileURLToPath(new URL(".", import.meta.url)),
@@ -71,7 +78,7 @@ async function classicScript(entry: string, define: Record<string, string> = {})
       copyPublicDir: false,
       lib: {
         entry: fileURLToPath(new URL(entry, import.meta.url)),
-        formats: ["iife"],
+        formats: [format],
         name: "nether",
       },
     },
@@ -139,6 +146,52 @@ function pluginFrame(): Plugin {
 }
 
 /**
+ * The built-in plugins that run apart (ADR 0090): each folder of
+ * src/plugins with a main.ts, which only they have, built as one ES module
+ * with what it imports, served at builtin-plugins/<id>.js, and handed to
+ * a sandboxed frame as a vault plugin's main.js is.
+ */
+function apartPlugins(): Plugin {
+  const root = fileURLToPath(new URL("src/plugins", import.meta.url));
+  const ids = (): string[] =>
+    readdirSync(root, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory() && existsSync(join(root, entry.name, "main.ts")))
+      .map((entry) => entry.name);
+  const code = (id: string) => classicScript(`src/plugins/${id}/main.ts`, {}, "es");
+  return {
+    name: "nether:apart-plugins",
+    configureServer(server) {
+      server.middlewares.use((request, response, next) => {
+        const path = (request.url ?? "").split("?")[0] ?? "";
+        const id = /^\/builtin-plugins\/([a-z0-9-]+)\.js$/.exec(path)?.[1];
+        if (id === undefined || !ids().includes(id)) {
+          next();
+          return;
+        }
+        code(id).then(
+          (script) => {
+            response.setHeader("content-type", "text/javascript; charset=utf-8");
+            response.end(script);
+          },
+          (error: unknown) => {
+            next(error);
+          },
+        );
+      });
+    },
+    async generateBundle() {
+      for (const id of ids()) {
+        this.emitFile({
+          type: "asset",
+          fileName: `builtin-plugins/${id}.js`,
+          source: await code(id),
+        });
+      }
+    },
+  };
+}
+
+/**
  * What pdf.js fetches when a PDF needs it (ADR 0061), built and served
  * under pdfjs/, each with its license: the CMaps of Chinese, Japanese and
  * Korean text; the WebAssembly decoders of JBIG2, JPEG 2000 and ICC
@@ -189,7 +242,7 @@ function pdfjsFiles(): Plugin {
 }
 
 export default defineConfig({
-  plugins: [react(), decodeEntitiesWithoutDom(), pluginFrame(), pdfjsFiles()],
+  plugins: [react(), decodeEntitiesWithoutDom(), pluginFrame(), apartPlugins(), pdfjsFiles()],
   worker: {
     format: "es",
     plugins: () => [decodeEntitiesWithoutDom()],

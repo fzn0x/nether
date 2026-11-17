@@ -475,6 +475,149 @@ describe("startPlugin", () => {
     app.close();
   });
 
+  it("lists the person's connections, asks for one, and hears when they change", async () => {
+    const { app, pluginSide, told } = fakeApp();
+    const work = {
+      id: "c1",
+      service: "ics",
+      name: "Work",
+      address: "calendar.example.org",
+      where: "device",
+    };
+    app.handle("connections.list", () => [
+      { ...work, account: "ada", web: "example.org" },
+      { ...work, id: "c2", service: "dropbox" },
+      { ...work, id: "c3", where: "cloud" },
+      "odd",
+    ]);
+    for (const method of ["connections.add", "connections.watch", "connections.unwatch"]) {
+      app.handle(method, (...args) => {
+        told.push(`${method} ${JSON.stringify(args)}`);
+        return null;
+      });
+    }
+    let reached: PluginContext["connections"] | undefined;
+    const endpoint = await startPlugin(
+      definePlugin({
+        activate(context) {
+          reached = context.connections;
+        },
+      }),
+      pluginSide,
+    );
+    if (reached === undefined) throw new Error("No connections.");
+    // What does not read as a connection of a known service is left out.
+    expect(await reached.list()).toEqual([{ ...work, account: "ada", web: "example.org" }]);
+    await reached.add("ics");
+    const heard: string[] = [];
+    const first = await reached.onChange((each) => heard.push(`first ${String(each.length)}`));
+    const second = await reached.onChange((each) => heard.push(`second ${String(each.length)}`));
+    await app.call("connections.changed", [work]);
+    await first.dispose();
+    await first.dispose();
+    await app.call("connections.changed", null);
+    await second.dispose();
+    expect(heard).toEqual(["first 1", "second 1", "second 0"]);
+    expect(told.filter((each) => each.startsWith("connections"))).toEqual([
+      'connections.add ["ics"]',
+      "connections.watch []",
+      "connections.unwatch []",
+    ]);
+    endpoint.close();
+    app.close();
+  });
+
+  it("sends requests through the app, and reads its answers as text or bytes", async () => {
+    const { app, pluginSide } = fakeApp();
+    const sent: Json[] = [];
+    app.handle("http.fetch", (request) => {
+      sent.push(request ?? null);
+      const as = (request as { as?: string } | null)?.as;
+      return as === "bytes"
+        ? { status: 200, headers: { "content-type": "image/png", odd: 3 }, base64: btoa("png") }
+        : { status: 207, headers: { etag: '"1"' }, text: "BEGIN:VCALENDAR" };
+    });
+    let http: PluginContext["http"] | undefined;
+    const endpoint = await startPlugin(
+      definePlugin({
+        activate(context) {
+          http = context.http;
+        },
+      }),
+      pluginSide,
+    );
+    if (http === undefined) throw new Error("No requests.");
+    expect(await http.fetch({ connection: "c1" })).toEqual({
+      status: 207,
+      headers: { etag: '"1"' },
+      text: "BEGIN:VCALENDAR",
+    });
+    const bytes = await http.fetch({
+      connection: "c1",
+      url: "/pic.png",
+      method: "REPORT",
+      headers: { depth: "1" },
+      body: "<x/>",
+      as: "bytes",
+    });
+    expect(bytes.headers).toEqual({ "content-type": "image/png" });
+    expect(new TextDecoder().decode(bytes.bytes)).toBe("png");
+    expect(sent).toEqual([
+      { connection: "c1", url: "", method: "GET", headers: {}, as: "text" },
+      {
+        connection: "c1",
+        url: "/pic.png",
+        method: "REPORT",
+        headers: { depth: "1" },
+        body: "<x/>",
+        as: "bytes",
+      },
+    ]);
+    app.handle("http.fetch", () => ({ status: "ok" }));
+    await expect(http.fetch({ connection: "c1" })).rejects.toThrow(
+      "The app gave no answer to the request.",
+    );
+    endpoint.close();
+    app.close();
+  });
+
+  it("keeps values on the device through the app", async () => {
+    const { app, pluginSide } = fakeApp();
+    const kept = new Map<string, Json>();
+    app.handle("store.get", (key) =>
+      kept.has(key as string) ? { value: kept.get(key as string) ?? null } : {},
+    );
+    app.handle("store.set", (key, value) => {
+      kept.set(key as string, value ?? null);
+      return null;
+    });
+    app.handle("store.delete", (key) => {
+      kept.delete(key as string);
+      return null;
+    });
+    app.handle("store.keys", () => [...kept.keys(), 4]);
+    let store: PluginContext["store"] | undefined;
+    const endpoint = await startPlugin(
+      definePlugin({
+        activate(context) {
+          store = context.store;
+        },
+      }),
+      pluginSide,
+    );
+    if (store === undefined) throw new Error("No store.");
+    expect(await store.get("events")).toBeUndefined();
+    await store.set("events", [{ title: "Standup" }]);
+    await store.set("empty", null);
+    expect(await store.get("events")).toEqual([{ title: "Standup" }]);
+    expect(await store.get("empty")).toBeNull();
+    expect(await store.keys()).toEqual(["events", "empty"]);
+    await store.delete("events");
+    expect(await store.keys()).toEqual(["empty"]);
+    endpoint.close();
+    app.close();
+  });
+
   it("says when the app gives no note or no file", async () => {
     const { app, pluginSide } = fakeApp();
     app.handle("vault.read", () => null);

@@ -65,5 +65,30 @@ export default defineConfig(
       ],
     },
   },
+  {
+    // Nether's integrations are built-in plugins that run apart, written
+    // only against the public SDK, so they prove it (ADR 0090): nothing of
+    // the app's, and no package of the repository but the SDK.
+    files: ["apps/desktop/src/plugins/calendar/**"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          patterns: [
+            {
+              group: ["../*", "@nether/*", "!@nether/plugin-api"],
+              message:
+                "An integration imports only @nether/plugin-api and its own files, as any plugin could.",
+            },
+            {
+              group: ["@nether/enterprise-*", "**/enterprise/**"],
+              message:
+                "Code outside enterprise/ must not depend on it; register an extension point instead.",
+            },
+          ],
+        },
+      ],
+    },
+  },
   prettier,
 );

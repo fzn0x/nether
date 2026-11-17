@@ -58,6 +58,8 @@ test("the settings turn a built-in plugin off and on again, and the vault keeps 
       graph: true,
       pdf: true,
       layouts: true,
+      // Nether's integrations start off (ADR 0090).
+      calendar: false,
     });
 
   await openSettings(page, /^Plugins/);

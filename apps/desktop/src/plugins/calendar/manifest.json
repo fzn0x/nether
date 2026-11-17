@@ -1,0 +1,29 @@
+{
+  "id": "calendar",
+  "name": "Calendar",
+  "version": "1.0.0",
+  "api": "^0.1.1",
+  "description": "Shows the events of your calendars' ICS feeds in a calendar code block and beside a note, for a daily note's day or today, and adds them to the note as a list.",
+  "author": "Nether contributors",
+  "permissions": ["vault:read", "vault:write", "connection:ics"],
+  "contributes": {
+    "codeBlocks": [
+      {
+        "language": "calendar",
+        "name": "Events",
+        "keywords": "calendar events agenda day ics meetings",
+        "text": "days: 1"
+      }
+    ],
+    "panels": [{ "id": "events", "name": "Events", "place": "note" }],
+    "settings": [
+      {
+        "id": "refresh",
+        "name": "Refresh every",
+        "description": "Minutes before a calendar shown is read again, from 5 to 1440.",
+        "type": "number",
+        "default": 15
+      }
+    ]
+  }
+}

@@ -3,7 +3,7 @@
 // made blank or from a template, and today's, this week's and this month's
 // notes open, made the first time from theirs.
 import type { NoteId, Period } from "@nether/core";
-import type { NoteEntry, Vault } from "@nether/storage";
+import type { NoteEntry, Vault, VaultSettings } from "@nether/storage";
 import { localize } from "@nether/plugin-api";
 import {
   type CSSProperties,
@@ -52,6 +52,8 @@ import { PropertyChangeRegistry } from "./plugins/propertyChanges.ts";
 import { PaneViewOutput } from "./PaneViewOutput.tsx";
 import { SidebarPanel } from "./PanelOutput.tsx";
 import { PluginHost } from "./plugins/host.ts";
+import { ConnectionsHub } from "./connections.ts";
+import { NoteDayContext, dayOfNote } from "./noteDay.ts";
 import { type VaultAccess, vaultAccess } from "./plugins/vault.ts";
 import { isFolderOn, isOn, readBuiltins, usePluginState } from "./plugins/state.ts";
 import { type Command, CommandRegistry } from "./plugins/registry.ts";
@@ -203,6 +205,9 @@ const AppearanceSettings = lazy(() =>
   import("./AppearanceSettings.tsx").then(({ AppearanceSettings: tab }) => ({ default: tab })),
 );
 // So does the AI tab, with the providers' code (ADR 0068).
+const ConnectionsSettings = lazy(() =>
+  import("./ConnectionsSettings.tsx").then(({ ConnectionsSettings: tab }) => ({ default: tab })),
+);
 const AiSettings = lazy(() =>
   import("./AiSettings.tsx").then(({ AiSettings: tab }) => ({ default: tab })),
 );
@@ -300,8 +305,19 @@ function IndexStatus(props: { readonly indexer: Indexer }) {
   );
 }
 
-/** The built-in plugins, their manifests read once. */
-const builtins = readBuiltins(builtinPlugins);
+/**
+ * The built-in plugins, their manifests read once. The integrations come
+ * only where the app keeps connections (ADR 0090): not yet in the web app,
+ * whose come from its server in a later part, nor the mobile apps.
+ */
+const builtins = readBuiltins(
+  builtinPlugins.filter((each) => each.apart === undefined || backend.connections !== undefined),
+);
+
+/** The person's connections, which every vault's plugins share; none where the app keeps none. */
+const connectionsHub =
+  backend.connections === undefined ? undefined : new ConnectionsHub(backend.connections);
+
 const builtinIds: ReadonlySet<string> = new Set(builtins.map((each) => each.manifest.id));
 
 /** The built-in graph plugin's view, which the app's Graph command opens. */
@@ -590,6 +606,10 @@ export function VaultView(props: {
   // with one shows as a notice.
   // What plugins that ask for it reach of the vault open (ADR 0064).
   const reachVault = useRef<VaultAccess | undefined>(undefined);
+  // Where plugins keep what they keep on this device, and whether a plugin
+  // asked to add a connection, which opens the Connections tab's form (ADR 0090).
+  const reachSettings = useRef<VaultSettings | undefined>(undefined);
+  const [addingConnection, setAddingConnection] = useState(false);
   const [host] = useState(
     () =>
       new PluginHost(plugins, {
@@ -600,9 +620,20 @@ export function VaultView(props: {
         },
         onOpenView: setPaneView,
         vault: () => reachVault.current,
+        settings: () => reachSettings.current,
+        ...(connectionsHub === undefined
+          ? {}
+          : {
+              connections: connectionsHub.host(() => {
+                setAddingConnection(true);
+                setSettingsTab("connections");
+                setDialog("settings");
+              }),
+            }),
       }),
   );
   useEffect(() => {
+    reachSettings.current = vault?.settings;
     reachVault.current =
       vault === undefined
         ? undefined
@@ -627,7 +658,7 @@ export function VaultView(props: {
     const added = new Set(host.ids());
     for (const { plugin, manifest } of builtins) {
       host.setSettings(manifest.id, loaded.settings[manifest.id]);
-      if (!isOn(loaded, manifest.id)) {
+      if (!isOn(loaded, manifest.id, plugin.off === true)) {
         host.remove(manifest.id);
       } else if (!added.has(manifest.id)) {
         const problems = host.add(plugin);
@@ -655,6 +686,8 @@ export function VaultView(props: {
     }
   }, [host, pluginState]);
   const { settings, save } = useTemplateSettings(vault);
+  // The day a daily note stands for, which plugins are told beside it (ADR 0090).
+  const dayOf = useCallback((path: string) => dayOfNote(path, settings.day), [settings]);
   const version = useGraph(graph);
 
   const noteView = useNoteViewModule();
@@ -1528,6 +1561,7 @@ export function VaultView(props: {
             },
       shortcuts: open ? openSettings("shortcuts") : undefined,
       plugins: open ? openSettings("plugins") : undefined,
+      connections: open && connectionsHub !== undefined ? openSettings("connections") : undefined,
       checkUpdates: updates.available
         ? () => {
             void backend.checkForUpdates();
@@ -1568,6 +1602,7 @@ export function VaultView(props: {
 
   const closeDialog = () => {
     setDialog(undefined);
+    setAddingConnection(false);
   };
   /** The settings' tabs: the app's own, Plugins, then each plugin's on that has settings. */
   const settingsTabs = (open: Vault): SettingsTab[] => [
@@ -1630,6 +1665,25 @@ export function VaultView(props: {
             ),
           },
         ]),
+    // The person's connections to services, for Nether's integrations (ADR
+    // 0090): on this device, where the app keeps them.
+    ...(connectionsHub === undefined
+      ? []
+      : [
+          {
+            id: "connections",
+            name: t("connectionsTab"),
+            render: () => (
+              <Suspense fallback={null}>
+                <ConnectionsSettings
+                  hub={connectionsHub}
+                  adding={addingConnection}
+                  onClose={closeDialog}
+                />
+              </Suspense>
+            ),
+          },
+        ]),
     ...(pluginState.state === undefined
       ? []
       : (() => {
@@ -1643,7 +1697,12 @@ export function VaultView(props: {
                   key={loaded.folders
                     .map((each) => `${each.folder}:${each.code?.hash ?? ""}`)
                     .join()}
-                  plugins={builtins.map((each) => each.manifest)}
+                  plugins={builtins.flatMap((each) =>
+                    each.plugin.off === true ? [] : [each.manifest],
+                  )}
+                  integrations={builtins.flatMap((each) =>
+                    each.plugin.off === true ? [each.manifest] : [],
+                  )}
                   state={loaded}
                   onSave={pluginState.saveOn}
                   onClose={closeDialog}
@@ -1653,7 +1712,9 @@ export function VaultView(props: {
               ),
             },
             ...[
-              ...builtins.flatMap(({ manifest }) => (isOn(loaded, manifest.id) ? [manifest] : [])),
+              ...builtins.flatMap(({ plugin, manifest }) =>
+                isOn(loaded, manifest.id, plugin.off === true) ? [manifest] : [],
+              ),
               ...loaded.folders.flatMap((entry) =>
                 entry.manifest !== undefined && isFolderOn(loaded, entry) ? [entry.manifest] : [],
               ),
@@ -1885,956 +1946,959 @@ export function VaultView(props: {
 
   return (
     <ExportPolicyContext.Provider value={exportPolicy}>
-      <div
-        className={drawerOpen ? "vault drawer-open" : "vault"}
-        style={{ "--sidebar-width": `${String(sidebarWidth)}px` } as CSSProperties}
-      >
-        {(() => {
-          const effect = builtInTheme(appearance.appearance.theme)?.effect;
-          return effect === undefined ? null : (
-            <Suspense fallback={null}>
-              <ThemeEffect effect={effect} />
-            </Suspense>
-          );
-        })()}
-        <aside
-          id="sidebar"
-          className="sidebar"
-          aria-label={info.name}
-          // Closed on a phone, the drawer is out of sight and out of reach.
-          inert={phone && !drawerOpen}
-          onKeyDown={(event) => {
-            if (!drawerOpen || event.key !== "Escape" || event.defaultPrevented) return;
-            event.preventDefault();
-            setDrawer(false);
-          }}
+      <NoteDayContext.Provider value={dayOf}>
+        <div
+          className={drawerOpen ? "vault drawer-open" : "vault"}
+          style={{ "--sidebar-width": `${String(sidebarWidth)}px` } as CSSProperties}
         >
-          <SidebarResizer width={sidebarWidth} onResize={setSidebarWidth} controls="sidebar" />
-          <header className="sidebar-header">
-            <h2 title={info.path}>{info.name}</h2>
-            <div className="sidebar-header-actions">
-              <button type="button" className="quiet" onClick={onClose}>
-                {t("closeVault")}
-              </button>
-              {phone ? (
-                <button
-                  type="button"
-                  className="icon-button drawer-close"
-                  aria-label={t("phoneSidebarClose")}
-                  onClick={() => {
-                    setDrawer(false);
-                  }}
-                >
-                  <span aria-hidden="true">×</span>
+          {(() => {
+            const effect = builtInTheme(appearance.appearance.theme)?.effect;
+            return effect === undefined ? null : (
+              <Suspense fallback={null}>
+                <ThemeEffect effect={effect} />
+              </Suspense>
+            );
+          })()}
+          <aside
+            id="sidebar"
+            className="sidebar"
+            aria-label={info.name}
+            // Closed on a phone, the drawer is out of sight and out of reach.
+            inert={phone && !drawerOpen}
+            onKeyDown={(event) => {
+              if (!drawerOpen || event.key !== "Escape" || event.defaultPrevented) return;
+              event.preventDefault();
+              setDrawer(false);
+            }}
+          >
+            <SidebarResizer width={sidebarWidth} onResize={setSidebarWidth} controls="sidebar" />
+            <header className="sidebar-header">
+              <h2 title={info.path}>{info.name}</h2>
+              <div className="sidebar-header-actions">
+                <button type="button" className="quiet" onClick={onClose}>
+                  {t("closeVault")}
                 </button>
-              ) : null}
-            </div>
-          </header>
-          {state.status === "open" ? <MenuBar label={t("menus")} menus={menus} /> : null}
-          {state.status === "opening" ? (
-            <p className="placeholder" role="status">
-              {t("indexing")}
-            </p>
-          ) : state.status === "failed" ? (
-            <p role="alert">{state.error.message}</p>
-          ) : (
-            <>
-              <div className="sidebar-actions">
-                <IconButton
-                  icon={commandIcons.newNote}
-                  label={t("newNote")}
-                  keys={keysOf("newNote")}
-                  ariaKeys={ariaOf("newNote")}
-                  hasPopup="dialog"
-                  onClick={() => {
-                    setNewIn("");
-                    setDialog("newNote");
-                  }}
-                />
-                <IconButton
-                  icon={commandIcons.newFolder}
-                  label={t("newFolder")}
-                  keys={keysOf("newFolder")}
-                  ariaKeys={ariaOf("newFolder")}
-                  hasPopup="dialog"
-                  onClick={() => {
-                    setNewFolderIn("");
-                  }}
-                />
-                <IconButton
-                  icon={commandIcons.newDatabase}
-                  label={t("newDatabase")}
-                  keys={keysOf("newDatabase")}
-                  ariaKeys={ariaOf("newDatabase")}
-                  disabled={run.newDatabase === undefined}
-                  onClick={() => {
-                    run.newDatabase?.();
-                  }}
-                />
-                {periods
-                  .filter((period) => settings[period].enabled)
-                  .map((period) => (
-                    <IconButton
-                      key={period}
-                      icon={commandIcons[`${period}Note`]}
-                      label={t(`${period}Note`)}
-                      keys={keysOf(`${period}Note`)}
-                      ariaKeys={ariaOf(`${period}Note`)}
-                      onClick={() => {
-                        openPeriodic(period);
-                      }}
-                    />
-                  ))}
-              </div>
-              {notice === undefined ? null : (
-                <p className="notice sidebar-notice" role="status">
-                  <span className="sidebar-notice-text">
-                    {notice.text}
-                    {notice.restore === undefined ? null : (
-                      <button
-                        type="button"
-                        className="quiet"
-                        onClick={() => {
-                          const where = notice.restore;
-                          if (where === undefined) return;
-                          const fail = (error: unknown) => {
-                            setNotice({
-                              text: error instanceof Error ? error.message : String(error),
-                            });
-                          };
-                          if (typeof where === "string") {
-                            state.vault.restore(where).then(openRestored, fail);
-                            return;
-                          }
-                          // A folder's notes and files, each back where it was, one at a time.
-                          void (async () => {
-                            for (const item of where) await state.vault.restore(item);
-                            setNotice(undefined);
-                          })().catch(fail);
-                        }}
-                      >
-                        {t("restore")}
-                      </button>
-                    )}
-                  </span>
+                {phone ? (
                   <button
                     type="button"
-                    className="quiet notice-dismiss"
-                    aria-label={t("dismiss")}
-                    title={t("dismiss")}
+                    className="icon-button drawer-close"
+                    aria-label={t("phoneSidebarClose")}
                     onClick={() => {
-                      setNotice(undefined);
+                      setDrawer(false);
                     }}
                   >
                     <span aria-hidden="true">×</span>
                   </button>
-                </p>
-              )}
-              <div className="sidebar-tabs">
-                <button
-                  type="button"
-                  aria-pressed={panel === "notes"}
-                  onClick={() => {
-                    setPanel("notes");
-                  }}
-                >
-                  {t("notes")}
-                </button>
-                <button
-                  type="button"
-                  aria-pressed={panel === "search"}
-                  aria-keyshortcuts={ariaOf("search")}
-                  onClick={() => {
-                    setPanel("search");
-                  }}
-                >
-                  {t("search")}
-                </button>
-                <button
-                  type="button"
-                  aria-pressed={panel === "trash"}
-                  onClick={() => {
-                    setPanel("trash");
-                  }}
-                >
-                  {t("trash")}
-                </button>
-                {aiReady ? (
-                  <button
-                    type="button"
-                    aria-pressed={panel === "ask"}
-                    onClick={() => {
-                      setPanel("ask");
-                    }}
-                  >
-                    {t("askTab")}
-                  </button>
                 ) : null}
-                {sidebarPanels.map((each) => (
-                  <button
-                    key={each.id}
-                    type="button"
-                    aria-pressed={panel === each.id}
-                    onClick={() => {
-                      setPanel(each.id);
-                    }}
-                  >
-                    {each.name()}
-                  </button>
-                ))}
               </div>
-              {shownPanel !== undefined ? (
-                <SidebarPanel
-                  key={shownPanel.id}
-                  processor={shownPanel}
-                  viewProps={{
-                    vault: state.vault,
-                    graph: state.indexer.graph,
-                    openNote,
-                    openTag: showTag,
-                    askMyName: () => {
-                      setNamingMe(true);
-                    },
-                  }}
-                />
-              ) : panel === "trash" ? (
-                <TrashPanel vault={state.vault} policy={trashPolicy} onRestored={openRestored} />
-              ) : panel === "ask" && ai.resolution.provider !== undefined ? (
-                <Suspense fallback={null}>
-                  <AskPanel
-                    vault={state.vault}
-                    provider={ai.resolution.provider}
-                    workspaceId={sync.link?.workspaceId}
-                    through={
-                      ai.settings.server === undefined || sync.link === undefined
-                        ? undefined
-                        : hostOf(sync.link.server)
-                    }
-                    allowedNow={ai.allowedNow}
-                    meaning={askMeaning}
-                    meaningVia={askMeaningVia}
-                    turns={askTurns}
-                    onTurns={setAskTurns}
-                    onOpen={openNote}
-                    focusRequest={askFocus}
+            </header>
+            {state.status === "open" ? <MenuBar label={t("menus")} menus={menus} /> : null}
+            {state.status === "opening" ? (
+              <p className="placeholder" role="status">
+                {t("indexing")}
+              </p>
+            ) : state.status === "failed" ? (
+              <p role="alert">{state.error.message}</p>
+            ) : (
+              <>
+                <div className="sidebar-actions">
+                  <IconButton
+                    icon={commandIcons.newNote}
+                    label={t("newNote")}
+                    keys={keysOf("newNote")}
+                    ariaKeys={ariaOf("newNote")}
+                    hasPopup="dialog"
+                    onClick={() => {
+                      setNewIn("");
+                      setDialog("newNote");
+                    }}
                   />
-                </Suspense>
-              ) : panel === "search" ? (
-                <SearchPanel
-                  vault={state.vault}
-                  graph={state.indexer.graph}
-                  onOpen={openNote}
-                  input={searchInput}
-                  meaning={meaning.panel}
-                />
-              ) : notes.length === 0 && folders.length === 0 ? (
-                <p className="placeholder">{t("noNotes")}</p>
-              ) : (
-                <>
-                  {tag === undefined ? null : (
-                    <p className="filter">
-                      {t("taggedWith", { tag })}
-                      <button
-                        type="button"
-                        className="quiet"
+                  <IconButton
+                    icon={commandIcons.newFolder}
+                    label={t("newFolder")}
+                    keys={keysOf("newFolder")}
+                    ariaKeys={ariaOf("newFolder")}
+                    hasPopup="dialog"
+                    onClick={() => {
+                      setNewFolderIn("");
+                    }}
+                  />
+                  <IconButton
+                    icon={commandIcons.newDatabase}
+                    label={t("newDatabase")}
+                    keys={keysOf("newDatabase")}
+                    ariaKeys={ariaOf("newDatabase")}
+                    disabled={run.newDatabase === undefined}
+                    onClick={() => {
+                      run.newDatabase?.();
+                    }}
+                  />
+                  {periods
+                    .filter((period) => settings[period].enabled)
+                    .map((period) => (
+                      <IconButton
+                        key={period}
+                        icon={commandIcons[`${period}Note`]}
+                        label={t(`${period}Note`)}
+                        keys={keysOf(`${period}Note`)}
+                        ariaKeys={ariaOf(`${period}Note`)}
                         onClick={() => {
-                          setTag(undefined);
+                          openPeriodic(period);
                         }}
-                      >
-                        {t("allNotes")}
-                      </button>
-                    </p>
-                  )}
-                  {tag === undefined && bookmarks.list.length > 0 ? (
-                    <BookmarkList
-                      vault={state.vault}
-                      bookmarks={bookmarks.list}
-                      selected={selected}
-                      onOpen={openNote}
-                      onRemove={toggleBookmark}
-                      onMenu={openMenu}
-                      menuFor={menu?.id}
-                      storageKey={`nether.bookmarks.${info.id}`}
-                    />
-                  ) : null}
-                  {tag === undefined ? (
-                    <div className="view-switch" role="group" aria-label={t("notesView")}>
-                      {notesViews.map((view) => (
+                      />
+                    ))}
+                </div>
+                {notice === undefined ? null : (
+                  <p className="notice sidebar-notice" role="status">
+                    <span className="sidebar-notice-text">
+                      {notice.text}
+                      {notice.restore === undefined ? null : (
                         <button
-                          key={view}
                           type="button"
-                          aria-pressed={notesView === view}
+                          className="quiet"
                           onClick={() => {
-                            setNotesView(view);
-                            storeView(view);
+                            const where = notice.restore;
+                            if (where === undefined) return;
+                            const fail = (error: unknown) => {
+                              setNotice({
+                                text: error instanceof Error ? error.message : String(error),
+                              });
+                            };
+                            if (typeof where === "string") {
+                              state.vault.restore(where).then(openRestored, fail);
+                              return;
+                            }
+                            // A folder's notes and files, each back where it was, one at a time.
+                            void (async () => {
+                              for (const item of where) await state.vault.restore(item);
+                              setNotice(undefined);
+                            })().catch(fail);
                           }}
                         >
-                          {t(`view_${view}`)}
+                          {t("restore")}
                         </button>
-                      ))}
-                    </div>
-                  ) : null}
-                  {tag !== undefined || notesView === "list" ? (
-                    <NoteList
-                      notes={shown}
-                      selected={selected}
-                      onSelect={openNote}
-                      onMenu={openMenu}
-                      onOpenInNewTab={openInTab}
-                      menuFor={menu?.id}
-                      label={t("notes")}
-                    />
-                  ) : (
-                    <NoteTree
-                      notes={notes}
-                      mode={notesView}
-                      selected={selected}
-                      onSelect={openNote}
-                      onMove={moveInTree}
-                      onNewIn={newNoteIn}
-                      onMenu={openMenu}
-                      folders={folders}
-                      files={viewFiles}
-                      onOpenFile={(path, newTab) => {
-                        openFile(path, newTab ? "tab" : "here");
+                      )}
+                    </span>
+                    <button
+                      type="button"
+                      className="quiet notice-dismiss"
+                      aria-label={t("dismiss")}
+                      title={t("dismiss")}
+                      onClick={() => {
+                        setNotice(undefined);
                       }}
-                      onFileMenu={(path, at) => {
-                        setFileMenu({ path, at });
-                      }}
-                      selectedFile={filePathOf(activeTab(layout))}
-                      fileMenuFor={fileMenu?.path}
-                      onFolderMenu={openFolderMenu}
-                      folderMenuFor={folderMenu?.path}
-                      onOpenInNewTab={openInTab}
-                      menuFor={menu?.id}
-                      label={t("notes")}
-                      storageKey={`nether.tree.${info.id}.${notesView}`}
-                    />
-                  )}
-                  <p className="count" role="status">
-                    {notes.length === 1
-                      ? t("oneNote")
-                      : t("noteCount", { count: numbers.format(notes.length) })}
+                    >
+                      <span aria-hidden="true">×</span>
+                    </button>
                   </p>
-                </>
-              )}
-              <IndexStatus indexer={state.indexer} />
-              {sync.link === undefined ? null : (
-                <p className="notify-line">
+                )}
+                <div className="sidebar-tabs">
                   <button
                     type="button"
-                    className="quiet"
-                    aria-haspopup="dialog"
+                    aria-pressed={panel === "notes"}
                     onClick={() => {
-                      setDialog("notifications");
+                      setPanel("notes");
                     }}
                   >
-                    {notifications.unread === 0
-                      ? t("notifications")
-                      : t("notificationsUnread", { count: notifications.unread })}
+                    {t("notes")}
                   </button>
-                </p>
-              )}
-              {sync.link === undefined ? null : (
-                <p className="sync-line" aria-live="polite">
                   <button
                     type="button"
-                    className="quiet"
-                    aria-haspopup="dialog"
+                    aria-pressed={panel === "search"}
+                    aria-keyshortcuts={ariaOf("search")}
                     onClick={() => {
-                      setDialog("sync");
+                      setPanel("search");
                     }}
                   >
-                    {syncSummary(sync.link, sync.status, sync.signedOut, sync.problem)}
+                    {t("search")}
                   </button>
-                </p>
-              )}
-            </>
+                  <button
+                    type="button"
+                    aria-pressed={panel === "trash"}
+                    onClick={() => {
+                      setPanel("trash");
+                    }}
+                  >
+                    {t("trash")}
+                  </button>
+                  {aiReady ? (
+                    <button
+                      type="button"
+                      aria-pressed={panel === "ask"}
+                      onClick={() => {
+                        setPanel("ask");
+                      }}
+                    >
+                      {t("askTab")}
+                    </button>
+                  ) : null}
+                  {sidebarPanels.map((each) => (
+                    <button
+                      key={each.id}
+                      type="button"
+                      aria-pressed={panel === each.id}
+                      onClick={() => {
+                        setPanel(each.id);
+                      }}
+                    >
+                      {each.name()}
+                    </button>
+                  ))}
+                </div>
+                {shownPanel !== undefined ? (
+                  <SidebarPanel
+                    key={shownPanel.id}
+                    processor={shownPanel}
+                    viewProps={{
+                      vault: state.vault,
+                      graph: state.indexer.graph,
+                      openNote,
+                      openTag: showTag,
+                      askMyName: () => {
+                        setNamingMe(true);
+                      },
+                    }}
+                  />
+                ) : panel === "trash" ? (
+                  <TrashPanel vault={state.vault} policy={trashPolicy} onRestored={openRestored} />
+                ) : panel === "ask" && ai.resolution.provider !== undefined ? (
+                  <Suspense fallback={null}>
+                    <AskPanel
+                      vault={state.vault}
+                      provider={ai.resolution.provider}
+                      workspaceId={sync.link?.workspaceId}
+                      through={
+                        ai.settings.server === undefined || sync.link === undefined
+                          ? undefined
+                          : hostOf(sync.link.server)
+                      }
+                      allowedNow={ai.allowedNow}
+                      meaning={askMeaning}
+                      meaningVia={askMeaningVia}
+                      turns={askTurns}
+                      onTurns={setAskTurns}
+                      onOpen={openNote}
+                      focusRequest={askFocus}
+                    />
+                  </Suspense>
+                ) : panel === "search" ? (
+                  <SearchPanel
+                    vault={state.vault}
+                    graph={state.indexer.graph}
+                    onOpen={openNote}
+                    input={searchInput}
+                    meaning={meaning.panel}
+                  />
+                ) : notes.length === 0 && folders.length === 0 ? (
+                  <p className="placeholder">{t("noNotes")}</p>
+                ) : (
+                  <>
+                    {tag === undefined ? null : (
+                      <p className="filter">
+                        {t("taggedWith", { tag })}
+                        <button
+                          type="button"
+                          className="quiet"
+                          onClick={() => {
+                            setTag(undefined);
+                          }}
+                        >
+                          {t("allNotes")}
+                        </button>
+                      </p>
+                    )}
+                    {tag === undefined && bookmarks.list.length > 0 ? (
+                      <BookmarkList
+                        vault={state.vault}
+                        bookmarks={bookmarks.list}
+                        selected={selected}
+                        onOpen={openNote}
+                        onRemove={toggleBookmark}
+                        onMenu={openMenu}
+                        menuFor={menu?.id}
+                        storageKey={`nether.bookmarks.${info.id}`}
+                      />
+                    ) : null}
+                    {tag === undefined ? (
+                      <div className="view-switch" role="group" aria-label={t("notesView")}>
+                        {notesViews.map((view) => (
+                          <button
+                            key={view}
+                            type="button"
+                            aria-pressed={notesView === view}
+                            onClick={() => {
+                              setNotesView(view);
+                              storeView(view);
+                            }}
+                          >
+                            {t(`view_${view}`)}
+                          </button>
+                        ))}
+                      </div>
+                    ) : null}
+                    {tag !== undefined || notesView === "list" ? (
+                      <NoteList
+                        notes={shown}
+                        selected={selected}
+                        onSelect={openNote}
+                        onMenu={openMenu}
+                        onOpenInNewTab={openInTab}
+                        menuFor={menu?.id}
+                        label={t("notes")}
+                      />
+                    ) : (
+                      <NoteTree
+                        notes={notes}
+                        mode={notesView}
+                        selected={selected}
+                        onSelect={openNote}
+                        onMove={moveInTree}
+                        onNewIn={newNoteIn}
+                        onMenu={openMenu}
+                        folders={folders}
+                        files={viewFiles}
+                        onOpenFile={(path, newTab) => {
+                          openFile(path, newTab ? "tab" : "here");
+                        }}
+                        onFileMenu={(path, at) => {
+                          setFileMenu({ path, at });
+                        }}
+                        selectedFile={filePathOf(activeTab(layout))}
+                        fileMenuFor={fileMenu?.path}
+                        onFolderMenu={openFolderMenu}
+                        folderMenuFor={folderMenu?.path}
+                        onOpenInNewTab={openInTab}
+                        menuFor={menu?.id}
+                        label={t("notes")}
+                        storageKey={`nether.tree.${info.id}.${notesView}`}
+                      />
+                    )}
+                    <p className="count" role="status">
+                      {notes.length === 1
+                        ? t("oneNote")
+                        : t("noteCount", { count: numbers.format(notes.length) })}
+                    </p>
+                  </>
+                )}
+                <IndexStatus indexer={state.indexer} />
+                {sync.link === undefined ? null : (
+                  <p className="notify-line">
+                    <button
+                      type="button"
+                      className="quiet"
+                      aria-haspopup="dialog"
+                      onClick={() => {
+                        setDialog("notifications");
+                      }}
+                    >
+                      {notifications.unread === 0
+                        ? t("notifications")
+                        : t("notificationsUnread", { count: notifications.unread })}
+                    </button>
+                  </p>
+                )}
+                {sync.link === undefined ? null : (
+                  <p className="sync-line" aria-live="polite">
+                    <button
+                      type="button"
+                      className="quiet"
+                      aria-haspopup="dialog"
+                      onClick={() => {
+                        setDialog("sync");
+                      }}
+                    >
+                      {syncSummary(sync.link, sync.status, sync.signedOut, sync.problem)}
+                    </button>
+                  </p>
+                )}
+              </>
+            )}
+          </aside>
+          {drawerOpen ? (
+            // A tap beside the open drawer closes it; its button and Escape do too.
+            <div
+              className="drawer-scrim"
+              aria-hidden="true"
+              onClick={() => {
+                setDrawer(false);
+              }}
+            />
+          ) : null}
+          {phone ? (
+            <Suspense fallback={<div className="phone-bar" />}>
+              <PhoneBar
+                title={
+                  (selected === undefined ? undefined : vault?.note(selected)?.title) ?? info.name
+                }
+                drawerOpen={drawerOpen}
+                inert={drawerOpen}
+                onDrawer={() => {
+                  setDrawer((open) => !open);
+                }}
+                onSwitcher={() => {
+                  setSwitcher(true);
+                }}
+                onPalette={() => {
+                  setDialog("palette");
+                }}
+              />
+            </Suspense>
+          ) : null}
+          {switcher && state.status === "open" ? (
+            <QuickSwitcher
+              vault={state.vault}
+              graph={state.indexer.graph}
+              onOpen={openNote}
+              onClose={() => {
+                setSwitcher(false);
+              }}
+            />
+          ) : null}
+          {dialog === "newNote" && state.status === "open" ? (
+            <NewNoteDialog
+              notes={notes}
+              folder={newIn}
+              settings={settings}
+              onCreate={(path, template) => makeNote(path, template, new Date())}
+              onClose={() => {
+                setDialog(undefined);
+              }}
+            />
+          ) : null}
+          {dialog === "build" && state.status === "open" && ai.resolution.provider !== undefined ? (
+            <Suspense fallback={null}>
+              <BuildDialog
+                vault={state.vault}
+                provider={ai.resolution.provider}
+                workspaceId={sync.link?.workspaceId}
+                through={
+                  ai.settings.server === undefined || sync.link === undefined
+                    ? undefined
+                    : hostOf(sync.link.server)
+                }
+                allowedNow={ai.allowedNow}
+                templatesFolder={settings.folder}
+                onOpen={(path) => {
+                  const note = state.vault.noteAt(path);
+                  if (note !== undefined) openNote(note.id);
+                }}
+                onClose={() => {
+                  setDialog(undefined);
+                }}
+              />
+            </Suspense>
+          ) : null}
+          {dialog === "import" && state.status === "open" ? (
+            <Suspense fallback={null}>
+              <ImportDialog
+                vault={state.vault}
+                importer={state.importer}
+                onOpen={(path) => {
+                  const note = state.vault.noteAt(path);
+                  setDialog(undefined);
+                  if (note !== undefined) openNote(note.id);
+                }}
+                onClose={() => {
+                  setDialog(undefined);
+                }}
+              />
+            </Suspense>
+          ) : null}
+          {dialog === "sync" && state.status === "open" ? (
+            <Suspense fallback={null}>
+              <SyncDialog
+                vault={state.vault}
+                sync={sync}
+                onServers={() => {
+                  setDialog("servers");
+                }}
+                onClose={() => {
+                  setDialog(undefined);
+                }}
+              />
+            </Suspense>
+          ) : null}
+          {dialog === "spaces" && sync.link !== undefined && state.status === "open" ? (
+            <Suspense fallback={null}>
+              <SpacesDialog
+                link={sync.link}
+                folders={[
+                  ...new Set(
+                    state.vault
+                      .notes()
+                      .flatMap((entry) =>
+                        entry.path.includes("/")
+                          ? [entry.path.slice(0, entry.path.indexOf("/"))]
+                          : [],
+                      ),
+                  ),
+                ].sort()}
+                onClose={() => {
+                  setDialog(undefined);
+                }}
+              />
+            </Suspense>
+          ) : null}
+          {dialog === "share" &&
+          sync.link !== undefined &&
+          state.status === "open" &&
+          selected !== undefined
+            ? (() => {
+                const note = state.vault.note(selected);
+                return note === undefined ? null : (
+                  <Suspense fallback={null}>
+                    <ShareDialog
+                      link={sync.link}
+                      note={note}
+                      onClose={() => {
+                        setDialog(undefined);
+                      }}
+                    />
+                  </Suspense>
+                );
+              })()
+            : null}
+          {dialog === "notifications" && sync.link !== undefined && state.status === "open" ? (
+            <Suspense fallback={null}>
+              <NotificationsDialog
+                link={sync.link}
+                notifications={notifications}
+                hasNote={(id) => state.vault.note(id as NoteId) !== undefined}
+                onOpen={(id, thread) => {
+                  setDialog(undefined);
+                  const key = openNote(id as NoteId);
+                  if (thread !== undefined) {
+                    ask(key, (current) => ({
+                      ...current,
+                      thread: { thread, key: (current.thread?.key ?? 0) + 1 },
+                    }));
+                  }
+                }}
+                onClose={() => {
+                  setDialog(undefined);
+                }}
+              />
+            </Suspense>
+          ) : null}
+          {dialog === "members" && sync.link !== undefined ? (
+            <Suspense fallback={null}>
+              <MembersDialog
+                link={sync.link}
+                onLeft={() => {
+                  setDialog(undefined);
+                  void sync.unlink();
+                }}
+                onClose={() => {
+                  setDialog(undefined);
+                }}
+              />
+            </Suspense>
+          ) : null}
+          {dialog === "servers" ? (
+            <Suspense fallback={null}>
+              <ServersDialog
+                onClose={() => {
+                  setDialog(undefined);
+                }}
+                onTokens={(server) => {
+                  setTokensServer(server);
+                  setDialog("tokens");
+                }}
+              />
+            </Suspense>
+          ) : null}
+          {dialog === "tokens" && tokensServer !== undefined ? (
+            <Suspense fallback={null}>
+              <TokensDialog
+                server={tokensServer}
+                onClose={() => {
+                  setDialog(undefined);
+                }}
+              />
+            </Suspense>
+          ) : null}
+          {dialog === "webhooks" && sync.link !== undefined ? (
+            <Suspense fallback={null}>
+              <WebhooksDialog
+                link={sync.link}
+                onClose={() => {
+                  setDialog(undefined);
+                }}
+              />
+            </Suspense>
+          ) : null}
+          {dialog === "settings" && state.status === "open" ? (
+            <SettingsDialog
+              tabs={settingsTabs(state.vault)}
+              tab={settingsTab}
+              onTab={setSettingsTab}
+              onClose={closeDialog}
+            />
+          ) : null}
+          {fileMenu === undefined || state.status !== "open" ? null : (
+            <ContextMenu
+              label={t("canvasMenu", { name: fileMenu.path })}
+              at={fileMenu.at}
+              entries={fileEntries(fileMenu.path)}
+              onClose={() => {
+                setFileMenu(undefined);
+              }}
+            />
           )}
-        </aside>
-        {drawerOpen ? (
-          // A tap beside the open drawer closes it; its button and Escape do too.
-          <div
-            className="drawer-scrim"
-            aria-hidden="true"
-            onClick={() => {
-              setDrawer(false);
-            }}
-          />
-        ) : null}
-        {phone ? (
-          <Suspense fallback={<div className="phone-bar" />}>
-            <PhoneBar
-              title={
-                (selected === undefined ? undefined : vault?.note(selected)?.title) ?? info.name
+          {folderMenu === undefined || state.status !== "open" ? null : (
+            <ContextMenu
+              label={t("folderMenu", { name: folderMenu.path })}
+              at={folderMenu.at}
+              entries={folderEntries(folderMenu.path)}
+              onClose={closeFolderMenu}
+            />
+          )}
+          {deletingFolder === undefined || state.status !== "open" ? null : (
+            <DeleteFolderDialog
+              path={deletingFolder}
+              notes={notes.filter((note) => note.path.startsWith(`${deletingFolder}/`)).length}
+              files={
+                state.vault
+                  .files()
+                  .filter(
+                    (file) =>
+                      file.startsWith(`${deletingFolder}/`) &&
+                      state.vault.noteAt(file) === undefined,
+                  ).length
               }
-              drawerOpen={drawerOpen}
-              inert={drawerOpen}
-              onDrawer={() => {
-                setDrawer((open) => !open);
-              }}
-              onSwitcher={() => {
-                setSwitcher(true);
-              }}
-              onPalette={() => {
-                setDialog("palette");
-              }}
-            />
-          </Suspense>
-        ) : null}
-        {switcher && state.status === "open" ? (
-          <QuickSwitcher
-            vault={state.vault}
-            graph={state.indexer.graph}
-            onOpen={openNote}
-            onClose={() => {
-              setSwitcher(false);
-            }}
-          />
-        ) : null}
-        {dialog === "newNote" && state.status === "open" ? (
-          <NewNoteDialog
-            notes={notes}
-            folder={newIn}
-            settings={settings}
-            onCreate={(path, template) => makeNote(path, template, new Date())}
-            onClose={() => {
-              setDialog(undefined);
-            }}
-          />
-        ) : null}
-        {dialog === "build" && state.status === "open" && ai.resolution.provider !== undefined ? (
-          <Suspense fallback={null}>
-            <BuildDialog
-              vault={state.vault}
-              provider={ai.resolution.provider}
-              workspaceId={sync.link?.workspaceId}
-              through={
-                ai.settings.server === undefined || sync.link === undefined
-                  ? undefined
-                  : hostOf(sync.link.server)
-              }
-              allowedNow={ai.allowedNow}
-              templatesFolder={settings.folder}
-              onOpen={(path) => {
-                const note = state.vault.noteAt(path);
-                if (note !== undefined) openNote(note.id);
-              }}
+              onDelete={() => deleteFolder(deletingFolder)}
               onClose={() => {
-                setDialog(undefined);
+                setDeletingFolder(undefined);
               }}
             />
-          </Suspense>
-        ) : null}
-        {dialog === "import" && state.status === "open" ? (
-          <Suspense fallback={null}>
-            <ImportDialog
-              vault={state.vault}
-              importer={state.importer}
-              onOpen={(path) => {
-                const note = state.vault.noteAt(path);
-                setDialog(undefined);
-                if (note !== undefined) openNote(note.id);
-              }}
+          )}
+          {namingMe ? (
+            <TextPromptDialog
+              title={t("myNameTitle")}
+              label={t("myNameLabel")}
+              value={myName()}
+              onSubmit={setMyName}
               onClose={() => {
-                setDialog(undefined);
+                setNamingMe(false);
               }}
             />
-          </Suspense>
-        ) : null}
-        {dialog === "sync" && state.status === "open" ? (
-          <Suspense fallback={null}>
-            <SyncDialog
-              vault={state.vault}
-              sync={sync}
-              onServers={() => {
-                setDialog("servers");
-              }}
+          ) : null}
+          {newFolderIn === undefined || state.status !== "open" ? null : (
+            <NewFolderDialog
+              folder={newFolderIn}
+              taken={pathTaken}
+              onCreate={(path) => state.vault.makeFolder(path)}
               onClose={() => {
-                setDialog(undefined);
+                setNewFolderIn(undefined);
               }}
             />
-          </Suspense>
-        ) : null}
-        {dialog === "spaces" && sync.link !== undefined && state.status === "open" ? (
-          <Suspense fallback={null}>
-            <SpacesDialog
-              link={sync.link}
-              folders={[
-                ...new Set(
-                  state.vault
-                    .notes()
-                    .flatMap((entry) =>
-                      entry.path.includes("/")
-                        ? [entry.path.slice(0, entry.path.indexOf("/"))]
-                        : [],
-                    ),
-                ),
-              ].sort()}
-              onClose={() => {
-                setDialog(undefined);
-              }}
+          )}
+          {menu === undefined || state.status !== "open" ? null : (
+            <ContextMenu
+              label={t("noteMenu", { name: state.vault.note(menu.id)?.title ?? "" })}
+              at={menu.at}
+              entries={menuEntries(menu.id)}
+              onClose={closeMenu}
             />
-          </Suspense>
-        ) : null}
-        {dialog === "share" &&
-        sync.link !== undefined &&
-        state.status === "open" &&
-        selected !== undefined
-          ? (() => {
-              const note = state.vault.note(selected);
-              return note === undefined ? null : (
-                <Suspense fallback={null}>
-                  <ShareDialog
-                    link={sync.link}
+          )}
+          {noteDialog === undefined || state.status !== "open"
+            ? null
+            : (() => {
+                const note = state.vault.note(noteDialog.id);
+                if (note === undefined) return null;
+                const close = () => {
+                  setNoteDialog(undefined);
+                };
+                switch (noteDialog.kind) {
+                  case "rename":
+                    return (
+                      <RenameNoteDialog
+                        note={note}
+                        onRename={(name) => renameCurrent(note.id, name)}
+                        onClose={close}
+                      />
+                    );
+                  case "move":
+                    return (
+                      <MoveNoteDialog
+                        note={note}
+                        folders={vaultFolders(state.vault.files())}
+                        onMove={(folder) => {
+                          moveInTree({ kind: "note", path: note.path }, folder);
+                          return Promise.resolve();
+                        }}
+                        onClose={close}
+                      />
+                    );
+                  case "merge":
+                    return (
+                      <MergeNoteDialog
+                        note={note}
+                        notes={notes}
+                        onMerge={(into) => mergeInto(note.id, into)}
+                        onClose={close}
+                      />
+                    );
+                  case "tags":
+                    return (
+                      <NoteTagsDialog
+                        vault={state.vault}
+                        note={note}
+                        known={state.indexer.graph.tags().map((entry) => entry.tag)}
+                        onClose={close}
+                      />
+                    );
+                }
+              })()}
+          {dialog === "export" && state.status === "open" && selected !== undefined
+            ? (() => {
+                const note = state.vault.note(selected);
+                return note === undefined ? null : (
+                  <ExportDialog
+                    vault={state.vault}
+                    vaultName={info.name}
+                    graph={state.indexer.graph}
+                    media={state.media}
+                    exporter={state.exporter}
+                    codeBlocks={codeBlocks}
                     note={note}
+                    notes={notes}
+                    policy={exportPolicy}
                     onClose={() => {
                       setDialog(undefined);
                     }}
                   />
-                </Suspense>
-              );
-            })()
-          : null}
-        {dialog === "notifications" && sync.link !== undefined && state.status === "open" ? (
-          <Suspense fallback={null}>
-            <NotificationsDialog
-              link={sync.link}
-              notifications={notifications}
-              hasNote={(id) => state.vault.note(id as NoteId) !== undefined}
-              onOpen={(id, thread) => {
-                setDialog(undefined);
-                const key = openNote(id as NoteId);
-                if (thread !== undefined) {
-                  ask(key, (current) => ({
-                    ...current,
-                    thread: { thread, key: (current.thread?.key ?? 0) + 1 },
-                  }));
-                }
-              }}
-              onClose={() => {
-                setDialog(undefined);
-              }}
-            />
-          </Suspense>
-        ) : null}
-        {dialog === "members" && sync.link !== undefined ? (
-          <Suspense fallback={null}>
-            <MembersDialog
-              link={sync.link}
-              onLeft={() => {
-                setDialog(undefined);
-                void sync.unlink();
-              }}
-              onClose={() => {
-                setDialog(undefined);
-              }}
-            />
-          </Suspense>
-        ) : null}
-        {dialog === "servers" ? (
-          <Suspense fallback={null}>
-            <ServersDialog
-              onClose={() => {
-                setDialog(undefined);
-              }}
-              onTokens={(server) => {
-                setTokensServer(server);
-                setDialog("tokens");
-              }}
-            />
-          </Suspense>
-        ) : null}
-        {dialog === "tokens" && tokensServer !== undefined ? (
-          <Suspense fallback={null}>
-            <TokensDialog
-              server={tokensServer}
-              onClose={() => {
-                setDialog(undefined);
-              }}
-            />
-          </Suspense>
-        ) : null}
-        {dialog === "webhooks" && sync.link !== undefined ? (
-          <Suspense fallback={null}>
-            <WebhooksDialog
-              link={sync.link}
-              onClose={() => {
-                setDialog(undefined);
-              }}
-            />
-          </Suspense>
-        ) : null}
-        {dialog === "settings" && state.status === "open" ? (
-          <SettingsDialog
-            tabs={settingsTabs(state.vault)}
-            tab={settingsTab}
-            onTab={setSettingsTab}
-            onClose={closeDialog}
-          />
-        ) : null}
-        {fileMenu === undefined || state.status !== "open" ? null : (
-          <ContextMenu
-            label={t("canvasMenu", { name: fileMenu.path })}
-            at={fileMenu.at}
-            entries={fileEntries(fileMenu.path)}
-            onClose={() => {
-              setFileMenu(undefined);
-            }}
-          />
-        )}
-        {folderMenu === undefined || state.status !== "open" ? null : (
-          <ContextMenu
-            label={t("folderMenu", { name: folderMenu.path })}
-            at={folderMenu.at}
-            entries={folderEntries(folderMenu.path)}
-            onClose={closeFolderMenu}
-          />
-        )}
-        {deletingFolder === undefined || state.status !== "open" ? null : (
-          <DeleteFolderDialog
-            path={deletingFolder}
-            notes={notes.filter((note) => note.path.startsWith(`${deletingFolder}/`)).length}
-            files={
-              state.vault
-                .files()
-                .filter(
-                  (file) =>
-                    file.startsWith(`${deletingFolder}/`) && state.vault.noteAt(file) === undefined,
-                ).length
-            }
-            onDelete={() => deleteFolder(deletingFolder)}
-            onClose={() => {
-              setDeletingFolder(undefined);
-            }}
-          />
-        )}
-        {namingMe ? (
-          <TextPromptDialog
-            title={t("myNameTitle")}
-            label={t("myNameLabel")}
-            value={myName()}
-            onSubmit={setMyName}
-            onClose={() => {
-              setNamingMe(false);
-            }}
-          />
-        ) : null}
-        {newFolderIn === undefined || state.status !== "open" ? null : (
-          <NewFolderDialog
-            folder={newFolderIn}
-            taken={pathTaken}
-            onCreate={(path) => state.vault.makeFolder(path)}
-            onClose={() => {
-              setNewFolderIn(undefined);
-            }}
-          />
-        )}
-        {menu === undefined || state.status !== "open" ? null : (
-          <ContextMenu
-            label={t("noteMenu", { name: state.vault.note(menu.id)?.title ?? "" })}
-            at={menu.at}
-            entries={menuEntries(menu.id)}
-            onClose={closeMenu}
-          />
-        )}
-        {noteDialog === undefined || state.status !== "open"
-          ? null
-          : (() => {
-              const note = state.vault.note(noteDialog.id);
-              if (note === undefined) return null;
-              const close = () => {
-                setNoteDialog(undefined);
-              };
-              switch (noteDialog.kind) {
-                case "rename":
-                  return (
-                    <RenameNoteDialog
-                      note={note}
-                      onRename={(name) => renameCurrent(note.id, name)}
-                      onClose={close}
-                    />
-                  );
-                case "move":
-                  return (
-                    <MoveNoteDialog
-                      note={note}
-                      folders={vaultFolders(state.vault.files())}
-                      onMove={(folder) => {
-                        moveInTree({ kind: "note", path: note.path }, folder);
-                        return Promise.resolve();
-                      }}
-                      onClose={close}
-                    />
-                  );
-                case "merge":
-                  return (
-                    <MergeNoteDialog
-                      note={note}
-                      notes={notes}
-                      onMerge={(into) => mergeInto(note.id, into)}
-                      onClose={close}
-                    />
-                  );
-                case "tags":
-                  return (
-                    <NoteTagsDialog
+                );
+              })()
+            : null}
+          {dialog === "history" && state.status === "open" && selected !== undefined
+            ? (() => {
+                const note = state.vault.note(selected);
+                return note === undefined ? null : (
+                  <Suspense fallback={null}>
+                    <HistoryDialog
                       vault={state.vault}
                       note={note}
-                      known={state.indexer.graph.tags().map((entry) => entry.tag)}
-                      onClose={close}
+                      link={sync.link}
+                      onClose={() => {
+                        setDialog(undefined);
+                      }}
                     />
-                  );
-              }
-            })()}
-        {dialog === "export" && state.status === "open" && selected !== undefined
-          ? (() => {
-              const note = state.vault.note(selected);
-              return note === undefined ? null : (
-                <ExportDialog
-                  vault={state.vault}
-                  vaultName={info.name}
-                  graph={state.indexer.graph}
-                  media={state.media}
-                  exporter={state.exporter}
-                  codeBlocks={codeBlocks}
-                  note={note}
-                  notes={notes}
-                  policy={exportPolicy}
-                  onClose={() => {
-                    setDialog(undefined);
-                  }}
-                />
-              );
-            })()
-          : null}
-        {dialog === "history" && state.status === "open" && selected !== undefined
-          ? (() => {
-              const note = state.vault.note(selected);
-              return note === undefined ? null : (
-                <Suspense fallback={null}>
-                  <HistoryDialog
-                    vault={state.vault}
-                    note={note}
-                    link={sync.link}
-                    onClose={() => {
-                      setDialog(undefined);
-                    }}
-                  />
-                </Suspense>
-              );
-            })()
-          : null}
-        {dialog === "palette" ? (
-          <CommandPalette
-            commands={commands
-              .filter((command) => command.enabled() && !(phone && notOnPhones.has(command.id)))
-              .map((command) => ({
-                id: command.id,
-                name: (command.nameNow ?? command.name)(),
-                keys: hotkeys[command.id] ?? [],
-              }))}
-            onRun={(id) => {
-              registry.get(id)?.run();
-            }}
-            onClose={() => {
-              setDialog(undefined);
-            }}
-          />
-        ) : null}
-        <main className="pane" inert={drawerOpen}>
-          {state.status === "open" && shownView !== undefined ? (
-            <PaneViewOutput
-              processor={shownView}
-              loading={
-                <p className="placeholder">
-                  {shownView.id === graphView ? t("loadingGraph") : null}
-                </p>
-              }
-              viewProps={{
-                vault: state.vault,
-                graph: state.indexer.graph,
-                media: state.media,
-                ...(selected === undefined ? {} : { note: selected }),
-                openNote,
-                close: () => {
-                  setPaneView(undefined);
-                },
+                  </Suspense>
+                );
+              })()
+            : null}
+          {dialog === "palette" ? (
+            <CommandPalette
+              commands={commands
+                .filter((command) => command.enabled() && !(phone && notOnPhones.has(command.id)))
+                .map((command) => ({
+                  id: command.id,
+                  name: (command.nameNow ?? command.name)(),
+                  keys: hotkeys[command.id] ?? [],
+                }))}
+              onRun={(id) => {
+                registry.get(id)?.run();
+              }}
+              onClose={() => {
+                setDialog(undefined);
               }}
             />
-          ) : state.status === "open" && layout.panes.some((pane) => pane.tabs.length > 0) ? (
-            noteView === undefined ? null : (
-              <div className={`panes${!phone && layout.panes.length > 1 ? " split" : ""}`}>
-                {layout.panes.map((pane, index) => {
-                  // A phone shows the focused pane alone, without its tabs.
-                  if (phone && index !== layout.focused) return null;
-                  const shown = shownIn(pane);
-                  const id = noteOf(shown);
-                  const file = filePathOf(shown);
-                  const fileView = file === undefined ? undefined : views.forFile(file);
-                  const paneAsks = asks[pane.key] ?? noAsks;
-                  const split = !phone && layout.panes.length > 1;
-                  const side = index === 0 ? "Left" : "Right";
-                  const panelId = `pane-${String(pane.key)}`;
-                  const tabId = (tab: number) => `pane-${String(pane.key)}-tab-${String(tab)}`;
-                  const focusHere = () => {
-                    changeLayout((current) => focusPane(current, index));
-                  };
-                  return (
-                    <section
-                      key={pane.key}
-                      className={`note-pane${split && index === layout.focused ? " focused" : ""}`}
-                      aria-label={split ? t(`pane${side}`) : undefined}
-                      onFocusCapture={focusHere}
-                      onMouseDownCapture={focusHere}
-                    >
-                      {phone ? null : (
-                        <TabStrip
-                          pane={pane}
-                          label={split ? t(`openNotes${side}`) : t("openNotes")}
-                          panelId={panelId}
-                          tabId={tabId}
-                          titleOf={(tab) => {
-                            const file = filePathOf(tab);
-                            return file === undefined
-                              ? (state.vault.note(tab as NoteId)?.title ?? "")
-                              : file.slice(file.lastIndexOf("/") + 1).replace(/\.[^.]+$/, "");
-                          }}
-                          onChoose={(tab) => {
-                            changeLayout((current) => chooseTab(current, index, tab));
-                          }}
-                          onClose={(tab) => {
-                            changeLayout((current) => closeTab(current, index, tab));
-                          }}
-                          onMenu={(tab, at) => {
-                            const file = filePathOf(tab);
-                            if (file === undefined) openMenu(tab as NoteId, at);
-                            else setFileMenu({ path: file, at });
-                          }}
-                        />
-                      )}
-                      <div
-                        className={`pane-body${file === undefined ? "" : " view-body"}`}
-                        {...(phone
-                          ? {}
-                          : {
-                              role: "tabpanel",
-                              id: panelId,
-                              "aria-labelledby": tabId(pane.active),
-                            })}
+          ) : null}
+          <main className="pane" inert={drawerOpen}>
+            {state.status === "open" && shownView !== undefined ? (
+              <PaneViewOutput
+                processor={shownView}
+                loading={
+                  <p className="placeholder">
+                    {shownView.id === graphView ? t("loadingGraph") : null}
+                  </p>
+                }
+                viewProps={{
+                  vault: state.vault,
+                  graph: state.indexer.graph,
+                  media: state.media,
+                  ...(selected === undefined ? {} : { note: selected }),
+                  openNote,
+                  close: () => {
+                    setPaneView(undefined);
+                  },
+                }}
+              />
+            ) : state.status === "open" && layout.panes.some((pane) => pane.tabs.length > 0) ? (
+              noteView === undefined ? null : (
+                <div className={`panes${!phone && layout.panes.length > 1 ? " split" : ""}`}>
+                  {layout.panes.map((pane, index) => {
+                    // A phone shows the focused pane alone, without its tabs.
+                    if (phone && index !== layout.focused) return null;
+                    const shown = shownIn(pane);
+                    const id = noteOf(shown);
+                    const file = filePathOf(shown);
+                    const fileView = file === undefined ? undefined : views.forFile(file);
+                    const paneAsks = asks[pane.key] ?? noAsks;
+                    const split = !phone && layout.panes.length > 1;
+                    const side = index === 0 ? "Left" : "Right";
+                    const panelId = `pane-${String(pane.key)}`;
+                    const tabId = (tab: number) => `pane-${String(pane.key)}-tab-${String(tab)}`;
+                    const focusHere = () => {
+                      changeLayout((current) => focusPane(current, index));
+                    };
+                    return (
+                      <section
+                        key={pane.key}
+                        className={`note-pane${split && index === layout.focused ? " focused" : ""}`}
+                        aria-label={split ? t(`pane${side}`) : undefined}
+                        onFocusCapture={focusHere}
+                        onMouseDownCapture={focusHere}
                       >
-                        {file !== undefined ? (
-                          fileView === undefined ? (
-                            <p className="placeholder">
-                              {t("noViewFor", { extension: extensionOf(file) })}
-                            </p>
-                          ) : (
-                            <PaneViewOutput
-                              key={file}
-                              processor={fileView}
-                              viewProps={{
-                                vault: state.vault,
-                                graph: state.indexer.graph,
-                                media: state.media,
-                                path: file,
-                                at: paneAsks.at,
-                                linksLoaded,
-                                openNote,
-                                close: () => undefined,
-                              }}
-                            />
-                          )
-                        ) : id === undefined ? (
-                          <p className="placeholder">{t("selectNote")}</p>
-                        ) : (
-                          <noteView.default
-                            live={sync.live}
-                            vault={state.vault}
-                            media={state.media}
-                            exporter={state.exporter}
-                            graph={state.indexer.graph}
-                            plugins={plugins}
-                            id={id}
-                            titleId={index === 0 ? "note-title" : "note-title-right"}
-                            keyboardBar={phone}
-                            focus={paneAsks.focus}
-                            onOpenNote={openNote}
-                            onOpenFile={openLinkedFile}
-                            onOpenTag={showTag}
-                            onCreateNote={buttonNote}
-                            mode={paneAsks.mode}
-                            onMode={(next) => {
-                              ask(pane.key, (current) => ({ ...current, mode: next }));
+                        {phone ? null : (
+                          <TabStrip
+                            pane={pane}
+                            label={split ? t(`openNotes${side}`) : t("openNotes")}
+                            panelId={panelId}
+                            tabId={tabId}
+                            titleOf={(tab) => {
+                              const file = filePathOf(tab);
+                              return file === undefined
+                                ? (state.vault.note(tab as NoteId)?.title ?? "")
+                                : file.slice(file.lastIndexOf("/") + 1).replace(/\.[^.]+$/, "");
                             }}
-                            onTrash={() => {
-                              trashNote(id);
+                            onChoose={(tab) => {
+                              changeLayout((current) => chooseTab(current, index, tab));
                             }}
-                            onExport={() => {
-                              focusHere();
-                              setDialog("export");
+                            onClose={(tab) => {
+                              changeLayout((current) => closeTab(current, index, tab));
                             }}
-                            onRename={(name) => renameCurrent(id, name)}
-                            sourceRequest={paneAsks.source}
-                            renameRequest={paneAsks.rename}
-                            sourceKeys={keysOf("toggleSource")}
-                            me={sync.me}
-                            canComment={sync.levelOf?.(id) !== "view"}
-                            commentRequest={paneAsks.comment}
-                            commentKeys={keysOf("comment")}
-                            {...(ai.resolution.provider === undefined
-                              ? {}
-                              : {
-                                  ai: {
-                                    provider: ai.resolution.provider,
-                                    request: paneAsks.assist,
-                                    allowedNow: ai.allowedNow,
-                                    workspaceId: sync.link?.workspaceId,
-                                    // The web app's requests go through its server.
-                                    through:
-                                      ai.settings.server === undefined || sync.link === undefined
-                                        ? undefined
-                                        : hostOf(sync.link.server),
-                                  },
-                                })}
-                            people={people}
-                            onMention={(thread, mentioned, body) => {
-                              const link = sync.link;
-                              const note = state.vault.note(id);
-                              if (link === undefined || note === undefined) return;
-                              // An encrypted workspace's server is told who, never what.
-                              const text =
-                                link.encrypted === true
-                                  ? {}
-                                  : {
-                                      title: note.title.slice(0, 200),
-                                      excerpt: body.slice(0, 500),
-                                    };
-                              void queueMention(state.vault.settings, {
-                                server: link.server,
-                                workspaceId: link.workspaceId,
-                                note: id,
-                                thread,
-                                people: mentioned.map((person) => person.id),
-                                ...text,
-                              }).then(notifications.refresh);
+                            onMenu={(tab, at) => {
+                              const file = filePathOf(tab);
+                              if (file === undefined) openMenu(tab as NoteId, at);
+                              else setFileMenu({ path: file, at });
                             }}
-                            {...(paneAsks.thread === undefined
-                              ? {}
-                              : { threadRequest: paneAsks.thread })}
-                            onShown={loadLinks}
                           />
                         )}
-                      </div>
-                    </section>
-                  );
-                })}
-              </div>
-            )
-          ) : (
-            <p className="placeholder">{t("selectNote")}</p>
-          )}
-        </main>
-      </div>
+                        <div
+                          className={`pane-body${file === undefined ? "" : " view-body"}`}
+                          {...(phone
+                            ? {}
+                            : {
+                                role: "tabpanel",
+                                id: panelId,
+                                "aria-labelledby": tabId(pane.active),
+                              })}
+                        >
+                          {file !== undefined ? (
+                            fileView === undefined ? (
+                              <p className="placeholder">
+                                {t("noViewFor", { extension: extensionOf(file) })}
+                              </p>
+                            ) : (
+                              <PaneViewOutput
+                                key={file}
+                                processor={fileView}
+                                viewProps={{
+                                  vault: state.vault,
+                                  graph: state.indexer.graph,
+                                  media: state.media,
+                                  path: file,
+                                  at: paneAsks.at,
+                                  linksLoaded,
+                                  openNote,
+                                  close: () => undefined,
+                                }}
+                              />
+                            )
+                          ) : id === undefined ? (
+                            <p className="placeholder">{t("selectNote")}</p>
+                          ) : (
+                            <noteView.default
+                              live={sync.live}
+                              vault={state.vault}
+                              media={state.media}
+                              exporter={state.exporter}
+                              graph={state.indexer.graph}
+                              plugins={plugins}
+                              id={id}
+                              titleId={index === 0 ? "note-title" : "note-title-right"}
+                              keyboardBar={phone}
+                              focus={paneAsks.focus}
+                              onOpenNote={openNote}
+                              onOpenFile={openLinkedFile}
+                              onOpenTag={showTag}
+                              onCreateNote={buttonNote}
+                              mode={paneAsks.mode}
+                              onMode={(next) => {
+                                ask(pane.key, (current) => ({ ...current, mode: next }));
+                              }}
+                              onTrash={() => {
+                                trashNote(id);
+                              }}
+                              onExport={() => {
+                                focusHere();
+                                setDialog("export");
+                              }}
+                              onRename={(name) => renameCurrent(id, name)}
+                              sourceRequest={paneAsks.source}
+                              renameRequest={paneAsks.rename}
+                              sourceKeys={keysOf("toggleSource")}
+                              me={sync.me}
+                              canComment={sync.levelOf?.(id) !== "view"}
+                              commentRequest={paneAsks.comment}
+                              commentKeys={keysOf("comment")}
+                              {...(ai.resolution.provider === undefined
+                                ? {}
+                                : {
+                                    ai: {
+                                      provider: ai.resolution.provider,
+                                      request: paneAsks.assist,
+                                      allowedNow: ai.allowedNow,
+                                      workspaceId: sync.link?.workspaceId,
+                                      // The web app's requests go through its server.
+                                      through:
+                                        ai.settings.server === undefined || sync.link === undefined
+                                          ? undefined
+                                          : hostOf(sync.link.server),
+                                    },
+                                  })}
+                              people={people}
+                              onMention={(thread, mentioned, body) => {
+                                const link = sync.link;
+                                const note = state.vault.note(id);
+                                if (link === undefined || note === undefined) return;
+                                // An encrypted workspace's server is told who, never what.
+                                const text =
+                                  link.encrypted === true
+                                    ? {}
+                                    : {
+                                        title: note.title.slice(0, 200),
+                                        excerpt: body.slice(0, 500),
+                                      };
+                                void queueMention(state.vault.settings, {
+                                  server: link.server,
+                                  workspaceId: link.workspaceId,
+                                  note: id,
+                                  thread,
+                                  people: mentioned.map((person) => person.id),
+                                  ...text,
+                                }).then(notifications.refresh);
+                              }}
+                              {...(paneAsks.thread === undefined
+                                ? {}
+                                : { threadRequest: paneAsks.thread })}
+                              onShown={loadLinks}
+                            />
+                          )}
+                        </div>
+                      </section>
+                    );
+                  })}
+                </div>
+              )
+            ) : (
+              <p className="placeholder">{t("selectNote")}</p>
+            )}
+          </main>
+        </div>
+      </NoteDayContext.Provider>
     </ExportPolicyContext.Provider>
   );
 }

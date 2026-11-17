@@ -458,6 +458,10 @@ again. The vault keeps which are on in `.nether/plugins.json`, which maps
 a plugin's ID to whether it is on; a built-in plugin it does not name is
 on. Neither file syncs.
 
+Nether's own [integrations](../integrations/) are listed apart, under
+**Integrations**, each with what it asks for. They are off until a vault
+turns them on, so `.nether/plugins.json` names them only once it does.
+
 Below them, **From this vault** lists the plugins in the vault's
 `.nether/plugins` folder, each with its version and what it asks for. One
 that cannot run says why, as a manifest that does not read, a folder not
@@ -557,6 +561,7 @@ A plugin asks for what it needs in its manifest's `permissions`:
 | `network` | Connect to `https:` and `wss:` addresses, and keep `https:` addresses in what it draws. Without it, every request it makes fails |
 | `vault:read` | List and read the vault's notes and files, and hear of the notes that change |
 | `vault:write` | Write notes, and move them to the trash |
+| `connection:<service>` | Use the person's connections to a service, as `connection:ics`; only Nether's own plugins, for now |
 
 **Approval is this device's.** Turning a plugin on in the Plugins tab
 approves it as it is now: its code, by the hash of its `main.js`, its
@@ -605,12 +610,64 @@ showing it shows the change, sync sends it, and its history keeps what
 was there before. A note a plugin moves to the trash closes its tabs, and
 a notice says which plugin moved it there, with Restore.
 
+## Connections
+
+Nether's [integrations](../integrations/) reach other services through
+the person's connections, which the app keeps
+([ADR 0090](https://github.com/fzn0x/nether/blob/main/docs/adr/0090-integrations-are-built-in-plugins-that-run-apart-and-reach-each-service-through-a-connection-the-app-keeps.md)).
+Only Nether's own plugins may use them for now: a plugin from a vault or
+the directory that asks for one does not run, and the Plugins tab says
+why. A connection acts as the person at the service, so a plugin that
+could read the vault could copy it out through one. The calls are
+public, so that opening them later changes no plugin.
+
+A manifest asks for a service's connections in its `permissions`, as
+`connection:ics`. The services are `ics`, `caldav`, `google-calendar`,
+`google-drive`, `github` and `slack`; this release keeps `ics` ones.
+
+| Call | What it does |
+| --- | --- |
+| `connections.list()` | The connections to the services the plugin asked for: each one's `id`, `service`, `name`, `address` and `where`, and its `account` and `web` host when known. Never a secret: an ICS feed's `address` is its host alone |
+| `connections.add(service)` | Opens the app's Connections tab, to add one |
+| `connections.onChange(listener)` | Calls `listener` with the connections again when they change |
+| `http.fetch(request)` | Sends a request with a connection's credential, and gives its `status`, `headers` and `text`, or `bytes` |
+| `store.get(key)`, `store.set(key, value)`, `store.delete(key)`, `store.keys()` | JSON the plugin keeps on this device for the vault, outside its folder, up to 5 MB |
+
+```js
+const [work] = await context.connections.list();
+const answer = await context.http.fetch({
+  connection: work.id,
+  headers: { "if-none-match": etag },
+});
+if (answer.status === 200) await context.store.set("feed", answer.text);
+```
+
+A request's `url` is resolved against its connection's address: none, or
+`""`, is the address itself, as an ICS feed; a path goes under it; a full
+address must be at one of the connection's origins. Its `method` is
+`GET`, `HEAD`, `POST`, `PUT`, `PATCH`, `DELETE`, `PROPFIND` or
+`REPORT`. The app refuses the headers only it sets: `Authorization`,
+`Cookie`, `Host` and `Proxy-*`. A body is 1 MB at most. The app adds the
+credential, follows at most five redirects, and sends the credential only
+to the connection's own origins. An answer gives the headers a plugin
+needs, `content-type`, `etag`, `last-modified`, `location`, `link`,
+`retry-after`, `dav` and `x-ratelimit-*`, and up to 20 MB of its body. A
+request takes a minute at most, and stops when the plugin does. An error
+names an origin, never a feed's secret address.
+
+A code block's `render` is told the note it is in, as `note` in its context, and
+a panel's view the note it is beside, as `props.note`: each with its
+`id`, `title` and `path`, and `day`, as `2026-11-17`, when it is a daily
+note by the vault's daily notes settings.
+
 ## Versions
 
 The plugin API has its own version, apart from the app's. The app speaks
-API 0.1.0. A manifest's `api` is a range: `^0.1` takes any 0.1 version.
+API 0.1.1. A manifest's `api` is a range: `^0.1` takes any 0.1 version.
 Before 1.0, a new minor version may break plugins, so `^0.1` does not
-take 0.2. From 1.0, `^1.2` takes any 1.x from 1.2 on.
+take 0.2; what the API gains before then raises its patch, so a plugin
+that uses connections asks for `^0.1.1`. From 1.0, `^1.2` takes any 1.x
+from 1.2 on.
 
 ## From Obsidian
 

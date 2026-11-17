@@ -42,6 +42,32 @@ export interface AppInfo {
   platform: string;
 }
 
+/** Connection is a connection kept on this device, without its secret. */
+export interface Connection {
+  /** ID names the connection here, and its secret in the keychain. */
+  id: string;
+  /**
+   * Service is what it reaches: "ics", "caldav", "google-calendar",
+   * "google-drive", "github" or "slack".
+   */
+  service: string;
+  /** Name is what the person calls it, as "Work calendar". */
+  name: string;
+  /** Account is who it acts as at the service; empty when it does not say. */
+  account: string;
+  /**
+   * Address is what it is shown by: a feed's host alone, since a feed's
+   * whole address is often its secret.
+   */
+  address: string;
+  /** Web is the service's web host, for links to it; empty when none. */
+  web: string;
+  /** Origins are where its requests may go, as https://example.org. */
+  origins: string[];
+  /** HasSecret says whether the keychain holds a secret for it. */
+  hasSecret: boolean;
+}
+
 /**
  * ExportEntry is a file of a ZIP: Text the page made, or Source, the path
  * of a file in the vault, copied as it is.
@@ -623,5 +649,43 @@ export const AI = {
    */
   setKey(id: string, key: string): Promise<void> {
     return call("AI.SetKey", id, key);
+  },
+} as const;
+
+/**
+ * Connections keeps the person's connections to services on this device
+ * (ADR 0090): each one's name, the address it is shown by and the origins
+ * its requests may reach in connections.json beside the list of vaults,
+ * and its secret, a feed's whole address, a password or a token, in the
+ * system's keychain, never in a file or a vault. The page reads a secret
+ * when it sends a plugin's request, and Go's fetch sends it; the plugin
+ * never sees it.
+ */
+export const Connections = {
+  /** List returns the connections kept on this device. */
+  list(): Promise<Connection[]> {
+    return call("Connections.List");
+  },
+  /** Remove forgets a connection, and its secret leaves the keychain. */
+  remove(id: string): Promise<void> {
+    return call("Connections.Remove", id);
+  },
+  /**
+   * Save adds a connection, or changes one with its ID, and returns it as
+   * kept. A new connection gets an ID; its secret comes through SetSecret.
+   */
+  save(connection: Connection): Promise<Connection> {
+    return call("Connections.Save", connection);
+  },
+  /** Secret returns a connection's secret; empty when the keychain has none. */
+  secret(id: string): Promise<string> {
+    return call("Connections.Secret", id);
+  },
+  /**
+   * SetSecret keeps a connection's secret in the keychain; an empty one
+   * removes it.
+   */
+  setSecret(id: string, secret: string): Promise<void> {
+    return call("Connections.SetSecret", id, secret);
   },
 } as const;

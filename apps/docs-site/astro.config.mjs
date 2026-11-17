@@ -24,6 +24,7 @@ export default defineConfig({
             "folders",
             "writing",
             "ai",
+            "integrations",
             "properties",
             "databases",
             "formulas",

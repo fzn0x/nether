@@ -6,6 +6,7 @@
 // from elsewhere brings no approval with it.
 import { type Manifest, type Permission, readManifest } from "@nether/plugin-api";
 import type { Vault } from "@nether/storage";
+import { refusedConnections } from "./connections.ts";
 
 const root = ".nether/plugins";
 
@@ -75,6 +76,9 @@ export async function readFolders(
         if (builtinIds.has(manifest.id)) {
           problems.push(`A plugin that comes with the app is ${manifest.id}.`);
         }
+        // Only Nether's own plugins may use the person's connections, for now (ADR 0090).
+        const refused = refusedConnections(manifest);
+        if (refused !== undefined) problems.push(refused);
       }
       const hasCode = mainFile.missing !== true && mainFile.binary !== true;
       if (!hasCode) problems.push("It has no main.js.");

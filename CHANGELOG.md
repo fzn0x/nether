@@ -8,6 +8,23 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Integrations begin with calendars (ADR 0090, part 1). A Connections tab
+  in the settings keeps your accounts at other services on this device,
+  each secret in the system's keychain, starting with ICS feeds, as
+  Google Calendar's secret address: only a feed's host shows, and a feed
+  is checked before it is added. The Calendar plugin, off until a vault
+  turns it on, shows a feed's events in a `calendar` code block and in an
+  Events panel beside a note, for a daily note's day or today, and adds
+  them to the note as a Markdown list. Recurrences, their exceptions and
+  time zones are read by ical.js. It is the first of Nether's own plugins
+  to run apart, in the sandbox, written only against the plugin API, and
+  it reaches its feeds only through the app, which adds the secret to the
+  request and never hands it over. The plugin API, now 0.1.1, gains
+  `connection:<service>` permissions, which only Nether's own plugins may
+  use for now, `context.connections`, `context.http`, `context.store`,
+  and the note a code block or panel is drawn for, with a daily note's
+  day.
+
 - The admin console lists the server's nodes, each with its name, version
   and start, in every build. A node writes its heartbeat every half a
   minute; its name is `NETHER_NODE_NAME`, or its machine's. A node without

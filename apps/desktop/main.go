@@ -96,6 +96,9 @@ func main() {
 	// The AI providers set up here, their keys in the keychain too (ADR
 	// 0068); their requests go through the same fetch.
 	mygo.Bind(NewAI(data, mygo.Secrets))
+	// The connections to services kept here, their secrets in the keychain
+	// too (ADR 0090); plugins' requests go through the same fetch.
+	mygo.Bind(NewConnections(data, mygo.Secrets))
 	// Sync's WebSocket, which Go opens, outside the page's mixed-content rules.
 	mygo.Use(websocket.Plugin)
 	// Checks for updates in the background, when the build has an update key.

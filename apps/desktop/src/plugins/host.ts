@@ -4,10 +4,14 @@
 // built-in plugin's module runs in the page; a plugin from a folder of the
 // vault runs in a sandboxed frame (ADR 0058), and sends the same messages
 // through a port. Its views draw in its worker, and the page shows them
-// cleaned (ADR 0063).
+// cleaned (ADR 0063). Nether's integrations are built-in plugins that run
+// apart as those do, and reach services only through the person's
+// connections, which only Nether's own plugins may use (ADR 0090).
+import { type Answer, readPluginRequest } from "@nether/integrations";
 import {
   type BlockViewProps,
   type CodeBlockOutput,
+  type Connection,
   Endpoint,
   type Json,
   type JsonObject,
@@ -20,9 +24,12 @@ import {
   type Plugin,
   type PropertyViewProps,
   type PluginContext,
+  type Service,
   type Transport,
   apiVersion,
+  connectionServices,
   isJsonObject,
+  isService,
   localize,
   pagePair,
   portTransport,
@@ -31,7 +38,9 @@ import {
   settingValues,
   startPlugin,
 } from "@nether/plugin-api";
+import type { VaultSettings } from "@nether/storage";
 import { canBeShortcut } from "../shortcuts.ts";
+import { type HostConnections, PluginStoreAccess, refusedConnections } from "./connections.ts";
 import { type FrameOpener, openFrame } from "./frame.ts";
 import type { BlockDrawing, BlockRegistry } from "./blocks.ts";
 import type {
@@ -94,7 +103,15 @@ export interface BuiltinModule {
 export interface BuiltinPlugin {
   /** As its manifest.json would hold it. */
   readonly manifest: unknown;
-  readonly load: () => Promise<{ readonly default: BuiltinModule }>;
+  /** Its module, which runs in the page with the host; or `apart`. */
+  readonly load?: () => Promise<{ readonly default: BuiltinModule }>;
+  /**
+   * Its code as one module's text, for a built-in plugin that runs apart,
+   * in a sandboxed frame as a vault's plugins do, with no host (ADR 0090).
+   */
+  readonly apart?: () => Promise<string>;
+  /** Whether it is off until the vault turns it on, as integrations are. */
+  readonly off?: boolean;
   /**
    * Whether its layouts keep the app's own names, as `board`, not
    * `plugin-id/board`: the built-in layouts' plugin (ADR 0056).
@@ -146,12 +163,34 @@ export interface HostOptions {
   readonly startTime?: number;
   /** The vault open, as plugins that ask for it reach it (ADR 0064). */
   readonly vault?: () => VaultAccess | undefined;
+  /** The person's connections, which Nether's own plugins reach as they ask (ADR 0090). */
+  readonly connections?: HostConnections;
+  /** The vault's settings on this device, where plugins keep their stores. */
+  readonly settings?: () => VaultSettings | undefined;
 }
 
-/** Where a plugin's code comes from: the app, or a folder of the vault, run in a frame. */
+/**
+ * Where a plugin's code comes from: the app, in the page; or run in a
+ * frame, from a folder of the vault or, for a built-in plugin that runs
+ * apart, from the app.
+ */
 type Source =
-  | { readonly kind: "builtin"; readonly load: BuiltinPlugin["load"] }
-  | { readonly kind: "frame"; readonly code: string; readonly network: boolean };
+  | {
+      readonly kind: "builtin";
+      readonly load: () => Promise<{ readonly default: BuiltinModule }>;
+    }
+  | {
+      readonly kind: "frame";
+      readonly code: string | (() => Promise<string>);
+      readonly network: boolean;
+      /** Whether it is Nether's own, which may use connections. */
+      readonly builtin: boolean;
+    };
+
+/** Whether a plugin's code is Nether's own, which may use the person's connections. */
+function isOwn(source: Source): boolean {
+  return source.kind === "builtin" || source.builtin;
+}
 
 /** A plugin running: the app's end of its connection, and what stops it. */
 interface Running {
@@ -184,6 +223,8 @@ interface Added {
   watcher?: PropertyWatcher | undefined;
   /** Its connection, once its code has been asked for. */
   running?: Promise<Running> | undefined;
+  /** What it keeps on the device, once it first asks. */
+  store?: PluginStoreAccess | undefined;
 }
 
 function errorText(error: unknown): string {
@@ -232,13 +273,20 @@ function blockProps(props: BlockViewProps): Json {
   return { attrs: props.attrs, editable: props.editable, theme: props.theme };
 }
 
+/** A note as it crosses to a plugin, with its day when it is a daily note. */
+function noteJson(note: NonNullable<PanelProps["note"]>): Json {
+  return {
+    id: note.id,
+    title: note.title,
+    path: note.path,
+    ...(note.day === undefined ? {} : { day: note.day }),
+  };
+}
+
 /** A panel's props as they cross to a plugin. */
 function panelProps(props: PanelProps): Json {
   const { note } = props;
-  return {
-    theme: props.theme,
-    ...(note === undefined ? {} : { note: { id: note.id, title: note.title, path: note.path } }),
-  };
+  return { theme: props.theme, ...(note === undefined ? {} : { note: noteJson(note) }) };
 }
 
 /** A pane's view's props as they cross to a plugin. */
@@ -287,6 +335,16 @@ export class PluginHost {
   add(builtin: BuiltinPlugin): readonly string[] {
     const { manifest, problems } = readManifest(builtin.manifest);
     if (manifest === undefined) return problems;
+    // One that runs apart is drawn and cleaned as a vault's plugin is, with no host.
+    if (builtin.apart !== undefined) {
+      const network = manifest.permissions.includes("network");
+      return this.#add(
+        manifest,
+        { kind: "frame", code: builtin.apart, network, builtin: true },
+        false,
+      );
+    }
+    if (builtin.load === undefined) return ["It has no code."];
     return this.#add(
       manifest,
       { kind: "builtin", load: builtin.load },
@@ -298,13 +356,20 @@ export class PluginHost {
   /**
    * Adds a plugin from a folder of the vault, which this device approved:
    * as a built-in one, but its code runs in a sandboxed frame, with the
-   * network only if it asks for it, and what it draws is cleaned.
+   * network only if it asks for it, and what it draws is cleaned. One that
+   * asks for the person's connections does not run (ADR 0090).
    */
   addFolder(folder: FolderPlugin): readonly string[] {
     const { manifest, problems } = readManifest(folder.manifest);
     if (manifest === undefined) return problems;
+    const refused = refusedConnections(manifest);
+    if (refused !== undefined) return [refused];
     const network = manifest.permissions.includes("network");
-    return this.#add(manifest, { kind: "frame", code: folder.code, network }, false);
+    return this.#add(
+      manifest,
+      { kind: "frame", code: folder.code, network, builtin: false },
+      false,
+    );
   }
 
   #add(
@@ -429,7 +494,7 @@ export class PluginHost {
           menu: command.menu,
           keys: command.keys.filter(canBeShortcut),
           plugin: manifest.id,
-          ...(source.kind === "frame" ? { fromVault: true } : {}),
+          ...(source.kind === "frame" && !source.builtin ? { fromVault: true } : {}),
           enabled: () => true,
           run: () => {
             void this.#run(plugin, command.id);
@@ -516,11 +581,17 @@ export class PluginHost {
       ...(view === undefined ? {} : { view }),
       ...(plugin.drawers.has(language)
         ? {
-            render: async (source, { info, theme, target }) => {
+            render: async (source, { info, theme, target, note }) => {
               // Looked up for each block, so that the plugin can take it away again.
               const callback = plugin.drawers.get(language);
               if (callback === undefined) throw missing();
-              const context = { language, info, theme, target };
+              const context = {
+                language,
+                info,
+                theme,
+                target,
+                ...(note === undefined ? {} : { note: noteJson(note) }),
+              };
               const output = readOutput(await app.call("callback", callback, source, context));
               const from = plugin.source;
               return from.kind === "frame" ? cleaned(output, from.network) : output;
@@ -727,8 +798,10 @@ export class PluginHost {
     });
     // Only what goes wrong before it starts stops it.
     failed.catch(() => undefined);
+    // A built-in plugin that runs apart has its code fetched from the app when it starts.
+    const code = typeof source.code === "string" ? source.code : await source.code();
     const frame = (this.#options.openFrame ?? openFrame)({
-      code: source.code,
+      code,
       network: source.network,
       onFailure: (message) => {
         if (started) this.#options.onError?.(id, message);
@@ -931,6 +1004,92 @@ export class PluginHost {
       unwatch = undefined;
       return null;
     });
+    /** The services the plugin may reach through connections: Nether's own plugins, as they ask (ADR 0090). */
+    const services = (): ReadonlySet<Service> => {
+      const asked = connectionServices(plugin.manifest);
+      if (asked.length === 0) throw new Error("The plugin did not ask for any connection.");
+      if (!isOwn(plugin.source)) {
+        throw new Error(refusedConnections(plugin.manifest) ?? "The plugin may use no connection.");
+      }
+      return new Set(asked);
+    };
+    const connections = (): HostConnections => {
+      const reached = this.#options.connections;
+      if (reached === undefined) throw new Error("This app keeps no connections.");
+      return reached;
+    };
+    /** The connections to the services the plugin asked for, as it sees them. */
+    const listed = async (): Promise<Connection[]> => {
+      const allowed = services();
+      return (await connections().list()).filter((each) => allowed.has(each.service));
+    };
+    const listJson = async (): Promise<Json> =>
+      (await listed()).map((each) => ({
+        id: each.id,
+        service: each.service,
+        name: each.name,
+        address: each.address,
+        where: each.where,
+        ...(each.account === undefined ? {} : { account: each.account }),
+        ...(each.web === undefined ? {} : { web: each.web }),
+      }));
+    app.handle("connections.list", listJson);
+    app.handle("connections.add", (service) => {
+      if (!isService(service) || !services().has(service)) {
+        throw new Error(`The plugin did not ask for connections to ${JSON.stringify(service)}.`);
+      }
+      connections().add(service);
+      return null;
+    });
+    let unwatchConnections: (() => void) | undefined;
+    app.handle("connections.watch", () => {
+      services();
+      unwatchConnections ??= connections().subscribe(() => {
+        listJson()
+          .then((list) => app.call("connections.changed", list))
+          .catch(() => undefined);
+      });
+      return null;
+    });
+    app.handle("connections.unwatch", () => {
+      unwatchConnections?.();
+      unwatchConnections = undefined;
+      return null;
+    });
+    // What the plugin asked for is stopped with it.
+    const requests = new AbortController();
+    app.handle("http.fetch", async (value): Promise<Json> => {
+      const request = readPluginRequest(value);
+      if (!(await listed()).some((each) => each.id === request.connection)) {
+        throw new Error("The plugin has no such connection.");
+      }
+      const answer: Answer = await connections().fetch(request, requests.signal);
+      return { ...answer, headers: { ...answer.headers } };
+    });
+    /** What the plugin keeps on this device for the vault. */
+    const store = (): PluginStoreAccess => {
+      const settings = this.#options.settings;
+      if (settings === undefined) throw new Error("This app keeps nothing for plugins.");
+      plugin.store ??= new PluginStoreAccess(settings, id);
+      return plugin.store;
+    };
+    const storeKey = (key: unknown): string => {
+      if (typeof key !== "string" || key === "") throw new Error("A key is text.");
+      return key;
+    };
+    app.handle("store.get", async (key): Promise<Json> => {
+      const value = await store().get(storeKey(key));
+      return value === undefined ? {} : { value };
+    });
+    app.handle("store.set", async (key, value) => {
+      await store().set(storeKey(key), value ?? null);
+      return null;
+    });
+    app.handle("store.delete", async (key) => {
+      await store().delete(storeKey(key));
+      return null;
+    });
+    app.handle("store.keys", async () => [...(await store().keys())]);
     app.handle("ready", () => {
       ready();
       return null;
@@ -965,6 +1124,9 @@ export class PluginHost {
     const release = () => {
       unwatch?.();
       unwatch = undefined;
+      unwatchConnections?.();
+      unwatchConnections = undefined;
+      requests.abort();
     };
     return { app, isReady, host, release };
   }

@@ -45,10 +45,11 @@ describe("commandShown", () => {
     ] as const) {
       expect(shownIn(web, id)).toBe(true);
     }
-    for (const id of ["sync", "checkUpdates", "updateChecks"] as const) {
+    // Connections come to the web app from its server, in a later part of ADR 0090.
+    for (const id of ["sync", "checkUpdates", "updateChecks", "connections"] as const) {
       expect(shownIn(web, id)).toBe(false);
     }
-    expect(commandIds.filter((id) => shownIn(web, id))).toHaveLength(commandIds.length - 3);
+    expect(commandIds.filter((id) => shownIn(web, id))).toHaveLength(commandIds.length - 4);
   });
 
   it("leaves out of the mobile apps what comes to them in later parts", () => {
@@ -62,6 +63,7 @@ describe("commandShown", () => {
       "servers",
       "sync",
       "share",
+      "connections",
     ] as const) {
       expect(shownIn(phone, id)).toBe(false);
     }
