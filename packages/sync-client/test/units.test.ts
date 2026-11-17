@@ -2,7 +2,8 @@
 // reach its members alone, with their comments; a note moved into a
 // teamspace's folder leaves the vaults of those outside it; a guest syncs
 // the page shared with them, its subpages, and nothing else; and a page no
-// longer shared on its own keeps its notes on every device.
+// longer shared on its own keeps its notes on every device, in whatever
+// order a device hears of it.
 import type { Database } from "@nether/server/src/db.ts";
 import { afterEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
@@ -10,7 +11,16 @@ import type { SyncRecord } from "../src/engine.ts";
 import { vaultFiles } from "../src/files.ts";
 import { vaultPaths } from "../src/paths.ts";
 import { unitForPath } from "../src/units.ts";
-import { MemoryVault, database, device, startServer, stopAll, until } from "./harness.ts";
+import {
+  MemoryStore,
+  MemoryVault,
+  database,
+  device,
+  slowLink,
+  startServer,
+  stopAll,
+  until,
+} from "./harness.ts";
 
 afterEach(stopAll);
 
@@ -329,6 +339,68 @@ describe("syncing units", () => {
     expect(laptop.file(sketch)).toBe("a sketch");
     // Not sent to the trash and fetched again either.
     expect(beas.vault.removed).toEqual([]);
+    expect(laptop.removed).toEqual([]);
+  });
+
+  it("keeps a page's notes on a device that hears its unit is gone before their new list", async () => {
+    const served = await startServer();
+    const bea = await invitee(served, "Bea");
+    const laptop = new MemoryVault();
+    const launch = laptop.write("Projects/Launch.md", "the launch");
+    const tasks = laptop.write("Projects/Launch/Tasks.md", "the tasks");
+    const first = await device(served, served.token, laptop);
+    // Bea's link is slow, as the desktop app's through Go can be (#179).
+    const slow = slowLink();
+    const beas = await device(
+      served,
+      bea.token,
+      new MemoryVault(),
+      new MemoryStore(),
+      undefined,
+      slow.WebSocket,
+    );
+    await until(() => beas.vault.text(tasks) === "the tasks");
+    const page = await api(
+      served,
+      served.token,
+      "POST",
+      `/api/workspaces/${served.workspaceId}/pages`,
+      {
+        note: launch,
+      },
+    );
+    const inPage = (record: SyncRecord | undefined) => {
+      const { notes } = listedIn(record, page.id as string);
+      return notes.has(launch) && notes.has(tasks);
+    };
+    const syncsPage = (record: SyncRecord | undefined) =>
+      record?.vaults?.[page.id as string] !== undefined;
+    await until(() => inPage(first.store.record) && inPage(beas.store.record));
+    await settle();
+
+    slow.link.delay = 1000;
+    await api(
+      served,
+      served.token,
+      "DELETE",
+      `/api/workspaces/${served.workspaceId}/pages/${String(page.id)}`,
+    );
+    // An edit there starts a round, which hears the unit is gone before the
+    // socket brings General's list with the page's notes.
+    beas.vault.write("Ideas.md", "an idea");
+    await until(() => !syncsPage(beas.store.record));
+    slow.link.delay = 0;
+    await until(
+      () =>
+        beas.vault.text(launch) === "the launch" &&
+        beas.vault.text(tasks) === "the tasks" &&
+        beas.engine.status.state === "synced" &&
+        beas.engine.status.pending === 0,
+    );
+    await settle();
+    expect(beas.vault.removed).toEqual([]);
+    expect(beas.vault.text(launch)).toBe("the launch");
+    expect(beas.vault.text(tasks)).toBe("the tasks");
     expect(laptop.removed).toEqual([]);
   });
 

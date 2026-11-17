@@ -443,13 +443,21 @@ export class VaultSync {
       JSON.stringify(list.map((unit) => [unit.id, unit.level, unit.name, unit.rootNote]));
     if (key(units) === key(this.#units)) return false;
     this.#units = units;
-    // A unit no longer opened is let go: its notes leave this vault as removed elsewhere.
+    // A unit no longer opened is let go: its notes leave this vault as
+    // removed elsewhere, unless another unit lists them. A page no longer
+    // shared on its own has its notes listed where it sat first, and that
+    // list can reach this device after the server says the page's unit is
+    // gone: the units still opened sync again before the next round reads
+    // them (#179).
+    let letGo = false;
     for (const [id, document] of [...this.#documents]) {
       if (units.some((unit) => unit.id === id)) continue;
       document.destroy();
       this.#documents.delete(id);
+      letGo = true;
     }
     this.#openUnits();
+    if (letGo) this.#channel?.resync();
     this.#saveSoon();
     return true;
   }
