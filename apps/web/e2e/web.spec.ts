@@ -1418,3 +1418,57 @@ test("a data policy keeps a workspace's export and narrows its sharing, and the 
   }
   expect(problems).toEqual([]);
 });
+
+test("a workspace on legal hold keeps its trash, and the trash panel says why", async ({
+  page,
+}) => {
+  const problems = problemsOf(page);
+  await signIn(page, { email: "ada@example.org", password: "a long password" });
+  await page.goto("/admin");
+  const feature = page.getByRole("checkbox", { name: "Data policies" });
+  await feature.check();
+  const section = page.getByRole("region", { name: "Data policies" });
+  const every = section.getByRole("group", { name: "Every workspace" });
+  const save = section
+    .locator("form")
+    .filter({ has: page.getByRole("group", { name: "Every workspace" }) })
+    .getByRole("button", { name: "Save" });
+  try {
+    await every.getByRole("spinbutton", { name: "Keep the apps' trash, in days" }).fill("7");
+    await every.getByRole("checkbox", { name: "Legal hold" }).check();
+    await save.click();
+    await expect(section.getByRole("status")).toHaveText("Saved the policy for Every workspace.");
+
+    await page.goto("/");
+    await openTeam(page);
+    const title = `Held notes ${String(Date.now())}`;
+    await newNote(page, title, "Kept on hold.");
+    await expect.poll(() => fileText(page, `${title}.md`)).toBe("Kept on hold.\n");
+    await page.getByRole("button", { name: "Move to trash" }).click();
+    await page.getByRole("button", { name: "Trash", exact: true }).click();
+    const trash = page.getByRole("region", { name: "Trash" });
+    await expect(
+      trash.getByText(
+        "127.0.0.1:4175 holds this workspace: nothing in its trash is deleted for good while the hold is on.",
+      ),
+    ).toBeVisible();
+    const item = trash.getByRole("listitem").filter({ hasText: title });
+    await expect(item.locator(".trash-when")).toHaveText(
+      "Deleted today, kept while the workspace is on hold",
+    );
+    await expect(item.getByRole("button", { name: `Restore ${title}` })).toBeVisible();
+    await expect(trash.getByRole("button", { name: `Delete ${title} for good` })).toHaveCount(0);
+    await expect(trash.getByRole("button", { name: "Empty trash" })).toHaveCount(0);
+    await expect(trash.getByRole("spinbutton")).toBeDisabled();
+    expect(await violations(page)).toEqual([]);
+  } finally {
+    // Every workspace's policy open again, as the other tests expect.
+    await page.goto("/admin");
+    await every.getByRole("spinbutton", { name: "Keep the apps' trash, in days" }).fill("");
+    await every.getByRole("checkbox", { name: "Legal hold" }).uncheck();
+    await save.click();
+    await expect(section.getByRole("status")).toHaveText("Saved the policy for Every workspace.");
+    await feature.uncheck();
+  }
+  expect(problems).toEqual([]);
+});
