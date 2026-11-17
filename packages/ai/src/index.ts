@@ -1,4 +1,5 @@
 export { anthropic, defaultMaxTokens } from "./anthropic.ts";
+export { endpointOf, isApproved } from "./approved.ts";
 export { type AnswerPart, type AskPassage, type AskTurn, askRequest, readAnswer } from "./ask.ts";
 export {
   type ProviderCall,
