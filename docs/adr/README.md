@@ -81,3 +81,4 @@ record supersedes it and says so. Start a new one from
 | [0071](0071-a-share-link-opens-one-shared-page-to-anyone-with-it-through-the-web-app.md) | A share link opens one shared page to anyone with it, through the web app | Accepted |
 | [0072](0072-buttons-are-meta-bind-button-blocks-and-triggers-are-schema-rules-run-where-the-change-is-made.md) | Buttons are Meta Bind's button blocks, and triggers are rules in a database's schema, run where the change is made | Accepted |
 | [0074](0074-search-by-meaning-keeps-passages-vectors-on-the-device-and-loads-them-only-to-search.md) | Search by meaning keeps each passage's vector on the device, and loads them only to search | Accepted |
+| [0076](0076-a-published-site-is-a-note-or-a-folder-drawn-by-the-server-as-it-is-now-linking-only-to-its-own-pages.md) | A published site is a note or a folder, drawn by the server as it is now, linking only to its own pages | Accepted |
