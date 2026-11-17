@@ -257,23 +257,28 @@ export function createAuditModule(env: NodeJS.ProcessEnv = process.env): Enterpr
     feature: "audit",
     plugin: (app, { db, isOn, whenOn, events, secretKey }) => {
       const key = chainKey(secretKey);
-      const stop = events.listen(async (event, origin, tx) => {
-        if (!recordedAlways(event) && !(await isOn(tx))) return;
-        await record(
-          tx,
-          {
-            action: event.action,
-            outcome: event.outcome,
-            reason: event.reason,
-            actor: event.actor,
-            workspace: event.workspace,
-            target: event.target,
-            details: event.details,
-            origin,
-          },
-          key,
-        );
-      });
+      const stop = events.listen(
+        async (event, origin, tx) => {
+          if (!recordedAlways(event) && !(await isOn(tx))) return;
+          await record(
+            tx,
+            {
+              action: event.action,
+              outcome: event.outcome,
+              reason: event.reason,
+              actor: event.actor,
+              workspace: event.workspace,
+              target: event.target,
+              details: event.details,
+              origin,
+            },
+            key,
+          );
+        },
+        // While off, nothing is found only to be recorded, as the notes a
+        // vault document no longer lists.
+        (tx) => isOn(tx),
+      );
       app.addHook("onClose", (_instance, done) => {
         stop();
         done();
