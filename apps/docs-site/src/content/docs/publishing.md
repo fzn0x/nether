@@ -1,6 +1,6 @@
 ---
 title: Publishing
-description: How to publish a page with its subpages, or a folder, as a public site your Nether server serves, with links between its pages and their images.
+description: How to publish a page with its subpages, or a folder, as a public site your Nether server serves, on its address or a custom domain, with what search engines read.
 ---
 
 A Nether server can publish a page, with its subpages, or a whole folder,
@@ -67,5 +67,49 @@ A folder site follows the folder's path: renaming the folder takes its
 pages down until it is published again under the new name. A page site
 follows its page wherever it moves.
 
-Custom domains and search engine details, such as descriptions, a
-sitemap and asking not to be indexed, come in the next version.
+## A custom domain
+
+A site can also open at a domain of your own, such as
+`docs.example.org`, at `/` there:
+
+1. In the site's entry under **Publish to the web**, type the domain in
+   **Custom domain** and choose **Use this domain**.
+2. At the domain's DNS provider, add the **TXT** record the dialog shows:
+   its name is `_nether-site.` and the domain, and its value starts with
+   `nether-site=`. It proves the domain is yours, so no one else can put
+   their site on it.
+3. Point the domain at your server, with an `A` or `CNAME` record, as for
+   any website.
+4. Choose **Check the record**. Once the server finds it, the site is on
+   the domain, and its address in the dialog is the domain's.
+
+DNS changes can take a few minutes to show; check again after. The site
+stays at its `/p/` address on the server too. **Remove** the domain to take
+the site off it; unpublishing the site does as well.
+
+The server's admin sets up the certificates that custom domains need,
+once for all of them, as the
+[self-hosting guide](../self-hosting/#custom-domains-for-published-sites)
+shows. A domain proven again for another site moves to that site: whoever
+writes its DNS decides.
+
+## Search engines
+
+Each page tells search engines what it is:
+
+- **Its description**: the note's `description` property, or else its
+  first paragraph, up to 160 characters.
+- **Its address**, on the site's domain once it has one, so the `/p/`
+  address and the domain do not count twice.
+- **A card** for links shared on social sites, with the page's title,
+  description and an image: the note's `image` property, a web address or
+  an image in the vault, or else the first image on the page.
+
+The site lists its pages in a sitemap, at `sitemap.xml` under its address,
+and on its domain answers `robots.txt` with the sitemap's address.
+
+- **A note with `noindex: true`** in its properties asks search engines
+  to leave it out, and is not in the sitemap.
+- **Untick Let search engines index** a site, in its entry in the dialog,
+  to ask it of every page. The site still opens for anyone with its
+  address.

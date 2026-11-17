@@ -3,7 +3,14 @@
 // vaults kept in the browser and synced, invitations, offline, one tab per
 // workspace, and its content security policy kept throughout.
 import AxeBuilder from "@axe-core/playwright";
-import { type BrowserContext, type Locator, type Page, expect, test } from "@playwright/test";
+import {
+  type BrowserContext,
+  type Locator,
+  type Page,
+  chromium,
+  expect,
+  test,
+} from "@playwright/test";
 import { reading } from "../../desktop/e2e/pdfs.ts";
 
 const control = "http://127.0.0.1:4176";
@@ -689,6 +696,59 @@ test("comment and edit links let someone with no account comment and edit, as th
   expect(problems).toEqual([]);
 });
 
+test("asks the workspace's notes through the server's relay, citing the passage it read", async ({
+  page,
+}) => {
+  const problems = problemsOf(page);
+  await signIn(page, { email: "ada@example.org", password: "a long password" });
+  await openTeam(page);
+  await newNote(page, "Garden", "The roses bloom in June.");
+  await expect.poll(() => fileText(page, "Garden.md")).toBe("The roses bloom in June.\n");
+  // Once the vault's search finds it, so does asking.
+  const tabs = page.locator(".sidebar-tabs");
+  await tabs.getByRole("button", { name: "Search" }).click();
+  await page.getByRole("searchbox", { name: "Search the vault" }).fill("roses");
+  await expect(page.locator(".search-panel").getByText("Garden").first()).toBeVisible({
+    timeout: 20_000,
+  });
+
+  const { settings, tab } = await aiTab(page);
+  await tab.getByRole("button", { name: "Add a provider" }).click();
+  await tab.getByLabel("For").selectOption("instance");
+  await tab.getByLabel("Name", { exact: true }).fill("Team model");
+  await tab.getByLabel("Address").fill("http://127.0.0.1:4178/v1");
+  await tab.getByLabel("Model").fill("test-model");
+  await tab.getByLabel("Key", { exact: true }).fill("sk-team");
+  await tab.getByRole("button", { name: "Save" }).click();
+  await expect(tab.getByRole("listitem").filter({ hasText: "Team model" })).toBeVisible();
+  await settings.getByRole("button", { name: "Close" }).click();
+
+  await tabs.getByRole("button", { name: "Ask" }).click();
+  const panel = page.getByRole("region", { name: "Ask your notes" });
+  await expect(panel).toContainText(
+    "Asks Team model, test-model at 127.0.0.1:4178, through 127.0.0.1:4175",
+  );
+  await panel.getByRole("textbox", { name: "Your question" }).fill("When do the roses bloom?");
+  await page.keyboard.press("Enter");
+  const answer = panel.locator(".ask-answer").last();
+  await expect(answer).toHaveText("Your notes say: The roses bloom in June. [1]");
+  expect(await violations(page)).toEqual([]);
+  const heard =
+    await ask<{ authorization?: string; body: { messages: { content: string }[] } }[]>("/model");
+  const last = heard.at(-1);
+  expect(last?.authorization).toBe("Bearer sk-team");
+  expect(last?.body.messages.at(-1)?.content).toContain('From "Garden"');
+  await answer.getByRole("button", { name: /^\[1\] 1\. Garden/ }).click();
+  await expect(page.getByRole("textbox", { name: "Garden, note text" })).toBeVisible();
+
+  // Gone again, so the other tests see no AI.
+  const again = await aiTab(page);
+  await again.tab.getByRole("button", { name: "Remove Team model" }).click();
+  await expect(again.tab.getByText("No provider is set up yet.")).toBeVisible();
+  await again.settings.getByRole("button", { name: "Close" }).click();
+  expect(problems).toEqual([]);
+});
+
 /** Whether the server has stored a note at a path, as publishing it takes, read with the page's session. */
 function stored(page: Page, path: string): Promise<boolean> {
   return page.evaluate(async (wanted) => {
@@ -759,5 +819,95 @@ test("a page published from the Share dialog opens for anyone, with no account, 
   } finally {
     await visitor.close();
   }
+  expect(problems).toEqual([]);
+});
+
+// Phase 4's gate: a published site loads on a custom domain. The domain is
+// claimed in the Share dialog and proven by its TXT record, which the test
+// server's DNS has once written; a browser of its own resolves the domain
+// to this machine, as its DNS would point it at the server.
+test("a site published from the Share dialog loads on the custom domain its DNS proves", async ({
+  page,
+}) => {
+  const problems = problemsOf(page);
+  const owner = await person("Dora");
+  await signIn(page, owner);
+  await openTeam(page);
+  await newNote(page, "Handbook", "Welcome to the handbook.");
+  await expect.poll(() => fileText(page, "Handbook.md")).toBe("Welcome to the handbook.\n");
+  await expect.poll(() => stored(page, "Handbook.md"), { timeout: 20_000 }).toBe(true);
+
+  await page.keyboard.press("Control+p");
+  await page.keyboard.type("Share this page");
+  await page.keyboard.press("Enter");
+  const share = page.getByRole("dialog", { name: "Share Handbook" });
+  const publishing = share.getByRole("region", { name: "Publish to the web" });
+  const stamp = String(Date.now());
+  await publishing.getByRole("textbox", { name: "Site name" }).fill(`handbook-${stamp}`);
+  await publishing.getByRole("button", { name: "Publish this page" }).click();
+  await expect(share.getByRole("status")).toHaveText(
+    "Handbook is published, and its address is copied.",
+  );
+
+  const domain = `docs-${stamp}.example.test`;
+  await publishing.getByRole("textbox", { name: "Custom domain of Handbook" }).fill(domain);
+  await publishing.getByRole("button", { name: "Use this domain" }).click();
+  await expect(share.getByRole("status")).toHaveText(
+    `Add the TXT record shown at the DNS provider of ${domain}, then check it.`,
+  );
+  await expect(publishing.getByText(`_nether-site.${domain}`)).toBeVisible();
+  const value = (await publishing.getByText(/^nether-site=/).textContent()) ?? "";
+  expect(value).toMatch(/^nether-site=/);
+  expect(await violations(page)).toEqual([]);
+
+  // Checked before the record is there, the server says so.
+  await publishing.getByRole("button", { name: `Check the record for ${domain}` }).click();
+  await expect(share.getByRole("alert")).toContainText("has no TXT record");
+  await ask("/txt", { name: `_nether-site.${domain}`, value });
+  await publishing.getByRole("button", { name: `Check the record for ${domain}` }).click();
+  await expect(share.getByRole("status")).toHaveText(`${domain} is this site's now.`);
+  await expect(publishing.getByRole("textbox", { name: "Address of Handbook" })).toHaveValue(
+    `https://${domain}/`,
+  );
+  // The proxy's on-demand TLS may get the domain a certificate now.
+  const asked = await fetch(`http://127.0.0.1:4175/api/sites/domain?domain=${domain}`);
+  expect(asked.status).toBe(200);
+
+  const browser = await chromium.launch({
+    args: ["--host-resolver-rules=MAP *.example.test 127.0.0.1"],
+  });
+  try {
+    const reader = await (await browser.newContext()).newPage();
+    const readerProblems = problemsOf(reader);
+    const opened = await reader.goto(`http://${domain}:4175/`);
+    expect(opened?.status()).toBe(200);
+    await expect(reader).toHaveTitle("Handbook");
+    await expect(reader.getByRole("heading", { name: "Handbook", level: 1 })).toBeVisible();
+    await expect(reader.getByText("Welcome to the handbook.")).toBeVisible();
+    expect(await reader.locator("script").count()).toBe(0);
+    await expect(reader.locator('link[rel="canonical"]')).toHaveAttribute(
+      "href",
+      `https://${domain}/`,
+    );
+    await expect(reader.locator('meta[name="description"]')).toHaveAttribute(
+      "content",
+      "Welcome to the handbook.",
+    );
+    expect(await violations(reader)).toEqual([]);
+    const robots = await reader.goto(`http://${domain}:4175/robots.txt`);
+    expect(await robots?.text()).toContain(`Sitemap: https://${domain}/sitemap.xml`);
+    // Nothing of the API or the web app answers on the domain.
+    const api = await reader.goto(`http://${domain}:4175/api/me`);
+    expect(api?.status()).toBe(404);
+    await expect(reader.getByRole("heading", { name: "Not published" })).toBeVisible();
+    expect(readerProblems).toEqual([]);
+  } finally {
+    await browser.close();
+  }
+
+  // Given up, the domain is no site's, and the proxy gets no certificate for it.
+  await publishing.getByRole("button", { name: `Remove ${domain}` }).click();
+  await expect(share.getByRole("status")).toHaveText(`${domain} is no longer this site's.`);
+  expect((await fetch(`http://127.0.0.1:4175/api/sites/domain?domain=${domain}`)).status).toBe(404);
   expect(problems).toEqual([]);
 });

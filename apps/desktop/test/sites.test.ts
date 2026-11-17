@@ -1,11 +1,16 @@
 // Published sites from the Share dialog (ADR 0076): the requests it sends,
-// the sites a page is on, and the name a site takes from a title.
+// a site's custom domain and indexing (ADR 0077), the sites a page is on,
+// and the name a site takes from a title.
 import { describe, expect, it } from "vitest";
 import {
   type PublishedSite,
+  checkDomain,
+  claimDomain,
   folderOf,
+  giveUpDomain,
   listSites,
   publishSite,
+  setSiteIndexed,
   showsNote,
   siteNameFor,
   switchPublishing,
@@ -64,6 +69,9 @@ describe("the site requests", () => {
           note: "note-1",
           folder: null,
           url: `${base}/p/handbook/`,
+          pathUrl: `${base}/p/handbook/`,
+          domain: null,
+          indexed: true,
           publishedBy: "Ada",
         },
       ],
@@ -104,6 +112,64 @@ describe("the site requests", () => {
   });
 });
 
+describe("a site's domain and indexing", () => {
+  const held = {
+    ...site,
+    url: "https://docs.example.org/",
+    pathUrl: `${base}/p/handbook/`,
+    indexed: false,
+    domain: {
+      name: "docs.example.org",
+      verified: true,
+      record: { type: "TXT", name: "_nether-site.docs.example.org", value: "nether-site=abc" },
+    },
+  };
+
+  it("claim, check and give up a domain, and switch indexing", async () => {
+    const { fetcher, sent } = fakeFetch(() => Response.json(held));
+    const claimed = await claimDomain(
+      fetcher,
+      base,
+      "t0k",
+      workspace,
+      "site-1",
+      "docs.example.org",
+    );
+    expect(claimed).toMatchObject({
+      url: "https://docs.example.org/",
+      pathUrl: `${base}/p/handbook/`,
+      indexed: false,
+      domain: {
+        name: "docs.example.org",
+        verified: true,
+        record: { type: "TXT", name: "_nether-site.docs.example.org", value: "nether-site=abc" },
+      },
+    });
+    await checkDomain(fetcher, base, "t0k", workspace, "site-1");
+    await giveUpDomain(fetcher, base, "t0k", workspace, "site-1");
+    await setSiteIndexed(fetcher, base, "t0k", workspace, "site-1", false);
+    const path = `/api/workspaces/${workspace}/sites/site-1`;
+    expect(sent.map(({ method, url, body }) => [method, url.slice(base.length), body])).toEqual([
+      ["PUT", `${path}/domain`, { domain: "docs.example.org" }],
+      ["POST", `${path}/domain/check`, undefined],
+      ["DELETE", `${path}/domain`, undefined],
+      ["PATCH", path, { indexed: false }],
+    ]);
+  });
+
+  it("gives the server's reason when the record is not there yet", async () => {
+    const { fetcher } = fakeFetch(() =>
+      Response.json(
+        { message: "_nether-site.docs.example.org has no TXT record with this site's value yet." },
+        { status: 409 },
+      ),
+    );
+    await expect(checkDomain(fetcher, base, "t0k", workspace, "site-1")).rejects.toThrow(
+      "has no TXT record",
+    );
+  });
+});
+
 describe("the sites a page is on", () => {
   const page = { id: "note-1", path: "Docs/Guide/Setup.md" };
   const of = (fields: Partial<PublishedSite>): PublishedSite => ({
@@ -113,6 +179,9 @@ describe("the sites a page is on", () => {
     note: null,
     folder: null,
     url: "",
+    pathUrl: "",
+    domain: null,
+    indexed: true,
     publishedBy: "",
     ...fields,
   });

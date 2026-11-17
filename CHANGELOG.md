@@ -18,6 +18,15 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   a workspace's owners and admins turn publishing off, and an encrypted
   workspace publishes nothing
   ([ADR 0076](docs/adr/0076-a-published-site-is-a-note-or-a-folder-drawn-by-the-server-as-it-is-now-linking-only-to-its-own-pages.md)).
+  A site opens on a custom domain too, claimed in the dialog and proven by
+  a TXT record at `_nether-site.<domain>`; the server answers that
+  domain's requests with the site alone, and
+  `GET /api/sites/domain` tells Caddy's on-demand TLS which domains to get
+  certificates for. Each page has its description, canonical address and
+  Open Graph card, each site its `sitemap.xml` and, on its domain,
+  `robots.txt`, and `noindex: true` or the site's switch asks search
+  engines to leave pages out
+  ([ADR 0077](docs/adr/0077-a-site-holds-a-custom-domain-its-dns-proves-and-tells-search-engines-what-each-page-is.md)).
 - The plugin API's first part, `@nether/plugin-api`, under the MIT
   license: a plugin's manifest, `definePlugin`, and the messages between a
   plugin and the app, within the page or through a port. Commands a
@@ -222,6 +231,17 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   at its heading; filters work as by words. Only changed passages are sent
   again, and nothing of it is in memory until a search runs
   ([ADR 0074](docs/adr/0074-search-by-meaning-keeps-passages-vectors-on-the-device-and-loads-them-only-to-search.md)).
+- Asking your notes: the sidebar's Ask tab, while the vault has an AI
+  provider, answers a question from passages of the notes the vault's own
+  search finds by its words, one search a word, fused by rank, with search
+  by meaning's ranking added once it is on. At most eight passages go, with
+  the question and the three turns before it; the tab says where first, and
+  lists what was read after. Each citation, `[2]`, links to its passage and
+  opens the note there; one that names no passage sent shows unverified.
+  Words no note has send nothing. The conversation saves as a note, its
+  citations links by heading. It runs through the server's relay in the
+  web app, and on the desktop alone for an encrypted workspace
+  ([ADR 0075](docs/adr/0075-asking-your-notes-answers-from-passages-the-vaults-search-finds-each-citation-checked.md)).
 - Building with AI, in the File menu while the vault has an AI provider:
   a database, with sample rows only if asked, a template, or a project
   plan, a folder of notes with a database of its tasks, from a

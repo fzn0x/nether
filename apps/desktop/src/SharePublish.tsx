@@ -1,8 +1,9 @@
 // Publishing from the Share dialog (ADR 0076): this page with its
 // subpages, or the folder it is in, as a site anyone opens at its address
 // on the server, drawn from the notes as they are now. Those with full
-// access publish under a name and unpublish; a workspace's owners and
-// admins turn publishing on and off for it.
+// access publish under a name and unpublish, give a site a custom domain
+// and let search engines index it or not (ADR 0077); a workspace's owners
+// and admins turn publishing on and off for it.
 import { type SyntheticEvent, useCallback, useEffect, useState } from "react";
 import type { NoteEntry } from "@nether/storage";
 import { backend } from "./backend.ts";
@@ -18,6 +19,7 @@ import {
   switchPublishing,
   unpublishSite,
 } from "./sites.ts";
+import { SiteDomain } from "./SiteDomain.tsx";
 import type { VaultLink } from "./sync.ts";
 
 type Scope = "page" | "folder";
@@ -26,7 +28,8 @@ export function SharePublish(props: {
   readonly link: VaultLink;
   readonly note: NoteEntry;
   readonly onStatus: (status: string) => void;
-  readonly onError: (error: string) => void;
+  /** Shows an error, or with none, takes the one shown away. */
+  readonly onError: (error: string | undefined) => void;
 }) {
   const { link, note, onStatus, onError } = props;
   const { server, workspaceId } = link;
@@ -61,6 +64,8 @@ export function SharePublish(props: {
   const act = (work: (token: string) => Promise<string>) => {
     if (busy) return;
     setBusy(true);
+    // A new try takes the last one's error away.
+    onError(undefined);
     session()
       .then(async (token) => {
         const said = await work(token);
@@ -181,6 +186,14 @@ export function SharePublish(props: {
                       {t("publishUnpublish", { title: site.title })}
                     </button>
                   </div>
+                  <SiteDomain
+                    link={link}
+                    site={site}
+                    busy={busy}
+                    act={act}
+                    onStatus={onStatus}
+                    onError={onError}
+                  />
                 </li>
               ))}
             </ul>

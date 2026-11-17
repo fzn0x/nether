@@ -556,6 +556,23 @@ export const migrations: readonly Migration[] = [
       );
     `,
   },
+  {
+    version: 20,
+    name: "sites' custom domains, and whether search engines index them",
+    sql: `
+      -- A custom domain a site claims (ADR 0077), with the value its TXT
+      -- record at _nether-site.<domain> must have; verified once the record
+      -- is found, when it names that site alone.
+      ALTER TABLE sites ADD COLUMN domain text;
+      ALTER TABLE sites ADD COLUMN domain_token text;
+      ALTER TABLE sites ADD COLUMN domain_verified boolean NOT NULL DEFAULT false;
+      CREATE UNIQUE INDEX sites_by_domain ON sites (domain) WHERE domain_verified;
+
+      -- Whether its pages ask search engines to index them: yes until its
+      -- publisher says no.
+      ALTER TABLE sites ADD COLUMN indexed boolean NOT NULL DEFAULT true;
+    `,
+  },
 ];
 
 /** The schema version this server writes and reads. */

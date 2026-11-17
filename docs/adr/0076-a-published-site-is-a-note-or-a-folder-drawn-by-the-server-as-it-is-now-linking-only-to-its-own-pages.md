@@ -156,7 +156,8 @@ nothing.
    published pages, files, the pages' policy, and the switch for
    workspaces in the API.
 2. Custom domains with Caddy, SEO, and the gate's test: a site loading on
-   a custom domain.
+   a custom domain, settled in
+   [ADR 0077](0077-a-site-holds-a-custom-domain-its-dns-proves-and-tells-search-engines-what-each-page-is.md).
 
 ## Alternatives
 

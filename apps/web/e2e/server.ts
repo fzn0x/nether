@@ -5,8 +5,10 @@
 // which the server's AI relay may reach (ADR 0070); and a second server, not
 // set up yet. Beside them, on its own port, what the tests ask of it: the
 // emails sent, a new person in the workspace, the provider's sign-in, done
-// as the provider's own page would, the requests the model heard, and the
-// second server's setup code. Run by Playwright: node e2e/server.ts
+// as the provider's own page would, the requests the model heard, the
+// second server's setup code, and TXT records for sites' custom domains,
+// which the server looks up here instead of in DNS (ADR 0077). Run by
+// Playwright: node e2e/server.ts
 import { mkdtemp } from "node:fs/promises";
 import { type IncomingMessage, createServer } from "node:http";
 import { tmpdir } from "node:os";
@@ -48,14 +50,29 @@ const model = createServer((request, response) => {
     const content = messages.at(-1)?.content;
     const last = typeof content === "string" ? content : "";
     const asked = /<text>\n([\s\S]*)\n<\/text>/.exec(last)?.[1] ?? "";
+    // A question asked of the notes (ADR 0075) gets its first passage back, cited.
+    const passage = /<passage>\n([\s\S]*?)\n<\/passage>/.exec(last)?.[1];
     const chunk = (content: string) =>
       `data: ${JSON.stringify({ choices: [{ index: 0, delta: { content }, finish_reason: null }] })}\n\n`;
+    const answer =
+      passage === undefined
+        ? `${chunk("Fixed: ")}${chunk(asked.replace("Teh", "The"))}`
+        : `${chunk("Your notes say: ")}${chunk(passage.split("\n").at(-1) ?? "")}${chunk(" [1]")}`;
     response
       .writeHead(200, { "content-type": "text/event-stream" })
-      .end(`${chunk("Fixed: ")}${chunk(asked.replace("Teh", "The"))}data: [DONE]\n\n`);
+      .end(`${answer}data: [DONE]\n\n`);
   });
 });
 model.listen(modelPort, "127.0.0.1");
+
+// The TXT records the tests write, by name, as a domain's DNS would have them.
+const txt = new Map<string, string[][]>();
+const resolveTxt = (name: string): Promise<string[][]> => {
+  const found = txt.get(name);
+  return found === undefined
+    ? Promise.reject(Object.assign(new Error(`queryTxt ENOTFOUND ${name}`), { code: "ENOTFOUND" }))
+    : Promise.resolve(found);
+};
 
 const mailer = new TestMailer();
 const db = await testDatabase();
@@ -75,7 +92,13 @@ const app = await buildApp(
     NETHER_SECRET_KEY: Buffer.alloc(32, 3).toString("base64"),
     NETHER_AI_PRIVATE: "loopback",
   }),
-  { db, setupCode, mailer, blobs: new DiskBlobs(await mkdtemp(join(tmpdir(), "nether-web-e2e-"))) },
+  {
+    db,
+    setupCode,
+    mailer,
+    resolveTxt,
+    blobs: new DiskBlobs(await mkdtemp(join(tmpdir(), "nether-web-e2e-"))),
+  },
 );
 await app.listen({ host: "127.0.0.1", port });
 
@@ -150,6 +173,10 @@ const control = createServer((request, response) => {
       } else if (request.url === "/model") {
         // What the model heard, from the server's relay.
         answer = heard;
+      } else if (request.url === "/txt") {
+        // A TXT record at a name, as a domain's owner adds one.
+        txt.set(String(body.name), [[String(body.value)]]);
+        answer = {};
       } else if (request.url === "/fresh") {
         // The server not set up yet, and the code its log has.
         answer = { url: freshUrl, setupCode: freshCode };

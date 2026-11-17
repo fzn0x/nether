@@ -34,6 +34,7 @@ import {
   Link,
   LogOut,
   type LucideIcon,
+  MessageCircleQuestionMark,
   MessageSquarePlus,
   Network,
   NotebookPen,
@@ -114,6 +115,9 @@ export const commandIcons: Readonly<Record<CommandId, LucideIcon>> = {
 
 /** Writing assist's command, which shows only once AI is set up (ADR 0068). */
 export const assistIcon: LucideIcon = Sparkles;
+
+/** Asking your notes' command, which shows only once AI is set up (ADR 0075). */
+export const askIcon: LucideIcon = MessageCircleQuestionMark;
 
 /** Building with AI's command, which shows only once AI is set up (ADR 0078). */
 export const buildIcon: LucideIcon = WandSparkles;

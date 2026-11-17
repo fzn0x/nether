@@ -85,6 +85,45 @@ through, which sync uses, on the same port.
 `/p/`, so the proxy needs nothing more for them, and `NETHER_PUBLIC_URL`
 is the address the app copies for them.
 
+## Custom domains for published sites
+
+A published site can be [put on a domain of its own](../publishing/#a-custom-domain),
+which the person publishing it proves with a TXT record. The server then
+answers that domain's requests with the site. The proxy needs a
+certificate for each such domain, and Caddy's on-demand TLS gets one the
+first time the domain is asked for, after asking the server whether a site
+holds it:
+
+```text
+{
+	on_demand_tls {
+		ask http://127.0.0.1:3000/api/sites/domain
+	}
+}
+
+nether.example.org {
+	reverse_proxy 127.0.0.1:3000
+}
+
+https:// {
+	tls {
+		on_demand
+	}
+	reverse_proxy 127.0.0.1:3000
+}
+```
+
+Caddy adds `?domain=` and the name to the `ask` address. The server
+answers 200 only for a domain a published site holds, so Caddy gets no
+certificate for any other name pointed at the machine. The proxy keeps
+the request's host, which is how the server knows the site; keep
+`NETHER_TRUST_PROXY` set as above.
+
+Each site's owner points their domain at this machine with an `A` or
+`CNAME` record, beside the TXT record that proves it. Keep
+`NETHER_PUBLIC_URL` set: its host stays the server's own, and no site can
+take it.
+
 ## Settings
 
 Settings go in the `.env` file beside `docker-compose.yml`, one
