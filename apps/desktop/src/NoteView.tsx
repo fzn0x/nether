@@ -185,10 +185,16 @@ export default function NoteView(props: {
   const [switched, setSwitched] = useState(false);
   const files = useMemo(
     () =>
-      noteFiles(vault, media, id, (error) => {
-        setFileError(error instanceof Error ? error.message : String(error));
-      }),
-    [vault, media, id],
+      noteFiles(
+        vault,
+        media,
+        id,
+        (error) => {
+          setFileError(error instanceof Error ? error.message : String(error));
+        },
+        onOpenFile,
+      ),
+    [vault, media, id, onOpenFile],
   );
   const links = useMemo(
     () => ({
