@@ -454,3 +454,61 @@ of each, shown in the console with no control, as a feature's switch is.
   `GET /api/audit/events`, `/api/audit/actors` and `/api/audit/workspaces`
   for the filters, `GET` and `PUT /api/audit/settings`, and
   `POST /api/audit/check`.
+
+## What building part 2 settled
+
+- **Where the log goes is a table of core's migrations**,
+  `audit_destinations`, as `audit_events` is, so a backup holds each
+  destination's cursor with the log. Its state is there too: failures in
+  a row, the last error, the next try, and a claim that lapses after two
+  minutes, so a node that stops frees its destination.
+- **A webhook's secret is sealed** with `NETHER_SECRET_KEY`, as single
+  sign-on's secrets are, bound to its destination's ID: a box moved to
+  another row does not open. The console adds no webhook without the key.
+  Syslog keeps no secret in the database: a certificate authority and a
+  fingerprint are public, and the client key stays in its file.
+- **The environment's destinations.** `NETHER_AUDIT_SYSLOG` is trusted by
+  `NETHER_AUDIT_SYSLOG_CA`, a file holding a certificate authority in PEM,
+  or `NETHER_AUDIT_SYSLOG_FINGERPRINT`, or else the system's authorities.
+  `NETHER_AUDIT_WEBHOOK` signs with `NETHER_AUDIT_WEBHOOK_SECRET`, a
+  `whsec_` secret the admin makes, never kept in the database. Each is a
+  row named by its variable, which keeps its cursor across restarts; it
+  starts from the newest event, and goes when its variable does. One set
+  wrong stops the server as it starts.
+- **The worker runs on every node**, every two seconds while the feature
+  is on. It claims a destination due with `FOR UPDATE SKIP LOCKED`, sends
+  it the next 100 events, and moves its cursor in the statement that frees
+  it, until every destination has caught up. A syslog connection stays
+  open between batches and closes after a minute with nothing to send.
+- **A webhook's events are as the console shows them**, with `prevHash`
+  and `hash` beside, so a SIEM can check the chain. Syslog's `MSG` is the
+  same JSON.
+- **The gap is recorded in the purge's transaction.** For each destination
+  whose cursor the purge passed, `audit.export_gap` names it, with
+  `fromSeq`, `throughSeq` and `count`, as a failure, reason `purged before
+  it was sent`, and the cursor moves past it.
+- **Console changes the list lacked**, recorded as permission changes, as
+  they decide who signs in how and where notes may go:
+  `instance.security_changed`, the security settings changed, each from
+  and to; `instance.ai_endpoints_changed`, the approved AI endpoints, from
+  and to; `sso.provider_added`, `sso.provider_changed` and
+  `sso.provider_removed`, a provider's kind, domains and settings, never
+  its secrets, with `secretsChanged` when they change; and
+  `sso.enforcement_changed`, whether single sign-on is required, from and
+  to. Data policies were already recorded.
+- **The apps tell of their exports** at `POST
+  /api/workspaces/:id/exports`, for a member, with `scope`, `format` and
+  `notes`. The server records it only while audit logs are on, and
+  answers 204 either way. The apps tell once, as the file is saved: an
+  export made offline, or one the server does not answer, goes untold.
+- **The console names every action**, its code beside it. The names are
+  the apps' messages, and a test checks each action has one; an action an
+  older app does not know shows by its code alone.
+- **Upkeep keeps its own hourly timer** on each node, an hour after it
+  starts, not ADR 0082's jobs, whose first run comes within a minute. The
+  purge takes a lock, so one node purges and records the gaps; each node
+  writes its own checkpoint.
+- **The routes**, for instance admins while the feature is on: `GET` and
+  `POST /api/audit/destinations`, and `PATCH` and `DELETE
+  /api/audit/destinations/:id`. A pinned destination answers 409 to a
+  change.

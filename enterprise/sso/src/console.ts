@@ -7,6 +7,7 @@
 import type { FastifyInstance, FastifyReply } from "fastify";
 import type { Config } from "@nether/server/src/config.ts";
 import type { Database, Queryable } from "@nether/server/src/db.ts";
+import { type EventValue, accountActor, originOf } from "@nether/server/src/events.ts";
 import { instanceAdmin } from "@nether/server/src/features.ts";
 import { fail } from "@nether/server/src/http.ts";
 import { oidcClient } from "@nether/server/src/oidc.ts";
@@ -171,7 +172,7 @@ const ownSession =
   "Saving this would end your own session, which did not begin through the provider it requires: sign in through it first.";
 
 export function registerConsole(app: FastifyInstance, context: ConsoleContext): void {
-  const { db, config, whenOn, enforcement, disconnect, security } = context;
+  const { db, config, whenOn, enforcement, disconnect, security, events } = context;
   const account = signedIn(db);
   const admins = (what: string) => ({
     preHandler: [whenOn, account, instanceAdmin(what)],
@@ -409,8 +410,21 @@ export function registerConsole(app: FastifyInstance, context: ConsoleContext): 
           }
         }
         await db.transaction(async (tx) => {
+          const before = await readSettings(tx);
           await saveSettings(tx, body);
           await keepsOwnSession(tx, accountOf(request));
+          const after = await readSettings(tx);
+          if (before.everyone === after.everyone && before.admins === after.admins) return;
+          // Recorded, as who must sign in through a provider changes (ADR 0081).
+          await events.emit(
+            tx,
+            {
+              action: "sso.enforcement_changed",
+              actor: accountActor(accountOf(request).id),
+              details: { from: { ...before }, to: { ...after } },
+            },
+            originOf(request),
+          );
         });
         const ended = await enforcement.sweep(disconnect);
         return { ...(await enforcementView()), ended };
@@ -456,6 +470,21 @@ export function registerConsole(app: FastifyInstance, context: ConsoleContext): 
             sealSecrets(seal, body.id, made.secrets ?? {}),
           );
           await keepsOwnSession(tx, accountOf(request));
+          await events.emit(
+            tx,
+            {
+              action: "sso.provider_added",
+              actor: accountActor(accountOf(request).id),
+              target: { type: "sso_provider", id: body.id, name: (body.name ?? body.id).trim() },
+              details: {
+                kind: made.settings.kind,
+                domains,
+                makeAccounts: body.makeAccounts ?? true,
+                required: body.required ?? false,
+              },
+            },
+            originOf(request),
+          );
         });
         await enforcement.sweep(disconnect);
         const kept = await findProvider(db, body.id);
@@ -509,6 +538,30 @@ export function registerConsole(app: FastifyInstance, context: ConsoleContext): 
             changed.secrets === undefined ? undefined : sealSecrets(seal, kept.id, changed.secrets),
           );
           await keepsOwnSession(tx, accountOf(request));
+          // What changed of what the page shows, from and to; never a secret.
+          const name = body.name?.trim() ?? kept.name;
+          const makeAccounts = body.makeAccounts ?? kept.makeAccounts;
+          const required = body.required ?? kept.required;
+          const details: Record<string, EventValue> = { kind: settings.kind };
+          if (name !== kept.name) details.name = { from: kept.name, to: name };
+          if (JSON.stringify(domains) !== JSON.stringify(kept.domains)) {
+            details.domains = { from: [...kept.domains], to: [...domains] };
+          }
+          if (makeAccounts !== kept.makeAccounts) {
+            details.makeAccounts = { from: kept.makeAccounts, to: makeAccounts };
+          }
+          if (required !== kept.required) details.required = { from: kept.required, to: required };
+          if (changed.secrets !== undefined) details.secretsChanged = true;
+          await events.emit(
+            tx,
+            {
+              action: "sso.provider_changed",
+              actor: accountActor(accountOf(request).id),
+              target: { type: "sso_provider", id: kept.id, name },
+              details,
+            },
+            originOf(request),
+          );
         });
         await enforcement.sweep(disconnect);
         const now = await findProvider(db, kept.id);
@@ -551,10 +604,27 @@ export function registerConsole(app: FastifyInstance, context: ConsoleContext): 
           );
         }
       }
-      const { rows } = await db.query("DELETE FROM sso_providers WHERE id = $1 RETURNING id", [
-        request.params.id,
-      ]);
-      if (rows.length === 0) return fail(reply, 404, "There is no such provider.");
+      const removed = await db.transaction(async (tx) => {
+        const { rows } = await tx.query(
+          "DELETE FROM sso_providers WHERE id = $1 RETURNING id, name, settings",
+          [request.params.id],
+        );
+        const row = rows[0];
+        if (row === undefined) return false;
+        const kind = (row.settings as { kind?: unknown } | null)?.kind;
+        await events.emit(
+          tx,
+          {
+            action: "sso.provider_removed",
+            actor: accountActor(accountOf(request).id),
+            target: { type: "sso_provider", id: String(row.id), name: String(row.name) },
+            details: { kind: typeof kind === "string" ? kind : null },
+          },
+          originOf(request),
+        );
+        return true;
+      });
+      if (!removed) return fail(reply, 404, "There is no such provider.");
       enforcement.forget();
       return reply.code(204).send();
     },

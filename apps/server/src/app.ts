@@ -44,6 +44,7 @@ import { registerTokens } from "./tokens.ts";
 import { registerUnits } from "./units.ts";
 import { purgeVersions, registerVersions } from "./versions.ts";
 import { backfillSearch, registerSearch } from "./search.ts";
+import { registerExports } from "./exports.ts";
 import { setSessionCookies, signInRoutes, wantsCookie } from "./cookies.ts";
 import { backupIfDue, backupTarget, noBlobs } from "./backups.ts";
 import type { Resolver } from "./outbound.ts";
@@ -210,6 +211,8 @@ export async function buildApp(config: Config, services: Services): Promise<Fast
   registerVersions(app, services.db);
   registerNotifications(app, services.db, services.mailer);
   registerSearch(app, services.db);
+  // The apps tell of the exports they make, for audit logs (ADR 0081).
+  registerExports(app, services.db, events);
   // This node among the server's nodes (ADR 0082).
   const node = { id: randomUUID(), name: config.nodeName, version };
   registerNodes(app, services.db, node);

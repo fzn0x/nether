@@ -81,5 +81,19 @@ site the server draws for anyone, on a domain of your own if you like, its
 links only between its own pages. The
 [roadmap](../roadmap/) lists what each phase delivers.
 
+The sixth phase, enterprise, mobile and scale, is under way. Its features
+are free and off until an instance admin turns them on in the
+[admin console](../admin/), which lists every workspace and sets how long
+sessions last. AI keeps to the [endpoints](../admin/#ai-endpoints) an
+organization approves. [Single sign-on](../admin/#single-sign-on) goes
+through SAML and OpenID Connect providers, and can be required.
+[Data policies](../admin/#data-policies) set public sharing, export,
+retention and legal hold. [Audit logs](../admin/#audit-logs) record every
+sign-in, permission change, share, export and deletion, chained so a
+change shows, and send them to a SIEM by syslog or a webhook. And
+[high availability](../high-availability/) runs several server nodes,
+upgraded one at a time, on Kubernetes with the
+[Helm chart](../kubernetes/).
+
 The full requirements, the architecture and the decision records live in
 the [repository](https://github.com/fzn0x/nether/tree/main/docs).

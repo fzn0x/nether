@@ -393,6 +393,9 @@ importers:
       '@nether/enterprise-admin':
         specifier: workspace:*
         version: link:../admin
+      '@nether/enterprise-policies':
+        specifier: workspace:*
+        version: link:../policies
       '@nether/enterprise-sso':
         specifier: workspace:*
         version: link:../sso

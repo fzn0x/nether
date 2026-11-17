@@ -2890,6 +2890,40 @@ button {
   margin: 0 0 1rem;
 }
 
+/* Where the audit log is sent (ADR 0081): each destination, how it fares, and the form. */
+.audit-siem {
+  margin: 0.5rem 0 1rem;
+  padding: 0;
+  list-style: none;
+}
+
+.audit-siem li {
+  padding: 0.5rem 0;
+  border-bottom: 1px solid var(--rule);
+}
+
+.audit-siem p {
+  margin: 0.25rem 0;
+  overflow-wrap: anywhere;
+}
+
+.audit-siem-wide {
+  flex-basis: 100%;
+}
+
+.audit-siem-wide textarea,
+.audit-siem-wide input {
+  width: 100%;
+  font-family: ui-monospace, "Cascadia Mono", Menlo, Consolas, monospace;
+}
+
+.audit-siem-secret code {
+  display: block;
+  padding: 0.5rem;
+  overflow-wrap: anywhere;
+  user-select: all;
+}
+
 .shared-password {
   display: grid;
   gap: 0.75rem;
