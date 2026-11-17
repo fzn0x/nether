@@ -11,29 +11,27 @@ import { Enforcement } from "./enforcement.ts";
 import { listProviders } from "./providers.ts";
 import { registerSignIn } from "./signIn.ts";
 
-/** How often the module looks for metadata due to be read again. */
-const checkEvery = 3_600_000;
-/** How old a provider's metadata may be before it is read again from its address. */
+/** How often a provider's metadata is read again from its address. */
 const readEvery = 86_400_000;
 
 export const ssoModule: EnterpriseModule = {
   feature: "sso",
-  plugin: (app, { db, config, isOn, whenOn, events, guards, disconnect, security }) => {
+  plugin: (app, { db, config, isOn, whenOn, events, guards, disconnect, security, every }) => {
     const enforcement = new Enforcement(db, isOn, config.ssoEnforce);
     const removeGuard = guards.add(enforcement);
     const context = { db, config, whenOn, events, guards, enforcement };
     registerSignIn(app, context);
     registerConsole(app, { ...context, disconnect, security });
 
-    // Each day, a SAML provider's metadata is read again from its address,
-    // so a certificate it rolls over is taken; a copy that does not read
-    // leaves the last one that did.
-    const refresh = async () => {
+    // Each day, on one node of the server's (ADR 0082), each SAML
+    // provider's metadata is read again from its address, so a certificate
+    // it rolls over is taken; a copy that does not read leaves the last one
+    // that did.
+    every("sso.metadata", readEvery, async () => {
       if (!(await isOn())) return;
       for (const provider of await listProviders(db)) {
         const { settings } = provider;
         if (settings.kind !== "saml" || settings.metadataUrl === null) continue;
-        if (Date.now() - new Date(settings.readAt).getTime() < readEvery) continue;
         await refreshMetadata(db, config, provider, settings).catch((error: unknown) => {
           app.log.warn(
             { err: error, provider: provider.id },
@@ -41,15 +39,8 @@ export const ssoModule: EnterpriseModule = {
           );
         });
       }
-    };
-    const timer = setInterval(() => {
-      refresh().catch((error: unknown) => {
-        app.log.error({ err: error }, "Could not look for providers' metadata to read again");
-      });
-    }, checkEvery);
-    timer.unref();
+    });
     app.addHook("onClose", (_instance, done) => {
-      clearInterval(timer);
       removeGuard();
       done();
     });
