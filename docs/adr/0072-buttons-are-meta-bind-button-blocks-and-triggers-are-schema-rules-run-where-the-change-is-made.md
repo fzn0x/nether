@@ -212,9 +212,24 @@ Turned off, no trigger runs.
 
 - **What a rule may name.** `when` and every key of `set` name properties
   of the database that are written, not a formula or a rollup, which are
-  worked out. `set` names one property at least. A schema whose rule names
-  another is not read, as one whose view does, and its database says why.
-  A schema without rules writes no `triggers`.
+  worked out. `set` names one property at least. A schema without rules
+  writes no `triggers`.
+- **A stale rule never hides its database.** A rule is an add-on to a
+  database. One that names a property the database no longer has, or one
+  worked out, after a hand edit or another app's, or one that cannot be
+  read, is left out and does not run, and the schema reads as before. The
+  rule is kept in the file as it was written, after the rules that run, so
+  nothing is lost. The Triggers panel lists it as not running, says why, as
+  `set.Completed names no property of the database`, and offers Remove.
+  This is for rules only: a view that names a missing property still makes
+  the schema unreadable, as before.
+- **Rules follow a property renamed or deleted.** Renaming a property
+  renames it in every rule that names it, kept ones too. Deleting one drops
+  the `set` entries that name it, a rule whose `when` names it, and a rule
+  left with nothing to set. The app has no command yet that renames or
+  deletes a database's property, only a hand edit does; the schema's own
+  helpers, `renameInTriggers` and `deleteFromTriggers`, do this for the
+  item that adds them, and a hand edit leaves a stale rule, as above.
 - **What "becomes" means.** A property holds a rule's value when it is the
   same, or a list that has it, as a multi-select with `Done` among its
   tags; `is: null` holds for no value, an empty one or an empty list. A
