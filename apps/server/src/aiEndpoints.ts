@@ -5,7 +5,7 @@
 // console's, kept in instance_settings and read again at most every five
 // seconds, unless NETHER_AI_ENDPOINTS pins it.
 import { endpointOf } from "@nether/ai";
-import type { Database } from "./db.ts";
+import type { Database, Queryable } from "./db.ts";
 import { SettingRefused } from "./settings.ts";
 
 /** The most endpoints the list holds. */
@@ -110,17 +110,35 @@ export class AiEndpoints {
     };
   }
 
-  /** Keeps the console's list, refused where the environment pins it; this server sees it at once. */
-  async set(entries: readonly string[]): Promise<readonly string[]> {
+  /**
+   * Keeps the console's list, refused where the environment pins it; this
+   * server sees it at once. `tell` runs in its transaction with the list
+   * before and after, as an event of the change is told (ADR 0081).
+   */
+  async set(
+    entries: readonly string[],
+    tell?: (tx: Queryable, before: readonly string[], after: readonly string[]) => Promise<void>,
+  ): Promise<readonly string[]> {
     if (this.#pin !== undefined) {
       throw new SettingRefused(409, `${endpointsVariable} sets it: change it there.`);
     }
     const list = readEndpoints(entries);
-    await this.#db.query(
-      `INSERT INTO instance_settings (key, value) VALUES ($1, $2::jsonb)
-        ON CONFLICT (key) DO UPDATE SET value = excluded.value, updated_at = now()`,
-      [settingKey, JSON.stringify(list)],
-    );
+    await this.#db.transaction(async (tx) => {
+      const { rows } = await tx.query(
+        "SELECT value FROM instance_settings WHERE key = $1 FOR UPDATE",
+        [settingKey],
+      );
+      const value: unknown = rows[0]?.value;
+      const before = Array.isArray(value)
+        ? value.filter((entry): entry is string => typeof entry === "string")
+        : [];
+      await tx.query(
+        `INSERT INTO instance_settings (key, value) VALUES ($1, $2::jsonb)
+          ON CONFLICT (key) DO UPDATE SET value = excluded.value, updated_at = now()`,
+        [settingKey, JSON.stringify(list)],
+      );
+      await tell?.(tx, before, list);
+    });
     this.#kept = undefined;
     return list;
   }

@@ -57,6 +57,13 @@ export const serverActions = [
   "workspace.changed",
   "token.created",
   "instance.feature_changed",
+  // The console's settings of who signs in how, and where AI may go (ADR 0081, part 2).
+  "instance.security_changed",
+  "instance.ai_endpoints_changed",
+  "sso.provider_added",
+  "sso.provider_changed",
+  "sso.provider_removed",
+  "sso.enforcement_changed",
   // Data policies (ADR 0088): a setting changed, and legal hold set or taken off.
   "policy.changed",
   "policy.hold_set",

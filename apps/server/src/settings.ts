@@ -5,7 +5,7 @@
 // starts, so the queries that check sessions read one place; the console
 // cannot change it. The server reads the rest again at most every five
 // seconds, so a change reaches every node within that.
-import type { Database } from "./db.ts";
+import type { Database, Queryable } from "./db.ts";
 
 interface NumberSetting {
   readonly kind: "number";
@@ -201,9 +201,17 @@ export class SecuritySettings {
 
   /**
    * Keeps the console's values, all or none: a setting unknown, pinned or
-   * out of range refuses the change. This server sees it at once.
+   * out of range refuses the change. This server sees it at once. `tell`
+   * runs in its transaction with each changed setting's value before and
+   * after, as an event of the change is told (ADR 0081).
    */
-  async set(changes: Readonly<Record<string, unknown>>): Promise<void> {
+  async set(
+    changes: Readonly<Record<string, unknown>>,
+    tell?: (
+      tx: Queryable,
+      changed: Readonly<Record<string, { readonly from: unknown; readonly to: unknown }>>,
+    ) => Promise<void>,
+  ): Promise<void> {
     const names = Object.keys(changes);
     for (const name of names) {
       if (!isSecuritySetting(name)) throw new SettingRefused(400, `There is no setting ${name}.`);
@@ -220,14 +228,19 @@ export class SecuritySettings {
         );
       }
     }
+    const before = await this.#read();
     await this.#db.transaction(async (tx) => {
+      const changed: Record<string, { from: unknown; to: unknown }> = {};
       for (const name of names) {
         await tx.query(
           `INSERT INTO instance_settings (key, value) VALUES ($1, $2::jsonb)
             ON CONFLICT (key) DO UPDATE SET value = excluded.value, updated_at = now()`,
           [settingKey(name as SecuritySetting), JSON.stringify(changes[name])],
         );
+        const was = before[name as SecuritySetting];
+        if (was !== changes[name]) changed[name] = { from: was, to: changes[name] };
       }
+      if (Object.keys(changed).length > 0) await tell?.(tx, changed);
     });
     this.#kept = undefined;
   }
