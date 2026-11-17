@@ -3012,10 +3012,15 @@ button {
   font: inherit;
 }
 
+/* The accent darkened toward the text: the accent alone is too faint on the notice's tint. */
 .sidebar-notice .quiet {
   margin-inline-start: 0.25rem;
-  color: var(--accent);
+  color: color-mix(in srgb, var(--accent) 70%, var(--text));
   font-weight: 600;
+}
+
+.sidebar-notice .quiet:hover {
+  color: var(--text);
 }
 
 /* The notice's ×, which closes it. */

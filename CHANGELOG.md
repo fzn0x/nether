@@ -370,6 +370,11 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   workspace on legal hold is purged, the audit log purges nothing while
   any workspace is on hold, `/api/me` gives the apps each workspace's
   trash days and hold, and each change of a policy is in the audit log.
+  The apps keep their trash to it: a vault linked to a workspace keeps its
+  trash for the policy's days, and on legal hold deletes nothing for good
+  and offers no Delete for good or Empty trash, saying why. The trash and
+  the vault's own history are purged half a minute after a vault opens,
+  not as it opens, once the app has asked the server.
 
 ### Changed
 

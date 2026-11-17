@@ -423,6 +423,10 @@ export const messages = {
   eraseNamed: "Delete {name} for good",
   confirmErase: "Delete {name} for good?",
   emptyTrash: "Empty trash",
+  trashHeld:
+    "{server} holds this workspace: nothing in its trash is deleted for good while the hold is on.",
+  trashKeptOnHold: "kept while the workspace is on hold",
+  trashPolicyDays: "{server} keeps this workspace's trash {count} days.",
   confirmEmpty: "Delete all {count} for good?",
   trashEmpty: "The trash is empty.",
   trashDeleted: "Deleted {when}, {left}",

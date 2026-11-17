@@ -136,6 +136,16 @@ describe("Vault trash", () => {
     await expect(vault.setTrashDays(0)).rejects.toThrow(/not a number of days/);
     await expect(vault.setTrashDays(1.5)).rejects.toThrow(/not a number of days/);
   });
+
+  it("keeps the trash for a policy's days in place of the vault's own", async () => {
+    const { clock, vault, id } = await setup({ "a.md": "A" });
+    await vault.remove(id("a.md"));
+    clock.now += 10 * day;
+    // The vault keeps 30 days; a workspace's data policy, 7.
+    expect(await vault.purgeTrash(90)).toBe(0);
+    expect(await vault.purgeTrash(7)).toBe(1);
+    expect(await vault.trashDays()).toBe(30);
+  });
 });
 
 describe("readTrashRecord", () => {
