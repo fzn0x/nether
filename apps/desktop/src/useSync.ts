@@ -31,6 +31,12 @@ export interface VaultSyncState {
   readonly levelOf: ((id: string) => Level | undefined) | undefined;
 }
 
+/**
+ * How long a phone's engine may send what is pending as the app leaves: iOS
+ * gives the app about 30 seconds in all, and saving the notes took some.
+ */
+const leavingTime = 20_000;
+
 export function useSync(vault: Vault | undefined): VaultSyncState {
   const [link, setLink] = useState<VaultLink | undefined>();
   const [status, setStatus] = useState<SyncStatus | undefined>();
@@ -42,6 +48,8 @@ export function useSync(vault: Vault | undefined): VaultSyncState {
   // Bumped to start again, as after signing in.
   const [round, setRound] = useState(0);
   const running = useRef<VaultSync | undefined>(undefined);
+  // The engine stopping, which the next start waits for, so it reads what that one kept.
+  const stopping = useRef<Promise<void> | undefined>(undefined);
 
   useEffect(() => {
     setLink(undefined);
@@ -110,6 +118,7 @@ export function useSync(vault: Vault | undefined): VaultSyncState {
           () => undefined,
         );
       }
+      await stopping.current;
       if (stopped()) return;
       const started = await VaultSync.start({
         server: link.server,
@@ -145,9 +154,34 @@ export function useSync(vault: Vault | undefined): VaultSyncState {
       setLive(undefined);
       setLevelOf(undefined);
       if (running.current === engine) running.current = undefined;
-      void engine?.stop();
+      if (engine !== undefined) stopping.current = engine.stop().catch(() => undefined);
     };
   }, [vault, link, round]);
+
+  // On a phone (ADR 0087): coming back on screen, or online, starts sync
+  // again at once, rather than after the socket's wait, and it catches up
+  // as opening the vault does. Leaving, the open notes are saved, then the
+  // engine has what is left of the system's time to send what is pending.
+  useEffect(() => {
+    if (vault === undefined || link === undefined) return;
+    const stopResume = backend.onResume?.(() => {
+      setRound((count) => count + 1);
+    });
+    const stopLeaving = backend.onBackground?.(async () => {
+      const { noteDocuments } = await import("./noteDocuments.ts");
+      await noteDocuments(vault).flush();
+      const engine = running.current;
+      if (engine === undefined) return;
+      await Promise.race([
+        engine.settled(),
+        new Promise((resolve) => setTimeout(resolve, leavingTime)),
+      ]);
+    });
+    return () => {
+      stopResume?.();
+      stopLeaving?.();
+    };
+  }, [vault, link]);
 
   // Signing in to the link's server, in the servers dialog, starts sync again.
   useEffect(() => {
