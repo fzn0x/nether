@@ -13,6 +13,8 @@ Microsoft Entra ID
 - `src/saml.ts`: requests and answers, checked by `@node-saml/node-saml`.
 - `src/accounts.ts`: the account a sign-in finds or makes.
 - `src/signIn.ts`: the apps' flows, handed back as ADR 0034's are.
+- `src/enforcement.ts`: what single sign-on requires, the guard the
+  server asks at each sign-in and each request.
 - `src/console.ts`: the console's Single sign-on page's routes.
 
 Roadmap: Phase 5, enterprise, mobile and scale.
