@@ -1,6 +1,7 @@
 // The admin console's Workspaces page (ADR 0083): every workspace on the
 // server, a page at a time, found by its name or a member's; and one opened
-// to its members, whose roles an instance admin sets, keeping an owner.
+// to its members, whose roles an instance admin sets, keeping an owner. An
+// account a directory deactivated is marked (ADR 0085).
 import { useCallback, useEffect, useState } from "react";
 import { t } from "./messages.ts";
 import { roleName } from "./server.ts";
@@ -10,6 +11,7 @@ interface Owner {
   readonly id: string;
   readonly name: string;
   readonly email: string;
+  readonly deactivated: boolean;
 }
 
 interface WorkspaceSummary {
@@ -38,6 +40,7 @@ interface Member {
   readonly email: string;
   readonly role: string;
   readonly joinedAt: string;
+  readonly deactivated: boolean;
 }
 
 interface Page {
@@ -129,7 +132,13 @@ function List(props: {
               <td>
                 {workspace.owners.length === 0
                   ? t("adminNoOwner")
-                  : workspace.owners.map((owner) => owner.name).join(", ")}
+                  : workspace.owners
+                      .map((owner) =>
+                        owner.deactivated
+                          ? t("accountDeactivatedName", { name: owner.name })
+                          : owner.name,
+                      )
+                      .join(", ")}
               </td>
               <td>{numbers.format(total(workspace))}</td>
               <td>
@@ -188,7 +197,12 @@ function Members(props: {
           <tbody>
             {opened.members.map((member) => (
               <tr key={member.id}>
-                <th scope="row">{member.name}</th>
+                <th scope="row">
+                  {member.name}
+                  {member.deactivated ? (
+                    <span className="hint admin-tag">{t("accountDeactivated")}</span>
+                  ) : null}
+                </th>
                 <td>{member.email}</td>
                 <td>
                   <select

@@ -1000,7 +1000,7 @@ export const messages = {
   adminMembersOf: "Members of {workspace}",
   adminSizeParts: "Documents {documents}, their history {history}, attachments {attachments}.",
   adminRolesIntro:
-    "Set a member's role here when a workspace needs a new owner. It keeps at least one owner.",
+    "Set a member's role here when a workspace needs a new owner. It keeps at least one active owner.",
   adminColumnName: "Name",
   adminColumnEmail: "Email",
   adminColumnRole: "Role",
@@ -1120,6 +1120,10 @@ export const messages = {
   adminAuditChecking: "Checking the log.",
   adminAuditHolds: "Checked {count} events: every one holds.",
   adminAuditBroken: "Event {seq} does not hold: {problem}.",
+  // Accounts a directory deactivates, and the directory as who acted (ADR 0085).
+  adminAuditDirectory: "The directory {name}",
+  accountDeactivated: "Deactivated",
+  accountDeactivatedName: "{name} (deactivated)",
   signIn: "Sign in",
   emailMeCode: "Email me a code",
   signInWith: "Sign in with {name}",

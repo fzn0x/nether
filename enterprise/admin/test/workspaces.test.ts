@@ -194,19 +194,29 @@ describe("the console's workspaces", () => {
     expect((await list(test, "?after=not-a-page")).statusCode).toBe(400);
   });
 
-  it("open to their members", async () => {
+  it("open to their members, marking those deactivated", async () => {
     const test = await start();
     const bea = await join(test, "member", "Bea");
+    // As a directory deactivates an account (ADR 0085), made an owner first.
+    await test.db.query("UPDATE memberships SET role = 'owner' WHERE user_id = $1", [bea.id]);
+    await test.db.query("UPDATE users SET deactivated_at = now() WHERE id = $1", [bea.id]);
     const response = await open(test, test.workspaceId);
     expect(response.statusCode).toBe(200);
     const body = response.json<{
       workspace: WorkspaceSummary;
-      members: { id: string; name: string; role: string; joinedAt: string }[];
+      members: { id: string; name: string; role: string; deactivated: boolean }[];
     }>();
-    expect(body.workspace).toMatchObject({ id: test.workspaceId, name: "Team" });
-    expect(body.members.map((member) => [member.name, member.role])).toEqual([
-      ["Ada", "owner"],
-      ["Bea", "member"],
+    expect(body.workspace).toMatchObject({
+      id: test.workspaceId,
+      name: "Team",
+      owners: [
+        { name: "Ada", deactivated: false },
+        { name: "Bea", deactivated: true },
+      ],
+    });
+    expect(body.members.map((member) => [member.name, member.role, member.deactivated])).toEqual([
+      ["Ada", "owner", false],
+      ["Bea", "owner", true],
     ]);
     expect(body.members[1]?.id).toBe(bea.id);
     expect((await open(test, randomUUID())).statusCode).toBe(404);
@@ -243,7 +253,7 @@ describe("the console's workspaces", () => {
     expect((await setRole(test, test.workspaceId, test.userId, "member")).statusCode).toBe(200);
     const last = await setRole(test, test.workspaceId, bea.id, "member");
     expect(last.statusCode).toBe(409);
-    expect(last.json<{ message: string }>().message).toMatch(/at least one owner/);
+    expect(last.json<{ message: string }>().message).toMatch(/at least one active owner/);
 
     expect((await setRole(test, test.workspaceId, randomUUID(), "owner")).statusCode).toBe(404);
     expect((await setRole(test, test.workspaceId, bea.id, "ruler")).statusCode).toBe(400);

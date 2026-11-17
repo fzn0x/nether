@@ -34,6 +34,7 @@ import {
 } from "@nether/server/src/oidc.ts";
 import { checkedFetch } from "@nether/server/src/outbound.ts";
 import { type Seal, SealedElsewhere, sealWith } from "@nether/server/src/secrets.ts";
+import { deactivatedMessage, deactivatedRefusal } from "@nether/server/src/accounts.ts";
 import {
   type NewSession,
   newToken,
@@ -534,7 +535,14 @@ export function registerSignIn(app: FastifyInstance, context: SignInContext): vo
       });
       if ("refused" in outcome) {
         await refusedSignIn(db, events, request, outcome.refused);
-        return fail(reply, 403, "This account signs in through another provider now.");
+        // The provider has said who it is, so it is told why (ADR 0085).
+        return fail(
+          reply,
+          403,
+          outcome.refused.refusal.reason === deactivatedRefusal.reason
+            ? deactivatedMessage
+            : "This account signs in through another provider now.",
+        );
       }
       if ("failed" in outcome) {
         // Told of as core's own failed redemptions are (ADR 0081).

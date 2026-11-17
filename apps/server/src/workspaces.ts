@@ -2,7 +2,8 @@
 // one, encrypted from the client or not, owned by its maker. An encrypted
 // workspace's key is sealed by clients to each member's public key; the
 // server keeps the sealed copies, which it cannot open, and lists the
-// members still waiting for theirs.
+// members still waiting for theirs: a deactivated account waits for none,
+// so no member seals one to it (ADR 0085).
 import { randomUUID } from "node:crypto";
 import type { FastifyInstance } from "fastify";
 import { type Database, type Queryable, readBytes, readNumber, readText } from "./db.ts";
@@ -272,7 +273,8 @@ export function registerWorkspaces(app: FastifyInstance, db: Database, events: S
     },
   );
 
-  // The members waiting for the key: they have a public key, and no copy of the latest version.
+  // The members waiting for the key: they have a public key, no copy of the
+  // latest version, and an account that is not deactivated.
   app.get<{ Params: { workspace: string } }>(
     "/api/workspaces/:workspace/keyless",
     { schema: { params: workspaceParams }, preHandler: account },
@@ -289,6 +291,7 @@ export function registerWorkspaces(app: FastifyInstance, db: Database, events: S
            JOIN users u ON u.id = m.user_id
            JOIN user_keys k ON k.user_id = m.user_id
           WHERE m.workspace_id = $1
+            AND u.deactivated_at IS NULL
             AND NOT EXISTS (
               SELECT 1 FROM workspace_keys w
                WHERE w.workspace_id = $1 AND w.user_id = m.user_id

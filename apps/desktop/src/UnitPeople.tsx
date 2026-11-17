@@ -172,7 +172,9 @@ export function UnitPeople(props: {
             >
               {others.map((member) => (
                 <option key={member.id} value={member.id}>
-                  {member.name}
+                  {member.deactivated
+                    ? t("accountDeactivatedName", { name: member.name })
+                    : member.name}
                 </option>
               ))}
             </select>

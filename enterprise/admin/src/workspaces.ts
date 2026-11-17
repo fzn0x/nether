@@ -2,8 +2,15 @@
 // with its owners, its members by role, its notes and its size, counted
 // when the page asks; a workspace's members; and an instance admin setting
 // a member's role, by the server's own rules. It reads no note's title or
-// text.
-import { type Database, type Row, readCount, readText, readTime } from "@nether/server/src/db.ts";
+// text. An account a directory deactivated shows as such (ADR 0085).
+import {
+  type Database,
+  type Row,
+  readBoolean,
+  readCount,
+  readText,
+  readTime,
+} from "@nether/server/src/db.ts";
 
 /** How many workspaces a page of the list holds. */
 export const pageSize = 50;
@@ -13,6 +20,8 @@ export interface Owner {
   readonly id: string;
   readonly name: string;
   readonly email: string;
+  /** Whether the account is deactivated, so it signs in no way. */
+  readonly deactivated: boolean;
 }
 
 /** A workspace as the console lists it. */
@@ -49,6 +58,8 @@ export interface WorkspaceMember {
   readonly email: string;
   readonly role: string;
   readonly joinedAt: string;
+  /** Whether the account is deactivated, so it signs in no way. */
+  readonly deactivated: boolean;
 }
 
 /** A page of the list, and the cursor for the next, if there is one. */
@@ -99,7 +110,8 @@ const summaries = String.raw`
          greatest(d.changed_at, e.changed_at) AS changed_at
     FROM workspaces w
     CROSS JOIN LATERAL (
-      SELECT coalesce(json_agg(json_build_object('id', u.id, 'name', u.name, 'email', u.email)
+      SELECT coalesce(json_agg(json_build_object('id', u.id, 'name', u.name, 'email', u.email,
+                                                 'deactivated', u.deactivated_at IS NOT NULL)
                                ORDER BY lower(u.name), lower(u.email)), '[]'::json) AS owners
         FROM memberships m JOIN users u ON u.id = m.user_id
        WHERE m.workspace_id = w.id AND m.role = 'owner'
@@ -140,6 +152,7 @@ function owners(value: unknown): Owner[] {
       id: readText(row, "id"),
       name: readText(row, "name"),
       email: readText(row, "email"),
+      deactivated: readBoolean(row, "deactivated"),
     };
   });
 }
@@ -211,7 +224,8 @@ export async function workspaceWithMembers(
   const row = rows[0];
   if (row === undefined) return undefined;
   const members = await db.query(
-    `SELECT u.id, u.name, u.email, m.role, m.created_at
+    `SELECT u.id, u.name, u.email, m.role, m.created_at,
+            u.deactivated_at IS NOT NULL AS deactivated
        FROM memberships m JOIN users u ON u.id = m.user_id
       WHERE m.workspace_id = $1
       ORDER BY lower(u.name), lower(u.email)`,
@@ -225,6 +239,7 @@ export async function workspaceWithMembers(
       email: readText(member, "email"),
       role: readText(member, "role"),
       joinedAt: readTime(member, "created_at").toISOString(),
+      deactivated: readBoolean(member, "deactivated"),
     })),
   };
 }

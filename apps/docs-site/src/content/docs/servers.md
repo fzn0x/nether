@@ -114,7 +114,7 @@ stays on the server.
 workspace the vault syncs with, and each one's role:
 
 - **Owners** do everything, including making other owners and admins. A
-  workspace always keeps one.
+  workspace always keeps one whose account is active.
 - **Admins** invite people and change or remove members and guests.
 - **Members** read and write every note.
 - **Guests** only read.
@@ -132,6 +132,10 @@ this vault** with the workspace to fetch its notes.
 
 **Leave the workspace** takes you out of it. The vault keeps its notes and
 stops syncing.
+
+Someone your organization's directory has deactivated shows as
+**Deactivated**. They sign in no way until it turns them back on, and keep
+their place and role meanwhile, so they come back as they were.
 
 ## Editing together
 
