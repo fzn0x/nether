@@ -234,8 +234,9 @@ organization's devices close that gap.
 ## Data policies
 
 With **Data policies** on, the console also shows a **Data policies**
-section: how far your workspaces are shared in public, and whether their
-text leaves the server by export. Set a policy for **Every workspace**,
+section: how far your workspaces are shared in public, whether their
+text leaves the server by export, how long their history is kept, and
+legal hold. Set a policy for **Every workspace**,
 then set any workspace apart with its own: pick it under **Set a
 workspace apart** and choose **Set apart**. It starts from every
 workspace's policy. **Use every workspace's** puts it back. Each form saves
@@ -246,6 +247,9 @@ on its own.
 | Share links | **Open at any level**, **View only**, or **Off** |
 | Serve published sites | Off: no site of the workspace is served or published |
 | Allow export | Off: the public API gives none of the workspace's text |
+| Keep history, in days | How long the server keeps its notes' earlier states, 1 to 3650; empty for `NETHER_HISTORY_DAYS` |
+| Keep the apps' trash, in days | How long its members' apps keep its vaults' trash, 1 to 3650; empty for each vault's own |
+| Legal hold | Nothing of the workspace is deleted for good while it is on |
 
 A workspace's owners keep their own switches, as publishing off; a policy
 only narrows them, and they cannot change it.
@@ -263,6 +267,14 @@ only narrows them, and they cannot change it.
   database's rows, and a search in the workspace, with 403. A search of
   every workspace leaves it out. Lists of notes' names and paths, and
   writes, go on.
+- **History.** The server's hourly purge keeps each workspace's earlier
+  states for its own days, longer or shorter than `NETHER_HISTORY_DAYS`.
+- **Legal hold.** The server keeps every earlier state of the workspace's
+  notes, whatever its days, and the audit log purges nothing while any
+  workspace is on hold, as its purge cuts the oldest events of all.
+  Putting a workspace on hold, and taking it off, is in the audit log, as
+  every change of a policy is. People keep writing, moving and deleting
+  notes: only deleting for good waits.
 
 A change holds at once on the server you saved it on, and within five
 seconds on the others. Turning **Data policies** off narrows nothing, and
@@ -276,8 +288,9 @@ server cannot be reached. The **Share** dialog offers only view links
 while links may only view, and says why it offers no link or site when
 they are off.
 
-How long history and the trash are kept, and legal hold, come in a later
-version. A desktop vault's files are on its device, the person's own: no
+The apps' trash days, and legal hold in the apps' trash, come in the
+next version: until then the apps keep each vault's own trash days. A
+desktop vault's files are on its device, the person's own: no
 policy stops another program from reading them. Device management on your
 organization's computers is the tool for that.
 
@@ -292,7 +305,7 @@ and names, never what a note says, a search, a password or a token.
 | Kind | What it records |
 | --- | --- |
 | Sign-ins | Signing in, by password, an emailed code, OpenID Connect, single sign-on, an invitation or setup, and each failure with why; signing out; sessions ended; a password changed; a share link opened, or refused |
-| Permission changes | Members joined, removed or leaving, and their roles; a space's or a page's access given or taken; teamspaces, pages shared on their own, private spaces; a note moved where others may open it; an encrypted workspace's key given to a member; workspaces made or changed; API tokens made; enterprise features turned on or off |
+| Permission changes | Members joined, removed or leaving, and their roles; a space's or a page's access given or taken; teamspaces, pages shared on their own, private spaces; a note moved where others may open it; an encrypted workspace's key given to a member; workspaces made or changed; API tokens made; enterprise features turned on or off; data policies changed, and legal hold set or taken off |
 | Shares | Share links made and revoked; sites published, changed and taken down, and their domains; publishing allowed or not; invitations made, revoked and accepted; webhooks |
 | Exports | Each request to the [REST API](../api/) that gives notes' text, rows or search results, naming up to 50 notes and counting the rest; the server's backups |
 | Deletions | Notes deleted, in the apps or through the API; API tokens revoked |
