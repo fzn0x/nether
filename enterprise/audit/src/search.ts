@@ -61,6 +61,9 @@ export const actionGroups = {
     "group.member_removed",
     "group.workspace_set",
     "group.workspace_removed",
+    "role.created",
+    "role.changed",
+    "role.deleted",
   ],
   shares: [
     "share_link.created",
