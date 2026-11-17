@@ -326,3 +326,114 @@ test("the drawer opens from the right, right to left", async ({ page }) => {
   const size = page.viewportSize() ?? { width: 0, height: 0 };
   expect(box !== null && Math.round(box.x + box.width) === size.width && box.x > 0).toBe(true);
 });
+
+/** A share as the end-to-end tests hand it to the preview, as another app would to a phone. */
+interface PreviewShare {
+  readonly text?: string;
+  readonly title?: string;
+  readonly url?: string;
+  readonly files?: readonly {
+    readonly name: string;
+    readonly type?: string;
+    readonly text: string;
+  }[];
+}
+
+/** The preview's stand-in for a phone's shortcuts and share sheet (ADR 0087). */
+interface CaptureHooks {
+  shortcut(id: string): void;
+  share(given: PreviewShare): void;
+}
+
+/** Chooses one of the app icon's shortcuts, once the page listens for them. */
+async function chooseShortcut(page: Page, id: string) {
+  await page.waitForFunction(() => "netherCaptures" in window);
+  await page.evaluate((chosen) => {
+    (window as unknown as { netherCaptures: CaptureHooks }).netherCaptures.shortcut(chosen);
+  }, id);
+}
+
+/** Shares to the app, as another app's share sheet would, once the page listens. */
+async function shareToApp(page: Page, given: PreviewShare) {
+  await page.waitForFunction(() => "netherCaptures" in window);
+  await page.evaluate((shared) => {
+    (window as unknown as { netherCaptures: CaptureHooks }).netherCaptures.share(shared);
+  }, given);
+}
+
+/** A file of the preview's vault, as its text, or undefined when it is not there. */
+async function vaultText(page: Page, path: string): Promise<string | undefined> {
+  return page.evaluate(async (file) => {
+    const preview = (
+      window as unknown as {
+        netherPreview?: {
+          files: { read(path: string): Promise<{ text: string; missing?: boolean }> };
+        };
+      }
+    ).netherPreview;
+    const read = await preview?.files.read(file);
+    return read === undefined || read.missing === true ? undefined : read.text;
+  }, path);
+}
+
+test("the Capture shortcut opens the capture sheet before any vault, and files a note in Inbox", async ({
+  page,
+}) => {
+  const errors = errorsOf(page);
+  await page.goto("/");
+  await chooseShortcut(page, "capture");
+  const sheet = page.getByRole("dialog", { name: "Capture" });
+  const text = sheet.getByRole("textbox", { name: "Note" });
+  await expect(text).toBeFocused();
+  expect(await smallControls(page)).toEqual([]);
+  expect(await violations(page)).toEqual([]);
+  // Nothing to save yet.
+  await sheet.getByRole("button", { name: "Save" }).tap();
+  await expect(sheet.getByRole("alert")).toHaveText("Type something to capture.");
+  await text.fill("Buy milk\nand eggs");
+  await sheet.getByRole("button", { name: "Save" }).tap();
+  await expect(sheet).toBeHidden();
+  await expect(page.getByRole("status").filter({ hasText: "Saved in Inbox" })).toBeVisible();
+  // With no vault open, the vault it went to opens, the note in it.
+  await expect(page.getByRole("button", { name: "Notes and menus", exact: true })).toBeVisible();
+  await expect.poll(() => vaultText(page, "Inbox/Buy milk.md")).toContain("Buy milk\nand eggs\n");
+  expect(pageErrors(errors)).toEqual([]);
+});
+
+test("a share opens the sheet with what was shared, and its note keeps the link and files", async ({
+  page,
+}) => {
+  await openVault(page);
+  await shareToApp(page, {
+    text: "https://example.org/post",
+    title: "A post",
+    files: [{ name: "notes.txt", type: "text/plain", text: "Kept beside it" }],
+  });
+  const sheet = page.getByRole("dialog", { name: "Save to Nether" });
+  await expect(sheet.getByText("Title: A post")).toBeVisible();
+  await expect(sheet.getByText("Link: https://example.org/post")).toBeVisible();
+  await expect(sheet.getByRole("list", { name: "Files: 1" })).toHaveText("notes.txt");
+  expect(await smallControls(page)).toEqual([]);
+  expect(await violations(page)).toEqual([]);
+  await sheet.getByRole("textbox", { name: "Note" }).fill("Read on the train");
+  await sheet.getByRole("button", { name: "Save" }).tap();
+  await expect(sheet).toBeHidden();
+  const note = await vaultText(page, "Inbox/A post.md");
+  expect(note).toMatch(/^---\nsource: https:\/\/example\.org\/post\ncreated: \S+\n---\n/);
+  expect(note).toContain(
+    "Read on the train\n\n<https://example.org/post>\n\n![[Inbox/notes.txt]]\n",
+  );
+  expect(await vaultText(page, "Inbox/notes.txt")).not.toBeUndefined();
+  // Cancel drops another share, which leaves nothing behind.
+  await shareToApp(page, { text: "Dropped" });
+  await expect(sheet).toBeVisible();
+  await sheet.getByRole("button", { name: "Cancel" }).tap();
+  await expect(sheet).toBeHidden();
+  expect(await vaultText(page, "Inbox/Dropped.md")).toBeUndefined();
+});
+
+test("the New note shortcut opens the vault opened last at its command", async ({ page }) => {
+  await openVault(page);
+  await chooseShortcut(page, "newNote");
+  await expect(page.getByRole("dialog", { name: "New note" })).toBeVisible();
+});

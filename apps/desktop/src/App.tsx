@@ -3,6 +3,7 @@ import { Suspense, type SyntheticEvent, lazy, useCallback, useEffect, useState }
 import { Mark } from "./Mark.tsx";
 import { VaultView } from "./VaultView.tsx";
 import { backend } from "./backend.ts";
+import type { VaultShortcut } from "./capture.ts";
 import { build } from "./features.ts";
 import { t } from "./messages.ts";
 import { type AppInfo, Desktop, type ServerAccount, type VaultInfo } from "./mygo.ts";
@@ -159,6 +160,11 @@ function Welcome(props: { readonly onOpen: (vault: VaultInfo) => void }) {
 // Only the mobile apps show it, under their vaults (ADR 0087).
 const PhoneWorkspaces = lazy(() =>
   import("./PhoneWorkspaces.tsx").then(({ PhoneWorkspaces: list }) => ({ default: list })),
+);
+
+// Only the mobile apps take captures, from their shortcuts and the share sheet (ADR 0087).
+const CaptureShortcuts = lazy(() =>
+  import("./Captures.tsx").then(({ CaptureShortcuts: captures }) => ({ default: captures })),
 );
 
 // Only the web app shows it before a vault opens.
@@ -379,6 +385,11 @@ export function App() {
   const [vault, setVault] = useState<VaultInfo | null>(null);
   // The note the command line named, for the vault it named.
   const [start, setStart] = useState<{ readonly vault: string; readonly note: string }>();
+  // A shortcut of the phone's app icon, for the vault to run once it is open.
+  const [shortcut, setShortcut] = useState<{ readonly id: VaultShortcut; readonly seq: number }>();
+  const runShortcut = useCallback((id: VaultShortcut) => {
+    setShortcut((last) => ({ id, seq: (last?.seq ?? 0) + 1 }));
+  }, []);
 
   useEffect(() => {
     void backend.startup().then(
@@ -391,21 +402,38 @@ export function App() {
     );
   }, []);
 
-  return vault === null ? (
-    backend.kind === "web" ? (
-      <WebWelcome onOpen={setVault} />
+  const shown =
+    vault === null ? (
+      backend.kind === "web" ? (
+        <WebWelcome onOpen={setVault} />
+      ) : (
+        <Welcome onOpen={setVault} />
+      )
     ) : (
-      <Welcome onOpen={setVault} />
-    )
+      <VaultView
+        key={vault.id}
+        info={vault}
+        {...(start?.vault === vault.id ? { note: start.note } : {})}
+        {...(shortcut === undefined ? {} : { shortcut })}
+        onClose={() => {
+          setVault(null);
+          setStart(undefined);
+        }}
+      />
+    );
+  return backend.captures === undefined ? (
+    shown
   ) : (
-    <VaultView
-      key={vault.id}
-      info={vault}
-      {...(start?.vault === vault.id ? { note: start.note } : {})}
-      onClose={() => {
-        setVault(null);
-        setStart(undefined);
-      }}
-    />
+    <>
+      {shown}
+      <Suspense fallback={null}>
+        <CaptureShortcuts
+          captures={backend.captures}
+          vault={vault}
+          onOpen={setVault}
+          onCommand={runShortcut}
+        />
+      </Suspense>
+    </>
   );
 }

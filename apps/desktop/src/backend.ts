@@ -36,6 +36,8 @@ import {
   Vaults,
 } from "./mygo.ts";
 import type { ImportSource } from "@nether/markdown";
+import type { Capture, CaptureShortcut, CaptureTarget, SharedFile } from "./capture.ts";
+import { filesTarget } from "./captureFiles.ts";
 import { t } from "./messages.ts";
 import { sampleVault } from "./sample.ts";
 import type { LoopbackWait } from "./server.ts";
@@ -70,6 +72,47 @@ export interface Exporter {
   cancel(token: string): Promise<void>;
   /** Shows a saved export in the system's file manager, where there is one. */
   readonly reveal?: (path: string) => Promise<void>;
+  /**
+   * Whether an export goes to the system's share sheet as it is done, in
+   * the mobile apps, where there is no folder to choose (ADR 0087).
+   */
+  readonly shares?: boolean;
+}
+
+/** A shortcut of the app's icon, with its labels in the page's language. */
+export interface CaptureShortcutLabel {
+  readonly id: CaptureShortcut;
+  /** What the shortcut shows. */
+  readonly title: string;
+  /** What Android's launcher shows in its place when there is room. */
+  readonly description: string;
+}
+
+/**
+ * What the phone hands the app (ADR 0087): a shortcut of its icon chosen,
+ * or what another app shared to it.
+ */
+export interface Captures {
+  /** Calls `listener` with each capture, first those handed in before it listened; returns what stops it. */
+  listen(listener: (capture: Capture) => void): () => void;
+  /** A vault's files, to write a capture into before its index is open, or without it. */
+  target(vault: VaultInfo): Promise<CaptureTarget>;
+  /** Forgets a shared capture and the files kept for it, once it is filed or dropped. */
+  done(id: string): Promise<void>;
+  /** Asks a vault that is open to look at its folder again, a capture having been filed into it. */
+  filed(vault: string): void;
+  /** Gives the app's icon its shortcuts. */
+  setShortcuts(shortcuts: readonly CaptureShortcutLabel[]): Promise<void>;
+  /** Goes back to the app that shared, as a share's sheet is saved or dropped, where the system lets it: Android's. */
+  readonly leave?: () => void;
+}
+
+/** A note sent out as a copy, through the system's share sheet. */
+export interface NoteCopy {
+  /** Its file's name, as `Note.md`. */
+  readonly name: string;
+  /** Its Markdown, as its file holds it. */
+  readonly text: string;
 }
 
 /** What can be imported: a folder, a ZIP file, or Markdown, web page or CSV files. */
@@ -217,6 +260,10 @@ export interface Backend {
    * folder of its own, linked to the workspace as it opens.
    */
   readonly openWorkspace?: (link: VaultLink) => Promise<VaultInfo>;
+  /** What the phone's shortcuts and share sheet hand the app (ADR 0087); absent elsewhere. */
+  readonly captures?: Captures;
+  /** Sends a note out through the system's share sheet, as Send a copy, in the mobile apps. */
+  readonly sendCopy?: (copy: NoteCopy) => Promise<void>;
 }
 
 /** A write's result, with the Go service's ErrChanged as a `ChangedOnDisk`. */
@@ -616,8 +663,99 @@ const previewServers = new Map<string, { account: ServerAccount; token: string }
 /** The private keys of the preview's accounts, as the keychain keeps them in the app. */
 const previewKeys = new Map<string, Uint8Array>();
 
+/** The files of the preview's vault while it is open. */
+let previewFiles: MemoryFiles | undefined;
+/** The sample vault's files a capture went into before the vault opened, which it then opens with. */
+let previewWaiting: MemoryFiles | undefined;
+
+/** What the end-to-end tests share to the preview, as another app would to a phone. */
+interface PreviewShare {
+  readonly text?: string;
+  readonly title?: string;
+  readonly url?: string;
+  readonly files?: readonly {
+    readonly name: string;
+    readonly type?: string;
+    readonly text: string;
+  }[];
+  /** The vault the share sheet chose, as iOS's asks; the capture sheet asks when absent. */
+  readonly vault?: string;
+}
+
+/**
+ * The phone's shortcuts and share sheet in the preview (ADR 0087): the
+ * end-to-end tests hand in captures through `netherCaptures`, which shows
+ * once the page listens.
+ */
+function previewCaptures(): Captures {
+  const listeners = new Set<(capture: Capture) => void>();
+  const waiting: Capture[] = [];
+  const kept = new Map<string, Uint8Array>();
+  const encoder = new TextEncoder();
+  let count = 0;
+  const hand = (capture: Capture) => {
+    if (listeners.size === 0) waiting.push(capture);
+    for (const listener of listeners) listener(capture);
+  };
+  const hooks = {
+    share(given: PreviewShare) {
+      count += 1;
+      const id = `shared-${String(count)}`;
+      const files: SharedFile[] = (given.files ?? []).map((file, index) => {
+        const path = `${id}/${String(index)}`;
+        kept.set(path, encoder.encode(file.text));
+        return { name: file.name, type: file.type ?? "", path };
+      });
+      hand({
+        kind: "shared",
+        shared: {
+          id,
+          at: Date.now(),
+          text: given.text ?? "",
+          files,
+          ...(given.title === undefined ? {} : { title: given.title }),
+          ...(given.url === undefined ? {} : { url: given.url }),
+          ...(given.vault === undefined ? {} : { vault: given.vault }),
+        },
+      });
+    },
+    shortcut(shortcut: CaptureShortcut) {
+      hand({ kind: "shortcut", shortcut });
+    },
+  };
+  return {
+    listen(listener) {
+      listeners.add(listener);
+      (globalThis as { netherCaptures?: typeof hooks }).netherCaptures = hooks;
+      for (const capture of waiting.splice(0)) listener(capture);
+      return () => {
+        listeners.delete(listener);
+      };
+    },
+    target() {
+      const files = previewFiles ?? (previewWaiting ??= new MemoryFiles(sampleVault));
+      return Promise.resolve(
+        filesTarget(files, async (path, file) => {
+          const bytes = kept.get(file.path);
+          if (bytes === undefined) throw new Error(`${file.name} is not kept.`);
+          return (await files.attach(path, bytes)).path;
+        }),
+      );
+    },
+    done(id) {
+      for (const path of [...kept.keys()]) if (path.startsWith(`${id}/`)) kept.delete(path);
+      return Promise.resolve();
+    },
+    filed() {
+      // The preview's files tell the vault of each change themselves.
+    },
+    setShortcuts: () => Promise.resolve(),
+  };
+}
+
 const preview: Backend = {
   kind: "preview",
+  captures: previewCaptures(),
   fetchPreview(url) {
     const hooks = (globalThis as { netherPreview?: PreviewHooks }).netherPreview;
     return hooks?.fetchPreview?.(url) ?? Promise.reject(new Error(t("previewNeedsApp")));
@@ -687,7 +825,11 @@ const preview: Backend = {
       }
       vault = generated;
     }
-    const files = new MemoryFiles(vault);
+    // A capture filed before the sample vault opened is in the files it opens with.
+    const files =
+      vault === sampleVault ? (previewWaiting ?? new MemoryFiles(vault)) : new MemoryFiles(vault);
+    previewWaiting = undefined;
+    previewFiles = files;
     const exports: PreviewExport[] = [];
     const imports: PreviewImport[] = [];
     // The end-to-end tests change the sample's files as another app would,

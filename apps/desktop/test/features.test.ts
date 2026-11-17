@@ -1,15 +1,15 @@
 // What each build shows: every build shows sync, unless made with
 // VITE_NETHER_SYNC=off; the web app shows sync and leaves out what a page
-// in a browser cannot do.
+// in a browser cannot do; only the mobile apps send a note's copy.
 import { describe, expect, it } from "vitest";
 import { commandIds } from "../src/commands.ts";
 import { build, commandShown, shownEntries, shownIn, syncShown } from "../src/features.ts";
 
 describe("commandShown", () => {
-  it("shows everything in a build made as releases are, sync included", () => {
+  it("shows everything in a build made as releases are, sync included, but the phones' own", () => {
     expect(syncShown).toBe(true);
     expect(build.web).toBe(false);
-    expect(commandIds.filter(commandShown)).toEqual(commandIds);
+    expect(commandIds.filter(commandShown)).toEqual(commandIds.filter((id) => id !== "sendCopy"));
   });
 
   it("leaves sync out of a build made with VITE_NETHER_SYNC=off", () => {
@@ -26,7 +26,7 @@ describe("commandShown", () => {
     ] as const) {
       expect(shownIn(local, id)).toBe(false);
     }
-    expect(commandIds.filter((id) => shownIn(local, id))).toHaveLength(commandIds.length - 8);
+    expect(commandIds.filter((id) => shownIn(local, id))).toHaveLength(commandIds.length - 9);
     expect(shownIn(local, "newNote")).toBe(true);
   });
 
@@ -45,16 +45,15 @@ describe("commandShown", () => {
     ] as const) {
       expect(shownIn(web, id)).toBe(true);
     }
-    for (const id of ["sync", "checkUpdates", "updateChecks"] as const) {
+    for (const id of ["sync", "checkUpdates", "updateChecks", "sendCopy"] as const) {
       expect(shownIn(web, id)).toBe(false);
     }
-    expect(commandIds.filter((id) => shownIn(web, id))).toHaveLength(commandIds.length - 3);
+    expect(commandIds.filter((id) => shownIn(web, id))).toHaveLength(commandIds.length - 4);
   });
 
   it("leaves out of the mobile apps what comes to them later, and what stays on the desktop", () => {
     const phone = { web: false, sync: true, mobile: true };
     for (const id of [
-      "export",
       "openGraph",
       "newCanvas",
       "checkUpdates",
@@ -77,6 +76,9 @@ describe("commandShown", () => {
       "members",
       "spaces",
       "notifications",
+      // Exports and a note's copy go to the share sheet (ADR 0087, part 5).
+      "export",
+      "sendCopy",
     ] as const) {
       expect(shownIn(phone, id)).toBe(true);
     }
