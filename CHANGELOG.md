@@ -192,6 +192,15 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   web app's settings have the AI tab, and writing assist names the server
   the text goes through
   ([ADR 0070](docs/adr/0070-the-web-apps-ai-goes-through-its-server-which-seals-the-keys-and-reaches-only-what-it-may.md)).
+- Search by meaning, in the desktop app: turned on for a vault in the AI
+  tab, with an OpenAI-compatible provider and its embedding model, it
+  sends the vault's notes to the model a passage at a time, the text under
+  each heading, and keeps the vectors in the vault's index on this
+  computer, a byte a number. The search panel then searches **By
+  meaning** on Enter, each note found by its closest passage, which opens
+  at its heading; filters work as by words. Only changed passages are sent
+  again, and nothing of it is in memory until a search runs
+  ([ADR 0074](docs/adr/0074-search-by-meaning-keeps-passages-vectors-on-the-device-and-loads-them-only-to-search.md)).
 
 ### Changed
 
