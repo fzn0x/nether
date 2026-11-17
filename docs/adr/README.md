@@ -88,3 +88,4 @@ record supersedes it and says so. Start a new one from
 | [0079](0079-enterprise-features-are-in-every-image-off-and-switched-in-the-console-or-pinned-by-the-environment.md) | Enterprise features are in every image, off, and switched in the console or pinned by the environment | Accepted |
 | [0083](0083-the-console-lists-every-workspace-and-an-instance-admin-may-set-its-members-roles.md) | The console lists every workspace, and an instance admin may set its members' roles | Accepted |
 | [0084](0084-the-consoles-security-page-sets-session-lengths-sign-in-limits-and-email-codes-unless-the-environment-does.md) | The console's Security page sets session lengths, sign-in limits and email codes, unless the environment does | Accepted |
+| [0086](0086-ai-is-locked-to-the-endpoints-an-instance-admin-approves-in-the-apps-and-the-relay.md) | AI is locked to the endpoints an instance admin approves, in the apps and the relay | Accepted |
