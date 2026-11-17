@@ -234,6 +234,7 @@ const restrictedBody = {
 
 const noWorkspace = "This account is in no such workspace.";
 const noUnit = "This account has no such space or page here.";
+const noMove = "Moving a note takes edit access where it is and where it goes.";
 const badName =
   "A teamspace's name is its folder's: it has none of / \\ : * ? \" < > |, does not start with a dot, and is not Private.";
 
@@ -688,42 +689,51 @@ export function registerUnits(
     async (request, reply) => {
       const workspace = request.params.workspace.toLowerCase();
       const me = accountOf(request).id;
-      const unit = await managed(me, workspace, request.params.unit.toLowerCase());
-      if (!("id" in unit)) return fail(reply, unit[0], unit[1]);
-      if (unit.kind !== "page") return fail(reply, 404, noUnit);
-      const { levels: found } = await accessible(db, me, workspace);
-      if (!writesAt(found.get(unit.parentId ?? general))) {
-        return fail(reply, 403, "Its notes go back where it sits, which takes edit access there.");
-      }
-      // Its list joins the one where it sits first, so no app, once it no
-      // longer opens the page's, takes its notes for removed.
-      await vaults.merge(workspace, unit.id, unit.parentId ?? general);
-      await db.transaction(async (tx) => {
-        if (unit.parentId === null) {
-          await tx.query("DELETE FROM note_units WHERE unit_id = $1", [unit.id]);
-        } else {
-          await tx.query("UPDATE note_units SET unit_id = $2 WHERE unit_id = $1", [
+      const id = request.params.unit.toLowerCase();
+      // Held from its list's move to its drop, on every node: a note moved
+      // into it meanwhile, as an app does that hears of the list while the
+      // unit is still there, would be listed nowhere once it goes. Such a
+      // move waits, and is refused once the unit is gone (#179).
+      const refused = await db.lock(unitLock(id), async () => {
+        const unit = await managed(me, workspace, id);
+        if (!("id" in unit)) return unit;
+        if (unit.kind !== "page") return [404, noUnit] as const;
+        const { levels: found } = await accessible(db, me, workspace);
+        if (!writesAt(found.get(unit.parentId ?? general))) {
+          return [403, "Its notes go back where it sits, which takes edit access there."] as const;
+        }
+        // Its list joins the one where it sits first, so no app, once it no
+        // longer opens the page's, takes its notes for removed.
+        await vaults.merge(workspace, unit.id, unit.parentId ?? general);
+        await db.transaction(async (tx) => {
+          if (unit.parentId === null) {
+            await tx.query("DELETE FROM note_units WHERE unit_id = $1", [unit.id]);
+          } else {
+            await tx.query("UPDATE note_units SET unit_id = $2 WHERE unit_id = $1", [
+              unit.id,
+              unit.parentId,
+            ]);
+          }
+          await tx.query("UPDATE units SET parent_id = $2 WHERE parent_id = $1", [
             unit.id,
             unit.parentId,
           ]);
-        }
-        await tx.query("UPDATE units SET parent_id = $2 WHERE parent_id = $1", [
-          unit.id,
-          unit.parentId,
-        ]);
-        await tx.query("DELETE FROM units WHERE id = $1", [unit.id]);
-        await events.emit(
-          tx,
-          {
-            action: "page.unshared",
-            actor: accountActor(me),
-            workspace,
-            target: { type: "note", id: unit.rootNote ?? unit.id },
-            details: { unit: unit.id },
-          },
-          originOf(request),
-        );
+          await tx.query("DELETE FROM units WHERE id = $1", [unit.id]);
+          await events.emit(
+            tx,
+            {
+              action: "page.unshared",
+              actor: accountActor(me),
+              workspace,
+              target: { type: "note", id: unit.rootNote ?? unit.id },
+              details: { unit: unit.id },
+            },
+            originOf(request),
+          );
+        });
+        return undefined;
       });
+      if (refused !== undefined) return fail(reply, refused[0], refused[1]);
       await everyone(workspace);
       return reply.code(204).send();
     },
@@ -778,48 +788,68 @@ export function registerUnits(
       const workspace = request.params.workspace.toLowerCase();
       const note = request.params.note.toLowerCase();
       const target = request.body.unit.toLowerCase();
-      const { levels: found } = await accessible(db, accountOf(request).id, workspace);
-      if (found.size === 0) return fail(reply, 404, noWorkspace);
-      const current = await unitOfDocument(db, workspace, note);
-      // A note the server has neither placed nor stored is new, as a guest's
-      // page made inside a page shared with them: it leaves nothing.
-      const { rows: stored } = await db.query(
-        "SELECT 1 FROM documents WHERE workspace_id = $1 AND name = $2",
-        [workspace, note],
-      );
-      const leaves = current !== general || stored.length > 0;
-      // Leaving one unit and entering another both change notes.
-      if ((leaves && !writesAt(found.get(current))) || !writesAt(found.get(target))) {
-        return fail(reply, 403, "Moving a note takes edit access where it is and where it goes.");
-      }
-      await db.transaction(async (tx) => {
-        if (target === general) {
-          await tx.query("DELETE FROM note_units WHERE workspace_id = $1 AND note = $2", [
-            workspace,
-            note,
-          ]);
-        } else {
-          await tx.query(
-            `INSERT INTO note_units (workspace_id, note, unit_id) VALUES ($1, $2, $3)
-             ON CONFLICT (workspace_id, note) DO UPDATE SET unit_id = excluded.unit_id`,
-            [workspace, note, target],
-          );
-        }
-        // Who may open it changes with where it is.
-        if (current === target) return;
-        await events.emit(
-          tx,
-          {
-            action: "note.unit_changed",
-            actor: accountActor(accountOf(request).id),
-            workspace,
-            target: { type: "note", id: note },
-            details: { from: current, to: target },
-          },
-          originOf(request),
+      const move = async () => {
+        const { levels: found } = await accessible(db, accountOf(request).id, workspace);
+        if (found.size === 0) return fail(reply, 404, noWorkspace);
+        const current = await unitOfDocument(db, workspace, note);
+        // A note the server has neither placed nor stored is new, as a guest's
+        // page made inside a page shared with them: it leaves nothing.
+        const { rows: stored } = await db.query(
+          "SELECT 1 FROM documents WHERE workspace_id = $1 AND name = $2",
+          [workspace, note],
         );
-      });
-      return { note, unit: target };
+        const leaves = current !== general || stored.length > 0;
+        // Leaving one unit and entering another both change notes.
+        if ((leaves && !writesAt(found.get(current))) || !writesAt(found.get(target))) {
+          return fail(reply, 403, noMove);
+        }
+        const moved = await db.transaction(async (tx) => {
+          if (target === general) {
+            await tx.query("DELETE FROM note_units WHERE workspace_id = $1 AND note = $2", [
+              workspace,
+              note,
+            ]);
+          } else {
+            // Still there, and kept until this commits: a unit dropped since
+            // it was read takes no note.
+            const { rows: there } = await tx.query(
+              "SELECT 1 FROM units WHERE id = $1 AND workspace_id = $2 FOR KEY SHARE",
+              [target, workspace],
+            );
+            if (there.length === 0) return false;
+            await tx.query(
+              `INSERT INTO note_units (workspace_id, note, unit_id) VALUES ($1, $2, $3)
+               ON CONFLICT (workspace_id, note) DO UPDATE SET unit_id = excluded.unit_id`,
+              [workspace, note, target],
+            );
+          }
+          // Who may open it changes with where it is.
+          if (current === target) return true;
+          await events.emit(
+            tx,
+            {
+              action: "note.unit_changed",
+              actor: accountActor(accountOf(request).id),
+              workspace,
+              target: { type: "note", id: note },
+              details: { from: current, to: target },
+            },
+            originOf(request),
+          );
+          return true;
+        });
+        if (!moved) return fail(reply, 403, noMove);
+        return { note, unit: target };
+      };
+      // A move into a page's unit waits while the page stops being shared on
+      // its own, and is checked once it has: an app that heard of the page's
+      // list in between asks to move its notes back into its unit (#179).
+      return target === general ? move() : db.lock(unitLock(target), move);
     },
   );
+}
+
+/** The lock a page's unit holds while it is dropped, and a note's move into a unit takes. */
+function unitLock(unit: string): string {
+  return `unit.${unit}`;
 }
