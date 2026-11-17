@@ -23,10 +23,12 @@ describe("migrate", () => {
     const database = nodeDatabase();
     await migrate(database);
     // As version 4 left it: texts in note_texts, no table of their rows, no
-    // detail, no settings and no versions.
+    // detail, no settings, no versions and no passages.
     await database.execute("DROP TABLE note_text_rows");
     await database.execute("DROP TABLE settings");
     await database.execute("DROP TABLE note_versions");
+    await database.execute("DROP TABLE passages");
+    await database.execute("DROP TABLE meaning_files");
     await database.execute("ALTER TABLE note_indexes DROP COLUMN detail");
     await database.execute("PRAGMA user_version = 4");
     await database.execute("INSERT INTO note_texts (note, title, body) VALUES (?, ?, ?)", [
@@ -55,10 +57,12 @@ describe("migrate", () => {
   it("keeps the index rows of a version 5 index, with no detail", async () => {
     const database = nodeDatabase();
     await migrate(database);
-    // As version 5 left it: no detail column, no settings and no versions.
+    // As version 5 left it: no detail column, no settings, no versions and no passages.
     await database.execute("ALTER TABLE note_indexes DROP COLUMN detail");
     await database.execute("DROP TABLE settings");
     await database.execute("DROP TABLE note_versions");
+    await database.execute("DROP TABLE passages");
+    await database.execute("DROP TABLE meaning_files");
     await database.execute("PRAGMA user_version = 5");
     await database.execute(
       "INSERT INTO note_indexes (note, size, modified, data) VALUES (?, ?, ?, ?)",

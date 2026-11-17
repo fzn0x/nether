@@ -94,6 +94,7 @@ import { PluginsSettings } from "./PluginsSettings.tsx";
 import { PluginSettings } from "./PluginSettings.tsx";
 
 import { useAi } from "./useAi.ts";
+import { useMeaning } from "./useMeaning.ts";
 import { useAppearance } from "./useAppearance.ts";
 import { useBookmarks } from "./useBookmarks.ts";
 import { TrashPanel } from "./TrashPanel.tsx";
@@ -322,6 +323,8 @@ export function VaultView(props: {
   const sync = useSync(vault);
   // The AI provider the vault uses, if any: with none, nothing of AI shows (ADR 0068).
   const ai = useAi(vault, sync.link);
+  // Search by meaning, when it is on for the vault (ADR 0074).
+  const meaning = useMeaning(vault, ai, sync.link);
   const notifications = useNotifications(vault, sync.link);
   const people = usePeople(sync.link);
   // The vault's light or dark, theme and snippets, on the page while it is open.
@@ -1518,6 +1521,7 @@ export function VaultView(props: {
             ai={ai}
             encrypted={sync.link?.encrypted === true}
             server={sync.link?.server}
+            meaning={meaning}
             onClose={closeDialog}
           />
         </Suspense>
@@ -1927,6 +1931,7 @@ export function VaultView(props: {
                 graph={state.indexer.graph}
                 onOpen={openNote}
                 input={searchInput}
+                meaning={meaning.panel}
               />
             ) : notes.length === 0 && folders.length === 0 ? (
               <p className="placeholder">{t("noNotes")}</p>
