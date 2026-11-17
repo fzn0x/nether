@@ -452,6 +452,19 @@ export function ServersDialog(props: {
                     {t("apiTokensOf", { server: hostOf(account.url) })}
                   </button>
                 )}
+                {account.user.instanceAdmin ? (
+                  <button
+                    type="button"
+                    className="quiet"
+                    disabled={busy}
+                    onClick={() => {
+                      // The console is the server's web app's page (ADR 0079), in the browser.
+                      void backend.openUrl(`${account.url}/admin`);
+                    }}
+                  >
+                    {t("adminConsoleOf", { server: hostOf(account.url) })}
+                  </button>
+                ) : null}
                 <button
                   type="button"
                   className="quiet"
