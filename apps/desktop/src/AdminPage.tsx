@@ -11,6 +11,7 @@ import { AiEndpointsPage } from "./AdminPolicies.tsx";
 import { SecurityPage } from "./AdminSecurity.tsx";
 import { SsoPage } from "./AdminSso.tsx";
 import { WorkspacesPage } from "./AdminWorkspaces.tsx";
+import { AdminAudit } from "./AdminAudit.tsx";
 import { t } from "./messages.ts";
 import { messageOf, webFetch, webServer } from "./web.ts";
 
@@ -154,6 +155,9 @@ export function AdminPage() {
     step.kind === "open" && step.features.some((state) => state.feature === "sso" && state.on);
   const policiesOn =
     step.kind === "open" && step.features.some((state) => state.feature === "policies" && state.on);
+  // The audit log shows while its feature is on (ADR 0081).
+  const auditOn =
+    step.kind === "open" && step.features.some((state) => state.feature === "audit" && state.on);
 
   const count = useCallback(() => {
     setUsage(undefined);
@@ -266,6 +270,7 @@ export function AdminPage() {
           )}
           {ssoOn ? <SsoPage /> : null}
           {policiesOn ? <AiEndpointsPage /> : null}
+          {auditOn ? <AdminAudit /> : null}
         </>
       ) : null}
       {status === undefined ? null : <p role="status">{status}</p>}

@@ -10,6 +10,7 @@ import { type Database, type Queryable, readText, readTime } from "./db.ts";
 import { fail, uuidField } from "./http.ts";
 import { accountOf, signedIn } from "./sessions.ts";
 import { membership } from "./workspaces.ts";
+import { type EventOrigin, type ServerEvents, accountActor, originOf } from "./events.ts";
 
 export const roles = ["owner", "admin", "member", "guest"] as const;
 export type Role = (typeof roles)[number];
@@ -20,6 +21,8 @@ export interface RoleSetter {
   readonly account: string;
   /** Its role in the workspace, or `instance-admin` when an instance admin acts from the console. */
   readonly as: string;
+  /** Where its request came from, for the change to be told of (ADR 0081). */
+  readonly origin: EventOrigin;
 }
 
 /** What setting a role came to: changed, already so, or refused, with its status and why. */
@@ -77,7 +80,8 @@ async function owners(tx: Queryable, workspace: string): Promise<number> {
 /**
  * Sets a member's role under the workspace's rules: its owners, and
  * instance admins, change anyone's; its admins change members' and
- * guests'; and it keeps at least one owner. When the role changed, the
+ * guests'; and it keeps at least one owner. A change is told of in its
+ * transaction (ADR 0081), whoever made it. When the role changed, the
  * caller closes the account's connections.
  */
 export async function setRole(
@@ -86,6 +90,7 @@ export async function setRole(
   user: string,
   role: Role,
   by: RoleSetter,
+  events: ServerEvents,
 ): Promise<RoleOutcome> {
   if (by.as !== "owner" && by.as !== "admin" && by.as !== "instance-admin") {
     return [403, "Only the workspace's owners and admins change roles."];
@@ -108,6 +113,17 @@ export async function setRole(
       user,
       role,
     ]);
+    await events.emit(
+      tx,
+      {
+        action: "member.role_changed",
+        actor: accountActor(by.account),
+        workspace,
+        target: { type: "account", id: user },
+        details: { from: current, to: role, as: by.as },
+      },
+      by.origin,
+    );
     return "changed";
   });
 }
@@ -120,6 +136,7 @@ export function registerMembers(
   app: FastifyInstance,
   db: Database,
   changed: (userId: string) => void,
+  events: ServerEvents,
 ): void {
   const account = signedIn(db);
 
@@ -162,7 +179,14 @@ export function registerMembers(
       const myId = accountOf(request).id;
       const me = await membership(db, myId, workspace);
       if (me === undefined) return fail(reply, 404, noWorkspace);
-      const outcome = await setRole(db, workspace, user, role, { account: myId, as: me.role });
+      const outcome = await setRole(
+        db,
+        workspace,
+        user,
+        role,
+        { account: myId, as: me.role, origin: originOf(request) },
+        events,
+      );
       if (typeof outcome !== "string") return fail(reply, outcome[0], outcome[1]);
       if (outcome === "changed") changed(user);
       return { id: user, role };
@@ -206,6 +230,17 @@ export function registerMembers(
           `DELETE FROM unit_grants WHERE user_id = $2
              AND unit_id IN (SELECT id FROM units WHERE workspace_id = $1)`,
           [workspace, user],
+        );
+        await events.emit(
+          tx,
+          {
+            action: leaving ? "member.left" : "member.removed",
+            actor: accountActor(myId),
+            workspace,
+            target: { type: "account", id: user },
+            details: { role },
+          },
+          originOf(request),
         );
         return undefined;
       });

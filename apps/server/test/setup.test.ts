@@ -45,6 +45,7 @@ describe("migrate", () => {
       "ai_providers",
       "api_tokens",
       "attachments",
+      "audit_events",
       "backup_state",
       "cluster_jobs",
       "cluster_nodes",

@@ -224,9 +224,13 @@ describe("syncing desktop vaults", () => {
     const laptop = await device(served, { "Kept.md": "# Kept\n", "Gone.md": "# Gone\n" });
     await until(() => laptop.engine.status.state === "synced");
     const phone = await device(served, {});
+    // In the phone's index too: a note's file is written before the index takes it.
     await until(
       async () =>
-        (await phone.text("Gone.md")) !== undefined && (await phone.text("Kept.md")) !== undefined,
+        (await phone.text("Gone.md")) !== undefined &&
+        (await phone.text("Kept.md")) !== undefined &&
+        phone.vault.noteAt("Gone.md") !== undefined &&
+        phone.vault.noteAt("Kept.md") !== undefined,
     );
 
     const kept = phone.vault.noteAt("Kept.md");

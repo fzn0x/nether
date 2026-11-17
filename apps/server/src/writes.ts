@@ -32,6 +32,7 @@ import {
 import type { SyncControl } from "./sync.ts";
 import { type ApiCaller, callerOf } from "./tokens.ts";
 import { general, vaultDocument, writesAt } from "./units.ts";
+import { originOf } from "./events.ts";
 
 /** The largest note the API takes, in bytes of its Markdown. */
 export const noteBytes = 5 * 1024 * 1024;
@@ -397,6 +398,11 @@ export function registerWrites(
           if (key === undefined) return false;
           notes.delete(key);
           return true;
+        },
+        // Told of as the vault document is stored (ADR 0081), with the token it came with.
+        {
+          ...originOf(request),
+          token: caller.token === null ? null : { id: caller.token.id, name: caller.token.name },
         },
       );
       if (!removed) return fail(reply, 404, noNote);

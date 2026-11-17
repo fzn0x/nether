@@ -24,6 +24,7 @@ import { accountOf, signedIn } from "./sessions.ts";
 import { accessible, unitOfDocument } from "./units.ts";
 import { membership } from "./workspaces.ts";
 import { hasControl, isName, unitForPath } from "./writes.ts";
+import { type EventDetails, type ServerEvents, accountActor, originOf } from "./events.ts";
 
 /** A site's name, its address under /p/: 3 to 63 lowercase letters, digits and hyphens. */
 export const siteName = /^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$/;
@@ -187,9 +188,36 @@ export function registerSites(
     readonly changed: (site: string) => void;
     /** What looks up a domain's TXT records, the system's resolver by default. */
     readonly resolveTxt?: TxtResolver | undefined;
+    readonly events: ServerEvents;
   },
 ): void {
   const account = signedIn(db);
+  const { events } = options;
+
+  /** Tells of a change to a site, in the transaction that makes it. */
+  const told = (
+    tx: Queryable,
+    request: FastifyRequest,
+    action:
+      | "site.published"
+      | "site.changed"
+      | "site.unpublished"
+      | "site.domain_set"
+      | "site.domain_removed",
+    site: { readonly id: string; readonly workspace: string; readonly name: string },
+    details: EventDetails = {},
+  ) =>
+    events.emit(
+      tx,
+      {
+        action,
+        actor: accountActor(accountOf(request).id),
+        workspace: site.workspace,
+        target: { type: "site", id: site.id, name: site.name },
+        details,
+      },
+      originOf(request),
+    );
   const own = ownHost(options.publicUrl);
 
   /** The workspace and what the account may do in it, or why it may do nothing. */
@@ -345,6 +373,13 @@ export function registerSites(
            VALUES ($1, $2, $3, $4, $5, $6, $7)`,
             [id, place.workspace, me, name, title, note, folder ?? null],
           );
+          await told(
+            tx,
+            request,
+            "site.published",
+            { id, workspace: place.workspace, name },
+            note === null ? { folder: folder ?? null } : { note },
+          );
           return undefined;
         })
         .catch((error: unknown) => {
@@ -395,11 +430,26 @@ export function registerSites(
         if (rows.length > 0) return fail(reply, 409, "A site has that name already.");
       }
       const taken = await db
-        .query(
-          `UPDATE sites SET name = COALESCE($2, name), title = COALESCE($3, title),
-                  indexed = COALESCE($4, indexed) WHERE id = $1`,
-          [found.site.id, name ?? null, title?.trim() ?? null, indexed ?? null],
-        )
+        .transaction(async (tx) => {
+          await tx.query(
+            `UPDATE sites SET name = COALESCE($2, name), title = COALESCE($3, title),
+                    indexed = COALESCE($4, indexed) WHERE id = $1`,
+            [found.site.id, name ?? null, title?.trim() ?? null, indexed ?? null],
+          );
+          await told(
+            tx,
+            request,
+            "site.changed",
+            { id: found.site.id, workspace: found.place.workspace, name: name ?? found.site.name },
+            {
+              ...(name === undefined || name === found.site.name
+                ? {}
+                : { from: found.site.name, to: name }),
+              ...(indexed === undefined ? {} : { indexed }),
+              ...(title === undefined ? {} : { title: title.trim() }),
+            },
+          );
+        })
         .then(
           () => false,
           (error: unknown) => {
@@ -428,7 +478,14 @@ export function registerSites(
         request.params.site,
       );
       if (!("site" in found)) return fail(reply, found[0], found[1]);
-      await db.query("DELETE FROM sites WHERE id = $1", [found.site.id]);
+      await db.transaction(async (tx) => {
+        await tx.query("DELETE FROM sites WHERE id = $1", [found.site.id]);
+        await told(tx, request, "site.unpublished", {
+          id: found.site.id,
+          workspace: found.place.workspace,
+          name: found.site.name,
+        });
+      });
       options.changed(found.site.id);
       return reply.code(204).send();
     },
@@ -458,11 +515,20 @@ export function registerSites(
       if (domain === undefined) return fail(reply, 400, badDomain);
       // The same domain again keeps its claim, and the record already added.
       if (found.row.domain !== domain) {
-        await db.query(
-          `UPDATE sites SET domain = $2, domain_token = $3, domain_verified = false
-            WHERE id = $1`,
-          [found.site.id, domain, claimToken()],
-        );
+        await db.transaction(async (tx) => {
+          await tx.query(
+            `UPDATE sites SET domain = $2, domain_token = $3, domain_verified = false
+              WHERE id = $1`,
+            [found.site.id, domain, claimToken()],
+          );
+          await told(
+            tx,
+            request,
+            "site.domain_set",
+            { id: found.site.id, workspace: found.place.workspace, name: found.site.name },
+            { domain, verified: false },
+          );
+        });
         options.changed(found.site.id);
       }
       return reread(request, found.site.id);
@@ -480,11 +546,22 @@ export function registerSites(
         request.params.site,
       );
       if (!("site" in found)) return fail(reply, found[0], found[1]);
-      await db.query(
-        `UPDATE sites SET domain = NULL, domain_token = NULL, domain_verified = false
-          WHERE id = $1`,
-        [found.site.id],
-      );
+      const given = typeof found.row.domain === "string" ? found.row.domain : null;
+      await db.transaction(async (tx) => {
+        await tx.query(
+          `UPDATE sites SET domain = NULL, domain_token = NULL, domain_verified = false
+            WHERE id = $1`,
+          [found.site.id],
+        );
+        if (given === null) return;
+        await told(
+          tx,
+          request,
+          "site.domain_removed",
+          { id: found.site.id, workspace: found.place.workspace, name: found.site.name },
+          { domain: given },
+        );
+      });
       options.changed(found.site.id);
       return reread(request, found.site.id);
     },
@@ -533,6 +610,14 @@ export function registerSites(
             found.site.id,
             domain,
           ]);
+          // The site holds the domain now, and any other that held it no longer does.
+          await told(
+            tx,
+            request,
+            "site.domain_set",
+            { id: found.site.id, workspace: found.place.workspace, name: found.site.name },
+            { domain, verified: true, takenFrom: others.map((other) => readText(other, "id")) },
+          );
           return others.map((other) => readText(other, "id"));
         })
         .catch((error: unknown) => {
@@ -592,10 +677,28 @@ export function registerSites(
       if (!place.admin) {
         return fail(reply, 403, "Only a workspace's owners and admins turn publishing on or off.");
       }
-      await db.query("UPDATE workspaces SET publishing = $2 WHERE id = $1", [
-        place.workspace,
-        request.body.enabled,
-      ]);
+      await db.transaction(async (tx) => {
+        const { rows: was } = await tx.query(
+          "SELECT publishing FROM workspaces WHERE id = $1 FOR UPDATE",
+          [place.workspace],
+        );
+        await tx.query("UPDATE workspaces SET publishing = $2 WHERE id = $1", [
+          place.workspace,
+          request.body.enabled,
+        ]);
+        if (was[0]?.publishing === request.body.enabled) return;
+        await events.emit(
+          tx,
+          {
+            action: "workspace.publishing_changed",
+            actor: accountActor(accountOf(request).id),
+            workspace: place.workspace,
+            target: { type: "workspace", id: place.workspace },
+            details: { enabled: request.body.enabled },
+          },
+          originOf(request),
+        );
+      });
       const { rows } = await db.query("SELECT id FROM sites WHERE workspace_id = $1", [
         place.workspace,
       ]);
