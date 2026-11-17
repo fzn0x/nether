@@ -5,20 +5,30 @@
 // It works with no account. Images and PDFs load from the files' own URLs.
 // Before the app leaves the screen, the page saves what it holds, in the
 // time the system gives; as it comes back, each open vault looks at its
-// folder again, for what another app changed. Android's back button and
-// gesture close what is open, then put the app away. Signing in and sync come
-// with the apps' fourth part, and exports through the share sheet with the
-// fifth: until then the build leaves them out (features.ts).
+// folder again, for what another app changed, and sync starts again at
+// once. Android's back button and gesture close what is open, then put the
+// app away.
+//
+// Servers are reached natively (mobileHttp.ts), signed in to with a bearer
+// token kept in the system's secure storage (mobileServers.ts), and a
+// provider's sign-in comes back to the app's own scheme (mobileSignIn.ts).
+// Exports through the share sheet come with the apps' fifth part: until then
+// the build leaves them out (features.ts).
 import { App } from "@capacitor/app";
-import { Capacitor } from "@capacitor/core";
+import { Browser } from "@capacitor/browser";
+import { Capacitor, CapacitorHttp } from "@capacitor/core";
 import { BackgroundTask } from "@capawesome/capacitor-background-task";
 import { DeviceFiles, SqliteStore } from "@nether/storage";
 import type { Backend, Connection, Exporter, VaultMedia } from "./backend.ts";
 import { t } from "./messages.ts";
 import { NetherVaults, type PhoneVault } from "./mobile.ts";
 import { phoneFolder } from "./mobileFiles.ts";
+import { nativeFetch } from "./mobileHttp.ts";
 import { openMobileIndex, pluginConnections } from "./mobileIndex.ts";
+import { phoneServers, secureSecrets } from "./mobileServers.ts";
+import { type Handoff, returnScheme, schemeWait } from "./mobileSignIn.ts";
 import type { VaultInfo } from "./mygo.ts";
+import { type VaultLink, linkVaultStore } from "./sync.ts";
 import { webImporter } from "./webImports.ts";
 
 function vaultOf(vault: PhoneVault): VaultInfo {
@@ -44,6 +54,14 @@ const laterExporter: Exporter = {
 const open = new Set<DeviceFiles>();
 /** What the page saves before the app leaves the screen. */
 const leaving = new Set<() => Promise<void>>();
+/** What runs as the app comes back on screen, or the network comes back. */
+const resuming = new Set<() => void>();
+/** The workspaces each new vault links to as it opens, by the vault's ID. */
+const linking = new Map<string, VaultLink>();
+
+function resume(): void {
+  for (const listener of resuming) listener();
+}
 
 let listening = false;
 
@@ -54,6 +72,7 @@ function followTheApp(): void {
   void App.addListener("appStateChange", ({ isActive }) => {
     if (isActive) {
       for (const files of open) files.rescan();
+      resume();
       return;
     }
     if (leaving.size === 0) return;
@@ -74,6 +93,7 @@ function followTheApp(): void {
     }).then(given);
   });
   void App.addListener("backButton", goBack);
+  window.addEventListener("online", resume);
 }
 
 /** What the back button and gesture close first: a menu, a dialog, or the drawer. */
@@ -96,10 +116,32 @@ export function goBack(): void {
   );
 }
 
-/** Not before the apps' fourth part, which signs in. */
-function later<T>(): Promise<T> {
-  return Promise.reject(new Error(t("mobileSignInLater")));
+/** Listens to a plugin's event, giving what stops it, as the handoff takes it. */
+function stopper(added: Promise<{ remove: () => Promise<void> }>): () => void {
+  return () => {
+    void added.then((handle) => handle.remove());
+  };
 }
+
+/** A provider's sign-in, on this phone's system. */
+const handoff: Handoff = {
+  ...(Capacitor.getPlatform() === "ios"
+    ? {
+        sheet: async (url: string) =>
+          (await NetherVaults.signIn({ url, scheme: returnScheme })).url,
+      }
+    : {}),
+  openTab: (url) => Browser.open({ url }),
+  onAddress: (listener) =>
+    stopper(
+      App.addListener("appUrlOpen", ({ url }) => {
+        listener(url);
+      }),
+    ),
+  onTabClosed: (listener) => stopper(Browser.addListener("browserFinished", listener)),
+};
+
+const servers = phoneServers(NetherVaults, secureSecrets());
 
 export const mobile: Backend = {
   kind: "mobile",
@@ -122,12 +164,23 @@ export const mobile: Backend = {
     );
   },
   forget: (id) => NetherVaults.forgetVault({ id }),
+  async openWorkspace(link) {
+    const vault = await NetherVaults.openVault({ name: link.workspaceName, fresh: true });
+    linking.set(vault.id, link);
+    return vaultOf(vault);
+  },
   async connect(vault): Promise<Connection> {
     followTheApp();
     const files = new DeviceFiles(phoneFolder(NetherVaults, vault.id));
     const store = await SqliteStore.open(
       await openMobileIndex(await pluginConnections(), vault.id),
     );
+    // A workspace opened on the phone syncs from its first opening.
+    const link = linking.get(vault.id);
+    if (link !== undefined) {
+      await linkVaultStore(store, link);
+      linking.delete(vault.id);
+    }
     const { path: root } = await NetherVaults.root({ id: vault.id });
     const base = `${Capacitor.convertFileSrc(root).replace(/\/$/, "")}/`;
     const media: VaultMedia = { url: (path) => base + escapePath(path) };
@@ -147,19 +200,20 @@ export const mobile: Backend = {
       leaving.delete(save);
     };
   },
-  fetchPreview: () => Promise.reject(new Error(t("previewNeedsApp"))),
-  openUrl(url) {
-    window.open(url, "_blank", "noopener");
-    return Promise.resolve();
+  onResume(listener) {
+    followTheApp();
+    resuming.add(listener);
+    return () => {
+      resuming.delete(listener);
+    };
   },
-  serverFetch: () => later(),
-  servers: () => Promise.resolve([]),
-  saveServer: () => later(),
-  serverToken: () => Promise.resolve(undefined),
-  forgetServer: () => Promise.resolve(),
-  serverKey: () => Promise.resolve(undefined),
-  saveServerKey: () => later(),
-  loopback: () => later(),
+  fetchPreview: () => Promise.reject(new Error(t("previewNeedsApp"))),
+  // In the system's browser view, over the app: a Custom Tab, or Safari's.
+  openUrl: (url) => Browser.open({ url }),
+  serverFetch: nativeFetch((options) => CapacitorHttp.request(options)),
+  ...servers,
+  loopback: () => Promise.resolve(schemeWait(handoff)),
+  // The WebView's own.
   syncSocket: () => Promise.resolve(globalThis.WebSocket),
   // AI comes to the phones in a part of its own: with no provider, nothing of it shows (ADR 0068).
   aiSettings: () => Promise.resolve({ providers: [], default: "" }),

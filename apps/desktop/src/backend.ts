@@ -39,6 +39,7 @@ import type { ImportSource } from "@nether/markdown";
 import { t } from "./messages.ts";
 import { sampleVault } from "./sample.ts";
 import type { LoopbackWait } from "./server.ts";
+import type { VaultLink } from "./sync.ts";
 import type { AiSettingsView } from "./ai.ts";
 
 /** Where the page loads a vault's files from, and how it hands them to the system's apps. */
@@ -206,6 +207,16 @@ export interface Backend {
    * returns what stops it. Absent where the app is not ended unasked.
    */
   readonly onBackground?: (save: () => Promise<void>) => () => void;
+  /**
+   * In the mobile apps, runs `listener` as the app comes back on screen, and
+   * as the network comes back; returns what stops it.
+   */
+  readonly onResume?: (listener: () => void) => () => void;
+  /**
+   * In the mobile apps, makes a vault on the phone for a workspace, in a
+   * folder of its own, linked to the workspace as it opens.
+   */
+  readonly openWorkspace?: (link: VaultLink) => Promise<VaultInfo>;
 }
 
 /** A write's result, with the Go service's ErrChanged as a `ChangedOnDisk`. */
