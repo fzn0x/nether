@@ -6,6 +6,9 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import { pkceChallenge } from "@nether/server/src/oidc.ts";
 import { storeDocument } from "@nether/server/src/sync.ts";
+import { deactivateAccount } from "@nether/server/src/accounts.ts";
+import type { EnterpriseModule, EnterpriseServices } from "@nether/server/src/enterprise.ts";
+import { fromServer, serverActions } from "@nether/server/src/events.ts";
 import {
   type SetUp,
   type TestServer,
@@ -22,6 +25,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
 import {
   type AuditRow,
+  actionGroups,
   chainKey,
   checkLog,
   createAuditModule,
@@ -397,6 +401,82 @@ describe("the audit log", () => {
       targetId: bea,
       details: { from: "member", to: "owner", as: "instance-admin" },
     });
+  });
+
+  it("records a directory as who deactivated an account, and puts every action in one group", async () => {
+    let services: EnterpriseServices | undefined;
+    // What a module is given, as the scim module will be.
+    const capture: EnterpriseModule = {
+      feature: "scim",
+      plugin: (_app, context) => {
+        services = context;
+        return Promise.resolve();
+      },
+    };
+    const server = await startServer({
+      env: { NETHER_ENTERPRISE_AUDIT: "on" },
+      enterpriseModules: [createAuditModule({}), capture],
+    });
+    const set = await setUp(server);
+    const { rows: counted } = await server.db.query("SELECT count(*) AS count FROM audit_events");
+    const test: Test = { ...server, ...set, since: Number(counted[0]?.count ?? 0) };
+    running = test;
+    const invited = await test.server.inject({
+      method: "POST",
+      url: `/api/workspaces/${test.workspaceId}/invitations`,
+      headers: bearer(test.token),
+      payload: { role: "member" },
+    });
+    const accepted = await test.server.inject({
+      method: "POST",
+      url: "/api/invitations/accept",
+      payload: {
+        token: invited.json<{ token: string }>().token,
+        name: "Bea",
+        email: "bea@example.org",
+        password: "another long password",
+      },
+    });
+    const bea = accepted.json<{ user: { id: string } }>().user.id;
+    const events = services?.events;
+    if (events === undefined) throw new Error("The module was not registered.");
+    await test.db.transaction((tx) =>
+      deactivateAccount(
+        tx,
+        bea,
+        { actor: { kind: "directory", id: "okta", name: "Okta" }, origin: fromServer },
+        events,
+      ),
+    );
+    expect((await rows(test)).at(-1)).toMatchObject({
+      action: "account.deactivated",
+      actorType: "directory",
+      actorId: "okta",
+      actorName: "Okta",
+      actorEmail: null,
+      targetType: "account",
+      targetId: bea,
+      targetName: "Bea",
+      details: { sessions: 1, tokens: [] },
+    });
+    const found = await test.server.inject({
+      method: "GET",
+      url: "/api/audit/events?actor=okta&group=signIns",
+      headers: bearer(test.token),
+    });
+    expect(found.json<{ events: unknown[] }>().events).toMatchObject([
+      {
+        action: "account.deactivated",
+        actor: { type: "directory", id: "okta", name: "Okta", email: null },
+      },
+    ]);
+    const grouped: readonly string[] = Object.values(actionGroups).flat();
+    for (const action of serverActions) {
+      expect(
+        grouped.filter((each) => each === action),
+        action,
+      ).toHaveLength(1);
+    }
   });
 
   it("keeps a chain that checks, and shows a row changed or missing", async () => {

@@ -6,6 +6,8 @@ import { randomBytes } from "node:crypto";
 import { type TestServer, bearer, setUp, startServer } from "@nether/server/test/app.ts";
 import { type TestProvider, startProvider } from "@nether/server/test/provider.ts";
 import { pkceChallenge } from "@nether/server/src/oidc.ts";
+import { deactivateAccount, deactivatedMessage } from "@nether/server/src/accounts.ts";
+import { ServerEvents, fromServer } from "@nether/server/src/events.ts";
 import { afterEach, describe, expect, it } from "vitest";
 import { ssoModule } from "../src/index.ts";
 import { type Bend, type IdpPerson, TestIdp, emailFormat, transient } from "./idp.ts";
@@ -329,6 +331,38 @@ describe("signing in through SAML", () => {
     expect(next.json()).toMatchObject({
       user: { id: session.json<{ user: { id: string } }>().user.id, email: "grace@corp.example" },
     });
+  });
+
+  it("tells a deactivated account so at redeeming, and accepts no invitation for it", async () => {
+    const test = await start();
+    const idp = new TestIdp();
+    await addSaml(test, idp);
+    const first = await samlSignIn(test, idp, grace);
+    const made = await redeem(test, first.at.searchParams.get("code") ?? "", first.verifier);
+    const graceId = made.json<{ user: { id: string } }>().user.id;
+    const outcome = await test.db.transaction((tx) =>
+      deactivateAccount(
+        tx,
+        graceId,
+        { actor: { kind: "directory", id: "okta", name: "Okta" }, origin: fromServer },
+        new ServerEvents(),
+      ),
+    );
+    expect(outcome).toBe("changed");
+    const invited = await test.server.inject({
+      method: "POST",
+      url: `/api/workspaces/${test.workspaceId}/invitations`,
+      headers: bearer(test.token),
+      payload: { role: "member" },
+    });
+    const invitation = invited.json<{ token: string }>().token;
+    const { url, verifier } = await startFlow(test, "corp", invitation);
+    const at = landed(await post(test, await idp.answer(url, grace)));
+    const refused = await redeem(test, at.searchParams.get("code") ?? "", verifier);
+    expect(refused.statusCode).toBe(403);
+    expect(refused.json<{ message: string }>().message).toBe(deactivatedMessage);
+    const places = await test.db.query("SELECT 1 FROM memberships WHERE user_id = $1", [graceId]);
+    expect(places.rows).toEqual([]);
   });
 
   it("puts the web app's session in its cookie", async () => {
