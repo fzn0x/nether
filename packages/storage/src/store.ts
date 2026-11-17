@@ -104,6 +104,43 @@ export function commentsDocument(note: NoteId): NoteId {
 }
 
 /** Where a client keeps a vault's index. */
+/** The file a note's passages were made from, for search by meaning (ADR 0074). */
+export interface MeaningFile {
+  readonly note: NoteId;
+  readonly size: number;
+  readonly modified: number;
+}
+
+/** A passage of a note as search by meaning keeps it: where it is, its text's hash, and its vector. */
+export interface MeaningPassage {
+  /** Its place among the note's passages, from 0. */
+  readonly ordinal: number;
+  /** The headings it is under, joined by " > "; empty before the note's first. */
+  readonly heading: string;
+  /** A hash of the text it was embedded from. */
+  readonly hash: string;
+  /** The start of its text, for a result to show. */
+  readonly preview: string;
+  /** What each of its vector's bytes is multiplied by. */
+  readonly scale: number;
+  /** Its vector, a signed byte a number. */
+  readonly vector: Uint8Array;
+  /** Its vector's signs, a bit a number. */
+  readonly signs: Uint8Array;
+}
+
+/** A passage as the index keeps it, by an ID of its own. */
+export interface StoredPassage extends MeaningPassage {
+  readonly id: number;
+  readonly note: NoteId;
+}
+
+/** A passage's signs, as a search reads every one. */
+export interface PassageSigns {
+  readonly id: number;
+  readonly signs: Uint8Array;
+}
+
 export interface IndexStore {
   /** Every file the index knows. */
   files(): Promise<readonly FileRecord[]>;
@@ -158,6 +195,20 @@ export interface IndexStore {
    * caller's to apply.
    */
   searchText(query: SearchQuery, limit: number): Promise<readonly TextHit[]>;
+  /** The files the notes' passages were made from, for search by meaning. */
+  meaningFiles(): Promise<readonly MeaningFile[]>;
+  /** A note's passages, in order, to keep the vectors of those whose text is the same. */
+  notePassages(note: NoteId): Promise<readonly StoredPassage[]>;
+  /** Replaces a note's passages, all at once, and records the file they were made from. */
+  putPassages(file: MeaningFile, passages: readonly MeaningPassage[]): Promise<void>;
+  /** Forgets notes' passages, and the files they were made from. */
+  deletePassages(notes: readonly NoteId[]): Promise<void>;
+  /** Forgets every passage, as when another model is chosen. */
+  clearPassages(): Promise<void>;
+  /** The signs of the passages after the ID `after`, in the order of their IDs, at most `limit`. */
+  passageSigns(after: number, limit: number): Promise<readonly PassageSigns[]>;
+  /** Some passages by their IDs, those it has. */
+  passagesById(ids: readonly number[]): Promise<readonly StoredPassage[]>;
   close(): Promise<void>;
 }
 
@@ -191,6 +242,10 @@ export class MemoryStore implements IndexStore {
   readonly #settings = new Map<string, Uint8Array>();
   readonly #versions = new Map<number, NoteVersion & { readonly text: string }>();
   #nextVersion = 1;
+  readonly #meaningFiles = new Map<NoteId, MeaningFile>();
+  /** Each note's passages, in order. */
+  readonly #passages = new Map<NoteId, StoredPassage[]>();
+  #nextPassage = 1;
 
   #document(note: NoteId) {
     let document = this.#documents.get(note);
@@ -371,6 +426,53 @@ export class MemoryStore implements IndexStore {
         .sort((a, b) => b.score - a.score)
         .slice(0, limit)
         .map(({ hit }) => hit),
+    );
+  }
+
+  meaningFiles(): Promise<readonly MeaningFile[]> {
+    return Promise.resolve([...this.#meaningFiles.values()]);
+  }
+
+  notePassages(note: NoteId): Promise<readonly StoredPassage[]> {
+    return Promise.resolve([...(this.#passages.get(note) ?? [])]);
+  }
+
+  putPassages(file: MeaningFile, passages: readonly MeaningPassage[]): Promise<void> {
+    this.#meaningFiles.set(file.note, file);
+    this.#passages.set(
+      file.note,
+      passages.map((passage) => ({ ...passage, id: this.#nextPassage++, note: file.note })),
+    );
+    return Promise.resolve();
+  }
+
+  deletePassages(notes: readonly NoteId[]): Promise<void> {
+    for (const note of notes) {
+      this.#meaningFiles.delete(note);
+      this.#passages.delete(note);
+    }
+    return Promise.resolve();
+  }
+
+  clearPassages(): Promise<void> {
+    this.#meaningFiles.clear();
+    this.#passages.clear();
+    return Promise.resolve();
+  }
+
+  passageSigns(after: number, limit: number): Promise<readonly PassageSigns[]> {
+    const passages = [...this.#passages.values()]
+      .flat()
+      .filter((passage) => passage.id > after)
+      .sort((a, b) => a.id - b.id)
+      .slice(0, limit);
+    return Promise.resolve(passages.map(({ id, signs }) => ({ id, signs })));
+  }
+
+  passagesById(ids: readonly number[]): Promise<readonly StoredPassage[]> {
+    const wanted = new Set(ids);
+    return Promise.resolve(
+      [...this.#passages.values()].flat().filter((passage) => wanted.has(passage.id)),
     );
   }
 

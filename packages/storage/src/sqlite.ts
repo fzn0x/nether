@@ -10,6 +10,10 @@ import {
   type NoteIndexRow,
   type NoteTextRow,
   type NoteVersion,
+  type MeaningFile,
+  type MeaningPassage,
+  type PassageSigns,
+  type StoredPassage,
   type StoredDocument,
   type StoredUpdate,
   type TextHit,
@@ -119,6 +123,27 @@ const migrations: readonly (readonly string[])[] = [
     "CREATE INDEX note_versions_by_note ON note_versions (note, time)",
     "CREATE INDEX note_versions_by_time ON note_versions (time)",
   ],
+  [
+    // Search by meaning (ADR 0074): the file each note's passages were made
+    // from, and each passage's vector, a byte a number, with its signs.
+    `CREATE TABLE meaning_files (
+      note TEXT PRIMARY KEY NOT NULL,
+      size INTEGER NOT NULL,
+      modified INTEGER NOT NULL
+    ) WITHOUT ROWID`,
+    `CREATE TABLE passages (
+      id INTEGER PRIMARY KEY,
+      note TEXT NOT NULL,
+      ordinal INTEGER NOT NULL,
+      heading TEXT NOT NULL,
+      hash TEXT NOT NULL,
+      preview TEXT NOT NULL,
+      scale REAL NOT NULL,
+      vector BLOB NOT NULL,
+      signs BLOB NOT NULL,
+      UNIQUE (note, ordinal)
+    )`,
+  ],
 ];
 
 /** The schema version this code writes. */
@@ -130,6 +155,29 @@ const chunk = 2000;
 function text(value: SqlValue | undefined): string {
   if (typeof value !== "string") throw new Error("The index holds a value of the wrong type.");
   return value;
+}
+
+function real(value: SqlValue | undefined): number {
+  if (typeof value !== "number") throw new Error("The index holds a value of the wrong type.");
+  return value;
+}
+
+/** A passage's columns, in the order the queries below read them. */
+const passageColumns = "id, note, ordinal, heading, hash, preview, scale, vector, signs";
+
+function passageOf(row: readonly SqlValue[]): StoredPassage {
+  const [id, note, ordinal, heading, hash, preview, scale, vector, signs] = row;
+  return {
+    id: integer(id),
+    note: text(note) as NoteId,
+    ordinal: integer(ordinal),
+    heading: text(heading),
+    hash: text(hash),
+    preview: text(preview),
+    scale: real(scale),
+    vector: bytes(vector),
+    signs: bytes(signs),
+  };
 }
 
 function bytes(value: SqlValue | undefined): Uint8Array {
@@ -457,6 +505,87 @@ export class SqliteStore implements IndexStore {
       note: text(note) as NoteId,
       snippet: typeof snippet === "string" ? snippet : "",
     }));
+  }
+
+  async meaningFiles(): Promise<readonly MeaningFile[]> {
+    const { rows } = await this.#database.query("SELECT note, size, modified FROM meaning_files");
+    return rows.map(([note, size, modified]) => ({
+      note: text(note) as NoteId,
+      size: integer(size),
+      modified: integer(modified),
+    }));
+  }
+
+  async notePassages(note: NoteId): Promise<readonly StoredPassage[]> {
+    const { rows } = await this.#database.query(
+      `SELECT ${passageColumns} FROM passages WHERE note = ? ORDER BY ordinal`,
+      [note],
+    );
+    return rows.map(passageOf);
+  }
+
+  async putPassages(file: MeaningFile, passages: readonly MeaningPassage[]): Promise<void> {
+    await this.#database.transaction([
+      { sql: "DELETE FROM passages WHERE note = ?", params: [file.note] },
+      ...passages.map((passage) => ({
+        sql: `INSERT INTO passages (note, ordinal, heading, hash, preview, scale, vector, signs)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        params: [
+          file.note,
+          passage.ordinal,
+          passage.heading,
+          passage.hash,
+          passage.preview,
+          passage.scale,
+          passage.vector,
+          passage.signs,
+        ],
+      })),
+      {
+        sql: `INSERT INTO meaning_files (note, size, modified) VALUES (?, ?, ?)
+          ON CONFLICT (note) DO UPDATE SET size = excluded.size, modified = excluded.modified`,
+        params: [file.note, file.size, file.modified],
+      },
+    ]);
+  }
+
+  async deletePassages(notes: readonly NoteId[]): Promise<void> {
+    const statements = notes.flatMap((note) => [
+      { sql: "DELETE FROM passages WHERE note = ?", params: [note] },
+      { sql: "DELETE FROM meaning_files WHERE note = ?", params: [note] },
+    ]);
+    for (let start = 0; start < statements.length; start += chunk) {
+      await this.#database.transaction(statements.slice(start, start + chunk));
+    }
+  }
+
+  async clearPassages(): Promise<void> {
+    await this.#database.transaction([
+      { sql: "DELETE FROM passages" },
+      { sql: "DELETE FROM meaning_files" },
+    ]);
+  }
+
+  async passageSigns(after: number, limit: number): Promise<readonly PassageSigns[]> {
+    const { rows } = await this.#database.query(
+      "SELECT id, signs FROM passages WHERE id > ? ORDER BY id LIMIT ?",
+      [after, limit],
+    );
+    return rows.map(([id, signs]) => ({ id: integer(id), signs: bytes(signs) }));
+  }
+
+  async passagesById(ids: readonly number[]): Promise<readonly StoredPassage[]> {
+    const found: StoredPassage[] = [];
+    // A few hundred at a time, inside SQLite's limit on a statement's values.
+    for (let start = 0; start < ids.length; start += 500) {
+      const part = ids.slice(start, start + 500);
+      const { rows } = await this.#database.query(
+        `SELECT ${passageColumns} FROM passages WHERE id IN (${part.map(() => "?").join(", ")})`,
+        part,
+      );
+      found.push(...rows.map(passageOf));
+    }
+    return found;
   }
 
   close(): Promise<void> {
