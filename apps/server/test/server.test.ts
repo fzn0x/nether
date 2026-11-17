@@ -65,6 +65,7 @@ describe("readConfig", () => {
         scim: undefined,
         audit: undefined,
         policies: undefined,
+        permissions: undefined,
         admin: undefined,
         // The environment's alone: off unless it says on (ADR 0082).
         ha: false,
@@ -266,6 +267,7 @@ describe("readConfig", () => {
       "NETHER_ENTERPRISE_SCIM",
       "NETHER_ENTERPRISE_AUDIT",
       "NETHER_ENTERPRISE_POLICIES",
+      "NETHER_ENTERPRISE_PERMISSIONS",
       "NETHER_ENTERPRISE_ADMIN",
       "NETHER_ENTERPRISE_HA",
     ]);
@@ -294,6 +296,7 @@ describe("GET /health", () => {
         scim: false,
         audit: false,
         policies: false,
+        permissions: false,
         admin: false,
         ha: false,
       },

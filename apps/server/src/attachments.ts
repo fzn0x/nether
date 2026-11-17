@@ -5,6 +5,9 @@
 // bytes it gets are the ones their name says. For an encrypted workspace
 // the bytes are ciphertext, and so is their hash. A share link's visit
 // reads its workspace's files too, by their hash, as a member does (ADR 0071).
+// Whoever edits somewhere in a workspace sends its files: in General, or in
+// any teamspace or page it opens at edit or more, as a guest who edits a
+// page adds its images (ADR 0089).
 import { createHash } from "node:crypto";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import type { BlobStore } from "./blobs.ts";
@@ -12,7 +15,9 @@ import { type Database, readText } from "./db.ts";
 import { fail, uuidField } from "./http.ts";
 import { type LinkPolicies, visitOf, visitToken } from "./links.ts";
 import { accountOf, requestToken, sessionAccount, signedIn } from "./sessions.ts";
-import { membership, writes } from "./workspaces.ts";
+import { placeOf } from "./places.ts";
+import { accessible, writesAt } from "./units.ts";
+import { membership } from "./workspaces.ts";
 
 interface Params {
   readonly workspace: string;
@@ -67,7 +72,7 @@ export function registerAttachments(
   );
 
   async function place(userId: string, workspace: string) {
-    return membership(db, userId, workspace);
+    return placeOf(db, userId, workspace);
   }
 
   app.head<{ Params: Params }>(
@@ -90,10 +95,15 @@ export function registerAttachments(
     { schema: { params }, preHandler: account },
     async (request, reply) => {
       const workspace = request.params.workspace.toLowerCase();
-      const found = await place(accountOf(request).id, workspace);
+      const { levels, place: found } = await accessible(db, accountOf(request).id, workspace);
       if (found === undefined) return fail(reply, 404, "This account is in no such workspace.");
-      if (!writes(found.role))
-        return fail(reply, 403, "A guest may read this workspace, not change it.");
+      if (![...levels.values()].some(writesAt)) {
+        return fail(
+          reply,
+          403,
+          "Sending files here takes edit access somewhere in this workspace.",
+        );
+      }
       const body = request.body as unknown;
       if (!Buffer.isBuffer(body) || body.length === 0) {
         return fail(reply, 400, "Send the file's bytes, as application/octet-stream.");

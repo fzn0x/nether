@@ -1,5 +1,8 @@
-// What ADR 0001 allows (docs/adr/0001-license-agpl-and-dco.md), and a
-// check of SPDX license expressions against it.
+// What ADR 0001 allows (docs/adr/0001-license-agpl-and-dco.md), a check of
+// SPDX license expressions against it, and the license of a package known by
+// its license file, for Go modules and Swift packages, which name none.
+import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 
 export const allowed = new Set([
   "MIT",
@@ -87,4 +90,53 @@ export function permits(expression) {
   } catch {
     return false;
   }
+}
+
+// Recognizes a license file by phrases from its text.
+const licenseTexts = [
+  ["MIT", ["Permission is hereby granted, free of charge", 'THE SOFTWARE IS PROVIDED "AS IS"']],
+  ["Apache-2.0", ["Apache License", "Version 2.0"]],
+  ["BSD-3-Clause", ["Redistribution and use in source and binary forms", "Neither the name of"]],
+  ["BSD-2-Clause", ["Redistribution and use in source and binary forms"]],
+  ["ISC", ["Permission to use, copy, modify, and/or distribute this software for any purpose"]],
+  ["MPL-2.0", ["Mozilla Public License Version 2.0"]],
+  ["Unlicense", ["This is free and unencumbered software released into the public domain"]],
+];
+const licenseFiles = ["LICENSE", "LICENSE.md", "LICENSE.txt", "LICENCE", "COPYING"];
+
+/** A package's license, from the license file in its folder. */
+export function identify(directory) {
+  for (const name of licenseFiles) {
+    const path = join(directory, name);
+    if (!existsSync(path)) continue;
+    const text = readFileSync(path, "utf8").replace(/\s+/g, " ");
+    const match = licenseTexts.find(([, phrases]) =>
+      phrases.every((phrase) => text.includes(phrase)),
+    );
+    return match?.[0] ?? `unrecognized text in ${name}`;
+  }
+  return "no license file";
+}
+
+/**
+ * The Swift packages a Package.resolved pins, each with the folder SwiftPM
+ * checks it out to: its repository's name. Reads the file's first format,
+ * and the second and third.
+ */
+export function swiftPins(resolved) {
+  const pins = resolved.pins ?? resolved.object?.pins ?? [];
+  return pins.map((pin) => {
+    const location = pin.location ?? pin.repositoryURL ?? "";
+    const version = pin.state?.version ?? pin.state?.revision ?? "";
+    return {
+      name: pin.identity ?? pin.package ?? location,
+      version,
+      folder:
+        location
+          .replace(/\/+$/, "")
+          .replace(/\.git$/, "")
+          .split("/")
+          .pop() ?? "",
+    };
+  });
 }

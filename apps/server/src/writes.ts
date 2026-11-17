@@ -331,11 +331,11 @@ export function registerWrites(
    * gives it. Where the workspace's data policy keeps its text (ADR 0088),
    * only where the note is and when it changed.
    */
-  async function written(reached: Reached, id: string) {
+  async function written(reached: Reached, id: string, userId: string) {
     const row = await listedNote(db, reached, id);
     if (row === undefined) throw new Error(`The note ${id} is not listed after its write.`);
     const answer = await noteAnswer(sync, reached, row);
-    if (await checks.exported(reached.workspace)) return answer;
+    if (await checks.exported(reached.workspace, userId)) return answer;
     const { workspace, path, title, updatedAt } = answer.body;
     return { tag: answer.tag, body: { id: answer.body.id, workspace, path, title, updatedAt } };
   }
@@ -351,7 +351,7 @@ export function registerWrites(
       if ("error" in note) return fail(reply, 400, note.error);
       const made = await make(caller, reached, request.body.path, note);
       if (typeof made !== "string") return fail(reply, made[0], made[1]);
-      const answer = await written(reached, made);
+      const answer = await written(reached, made, caller.userId);
       return reply
         .code(201)
         .header("location", `/api/v1/workspaces/${reached.workspace}/notes/${made}`)
@@ -389,7 +389,7 @@ export function registerWrites(
         return true;
       });
       if (!changed) return fail(reply, 412, changedSince);
-      const answer = await written(reached, id);
+      const answer = await written(reached, id, caller.userId);
       return reply.header("etag", answer.tag).send(answer.body);
     },
   );
@@ -458,7 +458,7 @@ export function registerWrites(
       const path = `${rowsFolder(readText(found.row, "path"))}${title}.md`;
       const made = await make(caller, reached, path, note);
       if (typeof made !== "string") return fail(reply, made[0], made[1]);
-      const answer = await written(reached, made);
+      const answer = await written(reached, made, caller.userId);
       return reply
         .code(201)
         .header("location", `/api/v1/workspaces/${reached.workspace}/notes/${made}`)

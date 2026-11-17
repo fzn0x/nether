@@ -1,0 +1,22 @@
+{
+  "name": "@nether/enterprise-permissions",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Advanced permissions: custom roles, groups' access to teamspaces and pages, and sharing within a workspace's domains (ADR 0089).",
+  "license": "AGPL-3.0-or-later",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@nether/server": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^24.19.2",
+    "vitest": "^5.0.5"
+  }
+}

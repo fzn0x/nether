@@ -11,14 +11,17 @@
     "sync": "cap sync",
     "typecheck": "tsc -p tsconfig.json",
     "icons": "node scripts/render-icons.mjs",
-    "smoke": "node scripts/smoke.mjs"
+    "smoke": "node scripts/smoke.mjs",
+    "smoke:ios": "node scripts/smoke-ios.mjs"
   },
   "dependencies": {
     "@capacitor-community/sqlite": "8.1.1",
     "@capacitor/android": "8.6.0",
     "@capacitor/app": "8.1.2",
     "@capacitor/core": "8.6.0",
-    "@capawesome/capacitor-background-task": "8.0.3"
+    "@capacitor/ios": "8.6.0",
+    "@capawesome/capacitor-background-task": "8.0.3",
+    "@nether/mobile-plugin": "link:./plugin"
   },
   "devDependencies": {
     "@capacitor/cli": "8.6.0",

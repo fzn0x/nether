@@ -5,7 +5,8 @@ description: How a server's admin turns Nether's enterprise features on and off,
 
 Nether's enterprise features are free and open source, under the same
 license as the rest of it: single sign-on, provisioning, audit logs, data
-policies, the admin console's own pages and high availability. Every
+policies, advanced permissions, the admin console's own pages and high
+availability. Every
 server has them all, each off until you turn it on. There is no license
 key, no seat limit, and nothing the server reports to anyone: they work
 air-gapped.
@@ -571,6 +572,17 @@ server cannot be reached. A desktop vault's files are on its device, the
 person's own: no
 policy stops another program from reading them. Device management on your
 organization's computers is the tool for that.
+
+## Advanced permissions
+
+**Advanced permissions** will bring custom roles, groups given teamspaces
+and pages, and sharing kept to a workspace's email domains, in parts. Each
+role is already a set of what it may do: General's level, the highest
+level anything opens at, teamspaces, a private space, members, guests,
+share links, publishing, export and the workspace's own settings. The four
+built-in roles keep what they have always given, so turning the feature
+on changes nothing yet. `NETHER_ENTERPRISE_PERMISSIONS` sets it in the
+server's settings.
 
 ## Audit logs
 

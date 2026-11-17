@@ -6,42 +6,14 @@
 // so no member seals one to it (ADR 0085).
 import { randomUUID } from "node:crypto";
 import type { FastifyInstance } from "fastify";
-import { type Database, type Queryable, readBytes, readNumber, readText } from "./db.ts";
+import { type Database, readBytes, readNumber, readText } from "./db.ts";
 import { fail, nameField, uuidField } from "./http.ts";
 import { accountOf, signedIn } from "./sessions.ts";
 import { type ServerEvents, accountActor, originOf } from "./events.ts";
+import { type Encryption, membership, placeOf } from "./places.ts";
 
-export type Encryption = "none" | "end-to-end";
-
-/** An account's place in a workspace. */
-export interface Membership {
-  readonly role: string;
-  readonly encryption: Encryption;
-}
-
-/** An account's role in a workspace, and whether the workspace is encrypted. */
-export async function membership(
-  db: Queryable,
-  userId: string,
-  workspaceId: string,
-): Promise<Membership | undefined> {
-  const { rows } = await db.query(
-    `SELECT m.role, w.encryption FROM memberships m JOIN workspaces w ON w.id = m.workspace_id
-      WHERE m.workspace_id = $1 AND m.user_id = $2`,
-    [workspaceId, userId],
-  );
-  const row = rows[0];
-  if (row === undefined) return undefined;
-  return {
-    role: readText(row, "role"),
-    encryption: readText(row, "encryption") === "end-to-end" ? "end-to-end" : "none",
-  };
-}
-
-/** Whether a role may change a workspace's notes. */
-export function writes(role: string): boolean {
-  return role !== "guest";
-}
+// An account's place in a workspace is read where what it may do is (ADR 0089).
+export { type Encryption, type Membership, membership } from "./places.ts";
 
 /** Bytes in base64, of at most a length; undefined when not. */
 export function base64Bytes(text: string, max: number): Uint8Array | undefined {
@@ -219,9 +191,9 @@ export function registerWorkspaces(app: FastifyInstance, db: Database, events: S
     },
     async (request, reply) => {
       const workspace = request.params.workspace.toLowerCase();
-      const place = await membership(db, accountOf(request).id, workspace);
+      const place = await placeOf(db, accountOf(request).id, workspace);
       if (place === undefined) return fail(reply, 404, "This account is in no such workspace.");
-      if (place.role !== "owner" && place.role !== "admin") {
+      if (!place.settings.workspace) {
         return fail(reply, 403, "Only the workspace's owners and admins change its settings.");
       }
       await db.transaction(async (tx) => {

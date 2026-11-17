@@ -38,6 +38,7 @@ import { deactivatedRefusal } from "./accounts.ts";
 import { hashPassword, verifyPassword } from "./passwords.ts";
 import type { AiEndpoints } from "./aiEndpoints.ts";
 import { type DataPolicies, appsPolicy } from "./dataPolicies.ts";
+import { settingsOf } from "./places.ts";
 import { type SecuritySettings, settingSql } from "./settings.ts";
 import {
   type RequiredProvider,
@@ -568,6 +569,8 @@ export function registerSessions(
           ai: readBoolean(row, "ai"),
           // What its members' apps keep to of its data policy, or null (ADR 0088).
           policies: policed ? appsPolicy(await policies.of(id)) : null,
+          // What the account's role may do there, for its apps to offer only that (ADR 0089).
+          may: settingsOf(readText(row, "role")),
         };
       }),
     );
