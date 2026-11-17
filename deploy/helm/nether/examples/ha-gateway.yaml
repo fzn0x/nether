@@ -1,0 +1,26 @@
+# Several nodes behind a Gateway API Gateway, attachments on a volume every
+# node mounts (ReadWriteMany, as NFS or CephFS give). The chart makes the
+# Secret: NETHER_SECRET_KEY and the setup code made up once and kept, the
+# addresses given here or with --set at install.
+ha:
+  enabled: true
+replicaCount: 3
+secrets:
+  databaseUrl: postgres://nether:change-me@nether-db-rw.databases:5432/nether
+  redisUrl: redis://valkey.valkey:6379
+storage:
+  kind: disk
+  disk:
+    size: 50Gi
+    storageClassName: nfs
+    accessModes: [ReadWriteMany]
+server:
+  publicUrl: https://nether.example.org
+  trustProxy: uniquelocal
+httpRoute:
+  enabled: true
+  parentRefs:
+    - name: gateway
+      namespace: gateway
+      sectionName: https
+  hostnames: [nether.example.org]

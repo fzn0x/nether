@@ -1,0 +1,75 @@
+name: Helm chart
+
+# The chart's checks (ADR 0082), on every change to it: lint, render each
+# example of values, and validate what it renders against Kubernetes'
+# schemas, the oldest the chart supports and the newest.
+on:
+  pull_request:
+    paths:
+      - deploy/helm/**
+      - .github/workflows/helm.yml
+  push:
+    branches: [main]
+    paths:
+      - deploy/helm/**
+      - .github/workflows/helm.yml
+
+permissions:
+  contents: read
+
+jobs:
+  chart:
+    name: Lint, render and validate the chart
+    runs-on: ubuntu-latest
+    env:
+      KUBECONFORM_VERSION: v0.8.0
+      KUBECONFORM_SHA256: 9bc2bffbf71f261128533edaf912153948b7ff238f9a531ae6d34466ec287883
+      # HTTPRoute's schema, from a pinned commit of the CRDs catalog (MIT).
+      CRD_SCHEMAS: https://raw.githubusercontent.com/datreeio/CRDs-catalog/c86448cbf1a840ca62d119259864863897c8748a/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json
+    steps:
+      - uses: actions/checkout@v7
+      - uses: azure/setup-helm@v5.0.1
+        with:
+          version: v4.3.1
+      - name: Install kubeconform ${{ env.KUBECONFORM_VERSION }}
+        run: |
+          curl -fsSL -o kubeconform.tar.gz \
+            "https://github.com/yannh/kubeconform/releases/download/$KUBECONFORM_VERSION/kubeconform-linux-amd64.tar.gz"
+          echo "$KUBECONFORM_SHA256  kubeconform.tar.gz" | sha256sum -c -
+          tar -xzf kubeconform.tar.gz kubeconform
+          sudo mv kubeconform /usr/local/bin/
+      - name: Lint, with the defaults and each example
+        run: |
+          helm lint deploy/helm/nether --strict \
+            --set secrets.databaseUrl=postgres://nether:placeholder@postgres:5432/nether
+          for values in deploy/helm/nether/examples/*.yaml; do
+            helm lint deploy/helm/nether --strict -f "$values"
+          done
+      - name: Render each example, and validate it on Kubernetes 1.30 and 1.37
+        run: |
+          for values in deploy/helm/nether/examples/*.yaml; do
+            for version in 1.30.0 1.37.0; do
+              echo "$values on $version"
+              helm template nether deploy/helm/nether -f "$values" \
+                | kubeconform -strict -summary -kubernetes-version "$version" \
+                    -schema-location default -schema-location "$CRD_SCHEMAS"
+            done
+          done
+      - name: Refuse values that cannot run, saying why
+        run: |
+          refused() {
+            if out=$(helm template nether deploy/helm/nether "$@" 2>&1); then
+              echo "Rendered, though it should not have: $*"; exit 1
+            fi
+            echo "$out" | grep -q "$expected" || { echo "$out"; exit 1; }
+            echo "refused: $*"
+          }
+          expected="Set secrets.databaseUrl" refused
+          expected="ha.enabled needs Valkey" refused --set ha.enabled=true \
+            --set secrets.databaseUrl=postgres://nether:placeholder@postgres:5432/nether \
+            --set storage.kind=s3 --set secrets.s3AccessKey=placeholder --set secrets.s3SecretKey=placeholder
+          expected="needs a ReadWriteMany volume" refused --set ha.enabled=true \
+            --set secrets.databaseUrl=postgres://nether:placeholder@postgres:5432/nether \
+            --set secrets.redisUrl=redis://valkey:6379
+          expected="values don't meet the specifications of the schema" refused --set storage.kind=ftp \
+            --set secrets.databaseUrl=postgres://nether:placeholder@postgres:5432/nether

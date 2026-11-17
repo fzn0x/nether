@@ -130,12 +130,17 @@ describe("draining", () => {
     // An edit not stored yet when the node starts to drain.
     provider.document.getText("content").insert(0, "Kept as the node stopped.");
 
+    const before = await node.server.inject({ method: "GET", url: "/health" });
+    expect(before.headers.connection).not.toBe("close");
     const drained = drain(node.server, readiness, 0.5);
     const ready = await node.server.inject({ method: "GET", url: "/health/ready" });
     expect(ready.statusCode).toBe(503);
     expect(ready.json()).toMatchObject({ status: "draining", database: "up" });
-    // Still serving while the load balancer takes it out.
-    expect((await node.server.inject({ method: "GET", url: "/health" })).statusCode).toBe(200);
+    // Still serving while the load balancer takes it out, each answer
+    // closing its connection, so the client's next one goes to a node that stays.
+    const live = await node.server.inject({ method: "GET", url: "/health" });
+    expect(live.statusCode).toBe(200);
+    expect(live.headers.connection).toBe("close");
     await drained;
 
     expect(await relayClosed).toBe(1012);

@@ -257,6 +257,83 @@ tells whether an account exists.
 the providers goes on, and every other way in comes back until it is
 unset. `NETHER_ENTERPRISE_SSO=off` turns single sign-on off altogether.
 
+## Provisioning
+
+With **Provisioning** on, the console's **Directories** page adds the
+directories that make, change, deactivate and remove the server's
+accounts: an identity provider that speaks SCIM 2.0, as Okta or Microsoft
+Entra ID, for the people it assigns to Nether. The page needs
+`NETHER_PUBLIC_URL`, the address a directory reaches the server at.
+
+### Adding a directory
+
+Choose **Add a directory**, then:
+
+- **Short name**: lowercase letters, digits and hyphens, as `okta`. It is
+  part of the directory's address and does not change.
+- **Name**: what the console and the audit log call it.
+- **Email domains**: the domains this directory speaks for, one a line.
+  A domain belongs to one directory at most.
+- **Make accounts at other domains too**: for a server with one
+  organization, whose directory holds guests and contractors at their own
+  addresses. Off by default.
+
+Then **Make a token**. It lasts a year unless you pick another length,
+two years at most, and is shown once: copy it into the directory now.
+The page shows its last characters and when it ends, and warns a month
+before; the server's log warns each day of its last week. **Make a new
+token** replaces it at once, and **Revoke the token** ends it. A token
+works only at its own directory's address.
+
+Give the directory its **SCIM address**, as
+`https://<your server>/api/scim/okta/v2`, and the token, as a bearer
+token.
+
+- **Okta**: in your app integration, turn on SCIM provisioning. Give it
+  the SCIM address as its base URL, `userName` as the unique identifier
+  for users, and the token as a bearer token in the HTTP header. Turn on
+  pushing new users, profile updates and deactivating users.
+- **Microsoft Entra ID**: in your enterprise application, set
+  provisioning to automatic. Give it the SCIM address as its tenant URL
+  and the token as its **Secret Token**, then **Test Connection**. Both
+  of Entra ID's forms of requests are taken, with its
+  `aadOptscim062020` flag or without it.
+
+### What a directory does
+
+- **It makes accounts** at its domains. An account it makes has no
+  password: its person signs in through single sign-on, the server's
+  OpenID Connect provider, or an email code. The page warns when none of
+  these is set up. Its address is the directory's primary email, and its
+  name the directory's display name.
+- **It takes over an account** that already has the address, at one of
+  its domains, when no other directory manages it: the account keeps its
+  password, workspaces and sign-ins. It never takes an account at a
+  domain it does not speak for.
+- **It deactivates an account** when the person is unassigned or
+  disabled: the account signs in no way, its sessions and API tokens
+  end, and its apps are disconnected. It keeps its workspaces and roles,
+  and comes back as it was when the directory turns it on again.
+- **It removes an account**, as Entra ID does 30 days after a soft
+  delete: the account is deactivated, leaves every workspace, and the
+  directory lets it go. The account itself stays, deactivated, as a
+  record. While a workspace it is in is on legal hold, it stays
+  deactivated and in its workspaces, and the directory is told so; Entra
+  ID tries the removal again in a later cycle. Okta never removes, only
+  deactivates.
+- **It never deactivates the server's last active instance admin.**
+
+Nether keeps a person's name, addresses and whether they are active. What
+else a directory sends, as phone numbers, a title or the enterprise
+extension's fields, is taken and not kept, and a password never is.
+Microsoft's SCIM validator reports those attributes missing after a
+write; that is expected.
+
+**Removing a directory** leaves its accounts as they are, active or not,
+managed by no directory.
+
+Groups, and reading an LDAP directory, come next.
+
 ## AI endpoints
 
 With **Data policies** on, the console shows **AI endpoints**: the
@@ -367,6 +444,12 @@ and names, never what a note says, a search, a password or a token.
 | Shares | Share links made and revoked; sites published, changed and taken down, and their domains; publishing allowed or not; invitations made, revoked and accepted; webhooks |
 | Exports | Each request to the [REST API](../api/) that gives notes' text, rows or search results, naming up to 50 notes and counting the rest; the server's backups |
 | Deletions | Notes deleted, in the apps or through the API; API tokens revoked |
+
+With **Provisioning** on, a directory's changes are recorded too, with the
+directory as who made them: the accounts it makes, takes over, changes,
+deactivates, reactivates and lets go, and the places they leave. The
+console's changes to directories and their tokens are recorded as an
+instance admin's, never with a token.
 
 A change is recorded in the same step as the change itself: with the log
 on, a change it cannot record does not happen. An end-to-end encrypted

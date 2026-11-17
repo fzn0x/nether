@@ -169,3 +169,57 @@ export function signIn(
     payload: { email, password },
   });
 }
+
+/**
+ * A database that, once armed, holds the first transaction whose first
+ * statement `holds` picks, until released: rolled back before it changes
+ * anything, and run again after. The request it is in waits there.
+ */
+export function holding(holds: (text: string) => boolean) {
+  const stop = new Error("Held");
+  const held = Promise.withResolvers<undefined>();
+  const released = Promise.withResolvers<undefined>();
+  const gate = {
+    armed: false,
+    held: held.promise,
+    release: () => {
+      released.resolve(undefined);
+    },
+  };
+  const wrap = (database: Database): Database => ({
+    ...database,
+    transaction: async (work) => {
+      try {
+        return await database.transaction((tx) =>
+          work({
+            query: (text, params) => {
+              if (gate.armed && holds(text)) {
+                gate.armed = false;
+                throw stop;
+              }
+              return tx.query(text, params);
+            },
+          }),
+        );
+      } catch (error) {
+        if (error !== stop) throw error;
+        held.resolve(undefined);
+        await released.promise;
+        return database.transaction(work);
+      }
+    },
+  });
+  return { gate, wrap };
+}
+
+/** What a request has come to after a moment: its answer's status, or none yet. */
+export async function soon(
+  request: PromiseLike<{ statusCode: number }>,
+): Promise<number | "waiting"> {
+  const moment = new Promise<"waiting">((resolve) => {
+    setTimeout(() => {
+      resolve("waiting");
+    }, 300);
+  });
+  return Promise.race([Promise.resolve(request).then((answer) => answer.statusCode), moment]);
+}

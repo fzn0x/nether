@@ -30,7 +30,14 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   one of several: open documents and who is in them are shared through
   Valkey, the API reads other nodes' open copies, and a node stops at
   startup unless it has Valkey, attachments every node reads
-  (`NETHER_STORAGE_SHARED` for a shared volume) and a setup code
+  (`NETHER_STORAGE_SHARED` for a shared volume) and a setup code. While a
+  node drains, each answer closes its connection, so clients move to the
+  nodes that stay. The Helm chart, `oci://ghcr.io/fzn0x/charts/nether`,
+  runs the server on Kubernetes, one node or several, with a migration
+  Job before each upgrade, probes, rolling updates one node at a time, a
+  disruption budget, an optional autoscaler, an Ingress or Gateway API
+  route, and a bundled PostgreSQL and Valkey to try it; new guides cover
+  Kubernetes, high availability with a failover runbook, and upgrades
   ([ADR 0082](docs/adr/0082-several-nodes-share-sync-through-valkey-take-their-order-from-postgresql-and-roll-out-one-at-a-time.md)).
 - Publishing: a page with its subpages, or the folder it is in, published
   from its Share dialog as a site anyone opens at the server's
@@ -426,6 +433,16 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   directories, their accounts and their groups are in place for the SCIM
   server and the LDAP pull that follow
   ([ADR 0085](docs/adr/0085-a-directory-provisions-accounts-and-groups-by-scim-or-an-ldap-pull-and-deprovisioning-deactivates-before-it-removes.md)).
+  Then SCIM users: with **Provisioning** on, the console's Directories
+  page adds directories, each with its email domains and a bearer token
+  shown once and kept as its hash, lasting a year unless the admin picks
+  another length. Okta and Microsoft Entra ID provision accounts at
+  `/api/scim/<directory>/v2`: `/Users` with filters, paging, `PUT` and
+  `PATCH` in both providers' forms, and the discovery endpoints. A
+  directory makes accounts with no password, takes over one at its
+  domains, deactivates and reactivates them, and removes one by
+  deactivating it, taking it out of every workspace and letting it go,
+  unless a workspace it is in is on legal hold.
 
 ### Changed
 
@@ -457,6 +474,11 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- A note made through the API in a page that stops being shared on its
+  own is no longer left listed nowhere. Its making waits until the page's
+  unit is gone, then answers 409, and made again it goes where the page
+  sat. Several locks are now held on one connection, so work holding two
+  never waits for the lock pool.
 - The server takes no note into a page's unit while the page stops being
   shared on its own. A move asked meanwhile, as an app asks that sees the
   page's notes listed where it sits while its unit is still there, waits

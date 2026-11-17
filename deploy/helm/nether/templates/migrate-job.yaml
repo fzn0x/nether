@@ -1,0 +1,64 @@
+{{- if .Values.migrations.job }}
+{{- /*
+  Brings the database to this release's schema before the pods roll, so the
+  old pods run beside the new on the new schema (ADR 0082). Not before the
+  first install of the bundled PostgreSQL, which starts with the release:
+  the pods migrate as they start, under the lock every node takes.
+*/ -}}
+{{- $hooks := ternary "pre-upgrade" "pre-install,pre-upgrade" .Values.bundled.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "nether.fullname" . }}-migrate
+  labels:
+    {{- include "nether.labels" . | nindent 4 }}
+    app.kubernetes.io/component: migrate
+  annotations:
+    helm.sh/hook: {{ $hooks }}
+    helm.sh/hook-weight: "0"
+    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: {{ .Values.migrations.backoffLimit }}
+  template:
+    metadata:
+      labels:
+        {{- include "nether.labels" . | nindent 8 }}
+        app.kubernetes.io/component: migrate
+    spec:
+      restartPolicy: Never
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      securityContext:
+        {{- include "nether.podSecurity" . | nindent 8 }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: migrate
+          image: {{ include "nether.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["node", "dist/admin.js", "migrate"]
+          env:
+            {{- include "nether.env" . | nindent 12 }}
+          {{- with .Values.extraEnvFrom }}
+          envFrom:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          securityContext:
+            {{- include "nether.containerSecurity" . | nindent 12 }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- end }}

@@ -447,6 +447,31 @@ importers:
         specifier: ^5.0.5
         version: 5.0.5(@types/node@24.19.2)(@vitest/coverage-v8@5.0.5)(jsdom@30.1.3(@noble/hashes@2.4.0))(vite@8.3.5(@types/node@24.19.2)(jiti@2.7.0)(yaml@2.9.1))
 
+  enterprise/scim:
+    dependencies:
+      '@nether/server':
+        specifier: workspace:*
+        version: link:../../apps/server
+      fastify:
+        specifier: ^5.12.7
+        version: 5.12.7
+    devDependencies:
+      '@hocuspocus/provider':
+        specifier: ~4.8.0
+        version: 4.8.0(y-protocols@1.0.7(yjs@13.6.33))(yjs@13.6.33)
+      '@nether/enterprise-policies':
+        specifier: workspace:*
+        version: link:../policies
+      '@types/node':
+        specifier: ^24.19.2
+        version: 24.19.2
+      vitest:
+        specifier: ^5.0.5
+        version: 5.0.5(@types/node@24.19.2)(@vitest/coverage-v8@5.0.5)(jsdom@30.1.3(@noble/hashes@2.4.0))(vite@8.3.5(@types/node@24.19.2)(jiti@2.7.0)(yaml@2.9.1))
+      yjs:
+        specifier: ^13.6.33
+        version: 13.6.33
+
   enterprise/server:
     dependencies:
       '@nether/enterprise-admin':
@@ -461,6 +486,9 @@ importers:
       '@nether/enterprise-policies':
         specifier: workspace:*
         version: link:../policies
+      '@nether/enterprise-scim':
+        specifier: workspace:*
+        version: link:../scim
       '@nether/enterprise-sso':
         specifier: workspace:*
         version: link:../sso

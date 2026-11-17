@@ -1,0 +1,157 @@
+# Nether's server on Kubernetes (ADR 0082). The server and its migration
+# Job; PostgreSQL and Valkey are yours, unless `bundled.enabled` starts one
+# of each to try it. values.schema.json checks what you set.
+
+image:
+  repository: ghcr.io/fzn0x/nether-server
+  # The chart's appVersion unless set.
+  tag: ""
+  pullPolicy: IfNotPresent
+imagePullSecrets: []
+
+# High availability (the `ha` enterprise feature): several nodes, sharing
+# open documents and the bus through Valkey. It needs `valkey`, attachments
+# every node reads (S3, or a ReadWriteMany volume), and a setup code while
+# the server has no account; the chart makes one unless you give your own.
+ha:
+  enabled: false
+
+# Nodes when the autoscaler is off: 2 with `ha`, else 1, unless set. Several
+# nodes without `ha` do not see each other's edits until they are stored.
+replicaCount: null
+
+autoscaling:
+  enabled: false
+  minReplicas: 2
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 70
+
+# Settings the server reads from its environment. See the server's README
+# for each one; anything else goes in `extraEnv`.
+server:
+  # The address people reach the server at, as https://nether.example.org.
+  publicUrl: ""
+  # Whose X-Forwarded-For to believe: "on", "off", or addresses and ranges,
+  # as "uniquelocal" for an ingress controller on the cluster's network.
+  trustProxy: ""
+  logLevel: info
+  # How long a stopping node keeps serving, its readiness answering 503.
+  drainSeconds: 5
+  # The admin console's features the environment pins, as { audit: "on" }.
+  # `ha` is set by `ha.enabled` above.
+  enterprise: {}
+
+# Where attachments are kept: "s3" for every number of nodes, or "disk" on
+# a volume. Several nodes on disk need a ReadWriteMany volume.
+storage:
+  kind: disk
+  disk:
+    # A claim you made; else the chart makes one.
+    existingClaim: ""
+    size: 10Gi
+    storageClassName: ""
+    # ReadWriteMany for several nodes.
+    accessModes:
+      - ReadWriteOnce
+  s3:
+    endpoint: ""
+    bucket: ""
+    region: ""
+
+# PostgreSQL 16 or newer, and Valkey or Redis: the addresses go in the
+# Secret below. `bundled` starts one of each instead.
+bundled:
+  # One PostgreSQL and one Valkey from this chart, with no failover: to try
+  # Nether, and for the chart's own test. Use your own for real data.
+  enabled: false
+  postgres:
+    image: postgres:18-alpine
+    size: 8Gi
+    storageClassName: ""
+  valkey:
+    image: valkey/valkey:9-alpine
+
+# The server's secrets: from a Secret you made, by the keys named here,
+# or from one the chart makes, from the values below and keys it makes up.
+secrets:
+  existingSecret: ""
+  keys:
+    databaseUrl: NETHER_DATABASE_URL
+    redisUrl: NETHER_REDIS_URL
+    secretKey: NETHER_SECRET_KEY
+    setupCode: NETHER_SETUP_CODE
+    s3AccessKey: NETHER_S3_ACCESS_KEY
+    s3SecretKey: NETHER_S3_SECRET_KEY
+    smtpUrl: NETHER_SMTP_URL
+    oidcClientSecret: NETHER_OIDC_CLIENT_SECRET
+  # For the Secret the chart makes. NETHER_SECRET_KEY and the setup code are
+  # made up once and kept across upgrades; leave them empty unless you
+  # bring your own.
+  databaseUrl: ""
+  redisUrl: ""
+  secretKey: ""
+  setupCode: ""
+  s3AccessKey: ""
+  s3SecretKey: ""
+  smtpUrl: ""
+  oidcClientSecret: ""
+
+# More environment variables, as [{ name: NETHER_MAIL_FROM, value: ... }].
+extraEnv: []
+extraEnvFrom: []
+
+# Runs `node dist/admin.js migrate` before each upgrade, and before the
+# first install with your own PostgreSQL, so pods start on the new schema.
+migrations:
+  job: true
+  backoffLimit: 3
+
+service:
+  type: ClusterIP
+  port: 80
+  # For a NodePort service, its port; empty for one Kubernetes picks.
+  nodePort: null
+  annotations: {}
+
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  hosts: []
+  # - host: nether.example.org
+  tls: []
+  # - secretName: nether-tls
+  #   hosts: [nether.example.org]
+
+# Gateway API's HTTPRoute, for a Gateway you run (Gateway API 1.x).
+httpRoute:
+  enabled: false
+  annotations: {}
+  parentRefs: []
+  # - name: gateway
+  #   namespace: gateway
+  hostnames: []
+
+resources:
+  requests:
+    cpu: 250m
+    memory: 256Mi
+  limits:
+    memory: 1Gi
+
+# The pod's own termination grace period, past the preStop sleep, the drain
+# and closing: SIGTERM comes after the sleep.
+terminationGracePeriodSeconds: 45
+preStopSleepSeconds: 5
+
+podAnnotations: {}
+podLabels: {}
+nodeSelector: {}
+tolerations: []
+affinity: {}
+# Spread across nodes and zones; empty for none.
+topologySpread: true
+
+podDisruptionBudget:
+  # One node at least while a cluster node drains, with two or more.
+  enabled: true

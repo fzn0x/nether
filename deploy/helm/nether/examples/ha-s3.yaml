@@ -1,0 +1,36 @@
+# Several nodes (ADR 0082): PostgreSQL with failover and Valkey of your own,
+# attachments in S3-compatible storage, scaled on CPU from 2 to 10. The
+# Secret `nether-secrets` holds NETHER_DATABASE_URL, NETHER_REDIS_URL,
+# NETHER_SECRET_KEY, NETHER_SETUP_CODE, NETHER_S3_ACCESS_KEY and
+# NETHER_S3_SECRET_KEY.
+ha:
+  enabled: true
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 10
+secrets:
+  existingSecret: nether-secrets
+storage:
+  kind: s3
+  s3:
+    endpoint: https://s3.example.org
+    bucket: nether
+    region: us-east-1
+server:
+  publicUrl: https://nether.example.org
+  trustProxy: uniquelocal
+  enterprise:
+    admin: "on"
+ingress:
+  enabled: true
+  className: nginx
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-body-size: 100m
+  hosts:
+    - host: nether.example.org
+  tls:
+    - secretName: nether-tls
+      hosts: [nether.example.org]

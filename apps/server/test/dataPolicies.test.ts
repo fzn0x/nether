@@ -189,6 +189,37 @@ describe("data policies", () => {
     await test.policies.setEvery(openPolicy);
     expect(await test.policies.anyHold()).toBe(false);
   });
+
+  it("give the workspaces on legal hold through a transaction, set a moment before or kept", async () => {
+    const test = await start();
+    const other = randomUUID();
+    await test.db.query("INSERT INTO workspaces (id, name) VALUES ($1, 'Other')", [other]);
+    const held = () =>
+      test.db.transaction((tx) => test.policies.heldIn(tx, [test.workspaceId, other]));
+    // What is kept says no hold; a hold written since is read all the same.
+    expect(await test.policies.anyHold()).toBe(false);
+    await test.db.query("INSERT INTO workspace_policies (workspace_id, policy) VALUES ($1, $2)", [
+      other,
+      JSON.stringify({ legalHold: true }),
+    ]);
+    expect([...(await held())]).toEqual([other]);
+    await test.db.query("INSERT INTO instance_settings (key, value) VALUES ('policies.data', $1)", [
+      JSON.stringify({ legalHold: true }),
+    ]);
+    expect([...(await held())].sort()).toEqual([test.workspaceId, other].sort());
+    expect(await test.db.transaction((tx) => test.policies.heldIn(tx, []))).toEqual(new Set());
+
+    // While the feature is off, nothing is held.
+    await test.close();
+    running = undefined;
+    const off = await start(false);
+    await off.db.query("INSERT INTO instance_settings (key, value) VALUES ('policies.data', $1)", [
+      JSON.stringify({ legalHold: true }),
+    ]);
+    expect(await off.db.transaction((tx) => off.policies.heldIn(tx, [off.workspaceId]))).toEqual(
+      new Set(),
+    );
+  });
 });
 
 describe("share links under a policy", () => {

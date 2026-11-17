@@ -933,9 +933,13 @@ test("the admin console turns a feature on and off, for an instance admin alone"
   await page.goto("/admin");
   await expect(page.getByRole("heading", { name: "Admin console", level: 1 })).toBeVisible();
   const features = page.getByRole("region", { name: "Features" });
-  // A feature this build has no module for is shown, and cannot be turned on.
+  // High availability is the environment's alone: shown, and not turned on here. Every
+  // other feature has its module in this build, as the image has them.
   await expect(features.getByRole("checkbox", { name: "High availability" })).toBeDisabled();
-  await expect(features).toContainText("Not in this server's build of Nether yet.");
+  await expect(features).toContainText(
+    "Set by NETHER_ENTERPRISE_HA, in the server's environment, read as it starts.",
+  );
+  await expect(features).not.toContainText("Not in this server's build of Nether yet.");
   const pages = features.getByRole("checkbox", {
     name: "The console's usage, workspaces and security pages",
   });
@@ -1468,6 +1472,52 @@ test("a workspace on legal hold keeps its trash, and the trash panel says why", 
     await every.getByRole("checkbox", { name: "Legal hold" }).uncheck();
     await save.click();
     await expect(section.getByRole("status")).toHaveText("Saved the policy for Every workspace.");
+    await feature.uncheck();
+  }
+  expect(problems).toEqual([]);
+});
+
+test("the admin console adds a directory, whose token, shown once, opens its SCIM address", async ({
+  page,
+}) => {
+  const problems = problemsOf(page);
+  await signIn(page, { email: "ada@example.org", password: "a long password" });
+  await page.goto("/admin");
+  const feature = page.getByRole("checkbox", { name: "Provisioning, by SCIM and LDAP" });
+  await feature.check();
+  const section = page.getByRole("region", { name: "Directories" });
+  try {
+    await section.getByRole("button", { name: "Add a directory" }).click();
+    await section.getByRole("textbox", { name: "Short name" }).fill("okta");
+    await section.getByRole("textbox", { name: "Name", exact: true }).fill("Okta");
+    await section.getByRole("textbox", { name: "Email domains" }).fill("corp.example");
+    await section.getByRole("button", { name: "Add", exact: true }).click();
+    await expect(section.getByRole("status")).toHaveText(
+      "Okta was added. Make a token for it next.",
+    );
+    const okta = section.getByRole("listitem").filter({ hasText: "Okta" });
+    await expect(okta).toContainText("http://127.0.0.1:4175/api/scim/okta/v2");
+    await okta.getByRole("button", { name: "Make a token" }).click();
+    const made = okta.getByRole("textbox", { name: "The new token" });
+    await expect(made).toHaveValue(/^nether_scim_/);
+    const token = await made.inputValue();
+    expect(await violations(page)).toEqual([]);
+    const listed = await page.request.get("/api/scim/okta/v2/Users", {
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(listed.status()).toBe(200);
+    expect(await listed.json()).toMatchObject({ totalResults: 0, Resources: [] });
+    // Shown once: after the page loads again, only its last characters are.
+    await page.reload();
+    await expect(section.getByRole("textbox", { name: "The new token" })).toHaveCount(0);
+    await expect(section).toContainText(`Ending in ${token.slice(-4)}`);
+  } finally {
+    const okta = section.getByRole("listitem").filter({ hasText: "Okta" });
+    if ((await okta.count()) > 0) {
+      await okta.getByRole("button", { name: "Remove" }).click();
+      await okta.getByRole("button", { name: "Remove" }).click();
+      await expect(section.getByRole("status")).toHaveText("Okta was removed.");
+    }
     await feature.uncheck();
   }
   expect(problems).toEqual([]);

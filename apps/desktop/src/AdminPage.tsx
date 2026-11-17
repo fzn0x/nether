@@ -3,11 +3,12 @@
 // feature's switch, with why it is set as it is. The `admin` feature adds
 // the server's usage, counted when the page asks, its workspaces (ADR
 // 0083) and its security settings (ADR 0084). The server's nodes are listed
-// in every build (ADR 0082). Only its own code loads, as a share link's
-// page does.
+// in every build (ADR 0082). Provisioning adds its Directories page (ADR
+// 0085). Only its own code loads, as a share link's page does.
 import { type ReactNode, useCallback, useEffect, useState } from "react";
 import { NodesSection } from "./AdminNodes.tsx";
 import { AiEndpointsPage, DataPoliciesPage } from "./AdminPolicies.tsx";
+import { DirectoriesPage } from "./AdminDirectories.tsx";
 import { SecurityPage } from "./AdminSecurity.tsx";
 import { SsoPage } from "./AdminSso.tsx";
 import { WorkspacesPage } from "./AdminWorkspaces.tsx";
@@ -153,6 +154,9 @@ export function AdminPage() {
     step.kind === "open" && step.features.some((state) => state.feature === "admin" && state.on);
   const ssoOn =
     step.kind === "open" && step.features.some((state) => state.feature === "sso" && state.on);
+  // The Directories page shows while provisioning is on (ADR 0085).
+  const scimOn =
+    step.kind === "open" && step.features.some((state) => state.feature === "scim" && state.on);
   const policiesOn =
     step.kind === "open" && step.features.some((state) => state.feature === "policies" && state.on);
   // The audit log shows while its feature is on (ADR 0081).
@@ -272,6 +276,7 @@ export function AdminPage() {
             <p className="hint">{t("adminConsoleOff")}</p>
           )}
           {ssoOn ? <SsoPage /> : null}
+          {scimOn ? <DirectoriesPage /> : null}
           {policiesOn ? (
             <>
               <AiEndpointsPage />

@@ -207,9 +207,30 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
 
+  chart:
+    name: Helm chart
+    needs: server
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: azure/setup-helm@v5.0.1
+        with:
+          version: v4.3.1
+      - name: Package it at the release's version, and push it to ghcr.io
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          echo "$GH_TOKEN" | helm registry login ghcr.io --username "${{ github.actor }}" --password-stdin
+          helm package deploy/helm/nether --version "$version" --app-version "$version" --destination dist
+          helm push "dist/nether-$version.tgz" oci://ghcr.io/fzn0x/charts
+
   publish:
     name: Publish
-    needs: [desktop, appimage, flatpak, server]
+    needs: [desktop, appimage, flatpak, server, chart]
     runs-on: ubuntu-latest
     permissions:
       contents: write

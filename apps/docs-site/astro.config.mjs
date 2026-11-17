@@ -44,7 +44,17 @@ export default defineConfig({
         },
         {
           label: "Servers",
-          items: ["servers", "publishing", "self-hosting", "admin", "api", "clipper"],
+          items: [
+            "servers",
+            "publishing",
+            "self-hosting",
+            "kubernetes",
+            "high-availability",
+            "upgrades",
+            "admin",
+            "api",
+            "clipper",
+          ],
         },
         { label: "Plugins", items: ["plugins"] },
       ],
