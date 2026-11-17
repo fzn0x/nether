@@ -2033,6 +2033,48 @@ button {
   color: var(--text);
 }
 
+/* Search by words or by meaning (ADR 0074), while search by meaning is on. */
+.search-modes {
+  display: flex;
+  gap: 0.25rem;
+  margin: 0 0.75rem 0.5rem;
+}
+
+.search-modes button {
+  flex: 1;
+  padding: 0.25rem 0.5rem;
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: 0.8125rem;
+  cursor: pointer;
+}
+
+.search-modes button[aria-pressed="true"] {
+  border-color: var(--accent);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.search-form {
+  display: flex;
+  flex-direction: column;
+}
+
+.search-progress,
+.search-error {
+  margin: 0 0.75rem 0.5rem;
+  font-size: 0.8125rem;
+}
+
+.search-heading {
+  margin: 0.1rem 0 0;
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
 /* The quick switcher, over the vault. */
 .switcher-backdrop {
   position: fixed;
