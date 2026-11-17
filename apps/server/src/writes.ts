@@ -31,7 +31,7 @@ import {
 } from "./api.ts";
 import type { SyncControl } from "./sync.ts";
 import { type ApiCaller, callerOf } from "./tokens.ts";
-import { general, vaultDocument, writesAt } from "./units.ts";
+import { general, unitLock, vaultDocument, writesAt } from "./units.ts";
 import { originOf } from "./events.ts";
 
 /** The largest note the API takes, in bytes of its Markdown. */
@@ -40,6 +40,8 @@ export const noteBytes = 5 * 1024 * 1024;
 const readOnly = "This token only reads: writing takes a write token.";
 const noWrite = "Writing there takes edit access, which this account does not have.";
 const pathTaken = "A note has that path already.";
+const unitGone =
+  "Where the note goes changed as it was made, as a page that stopped being shared on its own: make it again.";
 const badPath =
   "A note's path is folders and a name ending in .md, each without / \\ : * ? \" < > |, not hidden by a starting dot, and not ending with a dot or a space.";
 const noPrivate =
@@ -252,16 +254,32 @@ export function registerWrites(
     if (!writesAt(reached.levels.get(unit))) return [403, noWrite];
     const markdown = await markdownReader();
     // One make of a workspace at a time, on every node, so two makes of one
-    // path go one after the other (ADR 0082).
-    return db.lock(`api.make.${reached.workspace}`, async () => {
+    // path go one after the other (ADR 0082). One in a unit also holds the
+    // unit's lock, taken second on the same connection: a page's unit
+    // dropped meanwhile, as when the page stops being shared on its own,
+    // would leave the note listed nowhere (#179). Such a make waits, and is
+    // refused once the unit is gone.
+    const locks = [`api.make.${reached.workspace}`];
+    if (unit !== general) locks.push(unitLock(unit));
+    return db.lock(locks, async () => {
       if (await isTaken(db, reached.workspace, path)) return [409, pathTaken] as const;
       const id = randomUUID();
       if (unit !== general) {
-        await db.query(
-          `INSERT INTO note_units (workspace_id, note, unit_id) VALUES ($1, $2, $3)
-           ON CONFLICT (workspace_id, note) DO UPDATE SET unit_id = excluded.unit_id`,
-          [reached.workspace, id, unit],
-        );
+        const placed = await db.transaction(async (tx) => {
+          // Still there, and kept until this commits.
+          const { rows } = await tx.query(
+            "SELECT 1 FROM units WHERE id = $1 AND workspace_id = $2 FOR KEY SHARE",
+            [unit, reached.workspace],
+          );
+          if (rows.length === 0) return false;
+          await tx.query(
+            `INSERT INTO note_units (workspace_id, note, unit_id) VALUES ($1, $2, $3)
+             ON CONFLICT (workspace_id, note) DO UPDATE SET unit_id = excluded.unit_id`,
+            [reached.workspace, id, unit],
+          );
+          return true;
+        });
+        if (!placed) return [409, unitGone] as const;
       }
       await sync.edit(reached.workspace, id, caller.userId, (document) => {
         markdown.writeNote(document, note);

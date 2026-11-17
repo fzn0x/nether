@@ -78,10 +78,12 @@ export interface Database extends Queryable {
   transaction<T>(work: (tx: Queryable) => Promise<T>): Promise<T>;
   /**
    * Runs `work` while holding a lock named `key`, which no other work of
-   * any node holds meanwhile (ADR 0082). The work runs outside any
-   * transaction, and may take its own.
+   * any node holds meanwhile (ADR 0082); or each of several, taken in the
+   * order given and held together, so work holding one never waits for a
+   * connection to take the next. The work runs outside any transaction,
+   * and may take its own.
    */
-  lock<T>(key: string, work: () => Promise<T>): Promise<T>;
+  lock<T>(key: string | readonly string[], work: () => Promise<T>): Promise<T>;
   close(): Promise<void>;
 }
 
@@ -91,7 +93,7 @@ export interface Database extends Queryable {
  */
 export function processLocks(): Database["lock"] {
   const turns = new Map<string, Promise<unknown>>();
-  return <T>(key: string, work: () => Promise<T>): Promise<T> => {
+  const one = <T>(key: string, work: () => Promise<T>): Promise<T> => {
     const run = (turns.get(key) ?? Promise.resolve()).then(work, work);
     const done = run.then(
       () => undefined,
@@ -103,6 +105,12 @@ export function processLocks(): Database["lock"] {
     });
     return run;
   };
+  // Each key's turn inside the one before.
+  const all = <T>(keys: readonly string[], work: () => Promise<T>): Promise<T> => {
+    const [first, ...rest] = keys;
+    return first === undefined ? work() : one(first, () => all(rest, work));
+  };
+  return (key, work) => all(typeof key === "string" ? [key] : key, work);
 }
 
 /** A pool of connections to the PostgreSQL database at `url`. */
@@ -140,24 +148,31 @@ export function connectPostgres(url: string): Database {
         client.release();
       }
     },
-    lock: <T>(key: string, work: () => Promise<T>): Promise<T> =>
+    lock: <T>(key: string | readonly string[], work: () => Promise<T>): Promise<T> =>
       inProcess(key, async () => {
         lockPool ??= new pg.Pool({ connectionString: url, max: 4 });
+        const names = (typeof key === "string" ? [key] : key).map((each) => `nether.lock.${each}`);
+        // Every lock on one connection, taken in order.
         const client = await lockPool.connect();
-        const name = `nether.lock.${key}`;
+        const held: string[] = [];
         let broken: Error | undefined;
         try {
-          // A session's lock, held until it is let go or the connection ends.
-          await client.query("SELECT pg_advisory_lock(hashtextextended($1, 0))", [name]);
           try {
+            for (const name of names) {
+              // A session's lock, held until it is let go or the connection ends.
+              await client.query("SELECT pg_advisory_lock(hashtextextended($1, 0))", [name]);
+              held.push(name);
+            }
             return await work();
           } finally {
-            await client
-              .query("SELECT pg_advisory_unlock(hashtextextended($1, 0))", [name])
-              .catch((error: unknown) => {
-                // A connection that could not let go is closed, and its lock with it.
-                broken = error instanceof Error ? error : new Error(String(error));
-              });
+            for (const name of held.reverse()) {
+              await client
+                .query("SELECT pg_advisory_unlock(hashtextextended($1, 0))", [name])
+                .catch((error: unknown) => {
+                  // A connection that could not let go is closed, and its locks with it.
+                  broken = error instanceof Error ? error : new Error(String(error));
+                });
+            }
           }
         } finally {
           client.release(broken);

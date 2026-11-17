@@ -299,6 +299,8 @@ The answer, 201, is the note as reading gives it, with its new ID; its
   answers 403. `Private/` answers 409 until the app has made your private
   space, the first time you open it there.
 - **A path the workspace has already**, in any case, answers 409.
+- **A page that stops being shared on its own** as the note is made in it
+  answers 409. Make it again: it goes where the page sat.
 - **Frontmatter** that does not read as YAML answers 400.
 
 ### `PUT /api/v1/workspaces/{workspace}/notes/{note}`

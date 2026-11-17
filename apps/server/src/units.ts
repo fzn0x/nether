@@ -849,7 +849,10 @@ export function registerUnits(
   );
 }
 
-/** The lock a page's unit holds while it is dropped, and a note's move into a unit takes. */
-function unitLock(unit: string): string {
+/**
+ * The lock a page's unit holds while it is dropped, and a note's move into
+ * a unit or its making there takes.
+ */
+export function unitLock(unit: string): string {
   return `unit.${unit}`;
 }
