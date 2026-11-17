@@ -204,10 +204,23 @@ with its space.
 
 A page shared on its own can also be opened by anyone with its link, with
 no account. Under **Anyone with the link**, in its **Share this page**
-dialog, **Make a link** makes one and copies it; give it a date to expire
-on, and a password, if you want them. The link opens the page and its
-subpages in the web app, to read, with their images; whoever opens it
-sees nothing else of the workspace, not even other pages' names. **Copy
+dialog, choose what the link lets its visitors do, then **Make a link**,
+which makes one and copies it; give it a date to expire on, and a
+password, if you want them.
+
+- **Can view** opens the page and its subpages to read, with their
+  images.
+- **Can comment** opens them to read, live as they change, and to
+  comment on.
+- **Can edit** opens them to edit, live beside whoever else is in them,
+  and to comment on. A visitor edits the pages' text, but cannot add,
+  rename, move or delete pages.
+
+The link opens the page in the web app. A visitor who comments or edits
+gives a name first, which their browser keeps. Their comments carry it,
+marked **(by a link)**, since no account stands behind it, and an edit
+link's visitor's caret shows it to the others. Whoever opens a link sees
+nothing else of the workspace, not even other pages' names. **Copy
 link** copies it again, and **Revoke** stops it, which ends what it
 opened. A server opens links only when it serves the web app.
 

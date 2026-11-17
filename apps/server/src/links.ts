@@ -18,8 +18,8 @@ export const linkPrefix = "nether_link_";
 export const visitPrefix = "nether_visit_";
 export const visitCookie = "nether_visit";
 
-/** The levels a link opens its page at; comment and edit come with visitors' names. */
-const linkLevels = ["view"] as const;
+/** The levels a link opens its page at: to read, to comment, or to edit. */
+const linkLevels = ["view", "comment", "edit"] as const;
 export type LinkLevel = "view" | "comment" | "edit";
 
 /** The most links a page has at once. */

@@ -1,15 +1,34 @@
 // The page a share link opens in the web app (ADR 0071): the link's
-// password when it has one, then the shared page and its subpages, each
-// read-only, as the server syncs them to the link's visit. The visit is
-// the server's, in a cookie the page cannot read; the token leaves the
+// password when it has one, then the shared page and its subpages, as the
+// server syncs them to the link's visit: read-only for a view link; live,
+// with their comments, for a comment link; live and editable, with the
+// others' carets, for an edit link. A visitor who writes gives a name
+// first, which their comments and their caret carry. The visit is the
+// server's, in a cookie the page cannot read; the token leaves the
 // address once it is used, and a reload finds the visit again.
-import { NoteEditor, type NoteFiles } from "@nether/editor";
+import {
+  type CommentAnchor,
+  type CommentAuthor,
+  type CommentThread,
+  type NoteCollaboration,
+  type NoteCommentsView,
+  NoteEditor,
+  type NoteFiles,
+  observeThreads,
+  readThreads,
+} from "@nether/editor";
 import { LinkIndex } from "@nether/storage";
 import { HocuspocusChannel, vaultFiles } from "@nether/sync-client";
 import { type SyntheticEvent, useEffect, useMemo, useState } from "react";
+import { Awareness } from "y-protocols/awareness";
 import * as Y from "yjs";
+import { CommentsPanel } from "./CommentsPanel.tsx";
 import { t } from "./messages.ts";
+import { colorFor } from "./presence.ts";
 import { webServer } from "./web.ts";
+
+/** What a link lets its visitors do: read, comment, or edit. */
+type Level = "view" | "comment" | "edit";
 
 /** What a visit opens, as the server says. */
 interface Opened {
@@ -17,6 +36,7 @@ interface Opened {
   readonly unit: string;
   readonly document: string;
   readonly page: string;
+  readonly level: Level;
 }
 
 type Step =
@@ -31,7 +51,8 @@ function isOpened(value: unknown): value is Opened {
     typeof opened?.workspace === "string" &&
     typeof opened.unit === "string" &&
     typeof opened.document === "string" &&
-    typeof opened.page === "string"
+    typeof opened.page === "string" &&
+    (opened.level === "view" || opened.level === "comment" || opened.level === "edit")
   );
 }
 
@@ -164,12 +185,83 @@ export function SharedPage() {
       </main>
     );
   }
-  return <Visit opened={step.opened} />;
+  return <Visitor opened={step.opened} />;
 }
 
-/** A visit's page: the shared notes listed, and the one chosen shown read-only. */
-function Visit(props: { readonly opened: Opened }) {
+/** Where this browser keeps who its visitor is: the name they gave, and an ID of their own. */
+const visitorKey = "nether.visitor";
+
+function keptVisitor(): CommentAuthor | undefined {
+  try {
+    const kept = JSON.parse(localStorage.getItem(visitorKey) ?? "null") as Partial<
+      Record<string, unknown>
+    > | null;
+    if (typeof kept?.id === "string" && typeof kept.name === "string" && kept.name !== "") {
+      return { id: kept.id, name: kept.name };
+    }
+  } catch {
+    // Storage refused, or a value that does not read, keeps no one.
+  }
+  return undefined;
+}
+
+function keepVisitor(name: string): CommentAuthor {
+  const visitor = { id: `visitor-${crypto.randomUUID()}`, name };
+  try {
+    localStorage.setItem(visitorKey, JSON.stringify(visitor));
+  } catch {
+    // Kept for this page only, then.
+  }
+  return visitor;
+}
+
+/** A visit that writes asks the visitor's name first, for their comments and their caret. */
+function Visitor(props: { readonly opened: Opened }) {
   const { opened } = props;
+  const [me, setMe] = useState<CommentAuthor | undefined>(keptVisitor);
+  const [name, setName] = useState("");
+  if (opened.level === "view" || me !== undefined) return <Visit opened={opened} me={me} />;
+  return (
+    <main className="shared">
+      <form
+        className="shared-password"
+        onSubmit={(event) => {
+          event.preventDefault();
+          const given = name.trim();
+          if (given !== "") setMe(keepVisitor(given));
+        }}
+      >
+        <p>{t(opened.level === "edit" ? "sharedNameToEdit" : "sharedNameToComment")}</p>
+        <label className="field">
+          {t("sharedYourName")}
+          <input
+            type="text"
+            value={name}
+            required
+            autoComplete="name"
+            onChange={(event) => {
+              setName(event.target.value);
+            }}
+          />
+        </label>
+        <button type="submit" className="primary">
+          {t("sharedOpen")}
+        </button>
+      </form>
+    </main>
+  );
+}
+
+/** What each level's visitor is told they may do. */
+const levelHints = {
+  view: "sharedReadOnly",
+  comment: "sharedCanComment",
+  edit: "sharedCanEdit",
+} as const;
+
+/** A visit's page: the shared notes listed, and the one chosen shown as its link allows. */
+function Visit(props: { readonly opened: Opened; readonly me: CommentAuthor | undefined }) {
+  const { opened, me } = props;
   const [vault] = useState(() => new Y.Doc());
   const [channel, setChannel] = useState<HocuspocusChannel | undefined>();
   const [notes, setNotes] = useState<ReadonlyMap<string, string>>(new Map());
@@ -208,10 +300,11 @@ function Visit(props: { readonly opened: Opened }) {
   }, [opened, vault]);
 
   const path = notes.get(chosen);
+  const writes = opened.level !== "view" && me !== undefined;
   return (
-    <div className="shared shared-visit">
+    <div className={writes ? "shared shared-visit with-comments" : "shared shared-visit"}>
       <nav className="shared-pages" aria-label={t("sharedPages")}>
-        <p className="hint">{t("sharedReadOnly")}</p>
+        <p className="hint">{t(levelHints[opened.level], { name: me?.name ?? "" })}</p>
         <ul>
           {[...notes].map(([id, notePath]) => (
             <li key={id}>
@@ -232,8 +325,20 @@ function Visit(props: { readonly opened: Opened }) {
         {error === undefined ? null : <p role="alert">{error}</p>}
         {channel === undefined || path === undefined ? (
           <p role="status">{t("sharedOpening")}</p>
+        ) : writes ? (
+          <LiveNote
+            key={chosen}
+            channel={channel}
+            opened={opened}
+            me={me}
+            id={chosen}
+            path={path}
+            vault={vault}
+            paths={[...notes.values()]}
+          />
         ) : (
           <SharedNote
+            // Read-only, a note is synced again each time the server stores it.
             key={`${chosen}:${String(stored)}`}
             channel={channel}
             opened={opened}
@@ -248,15 +353,39 @@ function Visit(props: { readonly opened: Opened }) {
   );
 }
 
-/** One shared note, synced once and shown read-only, with its images from the workspace. */
-function SharedNote(props: {
+/** A shared note's images and files, from its workspace's attachments. */
+function useFiles(
+  vault: Y.Doc,
+  paths: readonly string[],
+  path: string,
+  workspace: string,
+): NoteFiles {
+  return useMemo((): NoteFiles => {
+    const stored = vaultFiles(vault);
+    const index = new LinkIndex([...paths, ...stored.keys()]);
+    return {
+      url(link) {
+        const found = index.resolve(link, path);
+        const file = found === undefined ? undefined : stored.get(found);
+        return file === undefined
+          ? undefined
+          : `${webServer}/api/workspaces/${workspace}/attachments/${file.blob}`;
+      },
+    };
+  }, [vault, paths, path, workspace]);
+}
+
+interface NoteProps {
   readonly channel: HocuspocusChannel;
   readonly opened: Opened;
   readonly id: string;
   readonly path: string;
   readonly vault: Y.Doc;
   readonly paths: readonly string[];
-}) {
+}
+
+/** One shared note, synced once and shown read-only, with its images from the workspace. */
+function SharedNote(props: NoteProps) {
   const { channel, opened, id, path, vault, paths } = props;
   const [document] = useState(() => new Y.Doc());
   const [ready, setReady] = useState(false);
@@ -277,20 +406,7 @@ function SharedNote(props: {
     };
   }, [channel, id, document]);
 
-  const files = useMemo((): NoteFiles => {
-    const stored = vaultFiles(vault);
-    const index = new LinkIndex([...paths, ...stored.keys()]);
-    return {
-      url(link) {
-        const found = index.resolve(link, path);
-        const file = found === undefined ? undefined : stored.get(found);
-        return file === undefined
-          ? undefined
-          : `${webServer}/api/workspaces/${opened.workspace}/attachments/${file.blob}`;
-      },
-    };
-  }, [vault, paths, path, opened.workspace]);
-
+  const files = useFiles(vault, paths, path, opened.workspace);
   if (error !== undefined) return <p role="alert">{error}</p>;
   if (!ready) return <p role="status">{t("sharedOpening")}</p>;
   return (
@@ -298,5 +414,116 @@ function SharedNote(props: {
       <h1>{titleOf(path)}</h1>
       <NoteEditor document={document} editable={false} label={titleOf(path)} files={files} />
     </article>
+  );
+}
+
+/**
+ * One shared note for a visitor who writes, live as the others change it,
+ * with its comments beside it: editable, with each person's caret, for an
+ * edit link; read-only for a comment link, whose visitor comments only.
+ */
+function LiveNote(props: NoteProps & { readonly me: CommentAuthor }) {
+  const { channel, opened, me, id, path, vault, paths } = props;
+  const edits = opened.level === "edit";
+  const [document] = useState(() => new Y.Doc());
+  const [comments] = useState(() => new Y.Doc());
+  const [ready, setReady] = useState(false);
+  const [error, setError] = useState<string | undefined>();
+  const [collaboration, setCollaboration] = useState<NoteCollaboration | undefined>();
+  const [threads, setThreads] = useState<readonly CommentThread[]>([]);
+  const [active, setActive] = useState<string | undefined>();
+  const [draft, setDraft] = useState<CommentAnchor | undefined>();
+  const [request, setRequest] = useState(0);
+
+  useEffect(() => {
+    let current = true;
+    const stops: (() => void)[] = [];
+    // Synced first, so the editor opens on the note as it is, not on an empty one.
+    channel.sync(id, document).then(
+      () => {
+        if (!current) return;
+        const awareness = new Awareness(document);
+        // Only an edit link's visitor has a caret for the others to see.
+        if (!edits) awareness.setLocalState(null);
+        const note = channel.live(id, document, awareness);
+        const quiet = new Awareness(comments);
+        quiet.setLocalState(null);
+        const noteComments = channel.live(`${id}.comments`, comments, quiet);
+        const show = () => {
+          setThreads(readThreads(comments));
+        };
+        stops.push(observeThreads(comments, show), () => {
+          note?.stop();
+          noteComments?.stop();
+          awareness.destroy();
+          quiet.destroy();
+        });
+        show();
+        if (edits) setCollaboration({ awareness, user: { name: me.name, color: colorFor(me.id) } });
+        setReady(true);
+      },
+      (reason: unknown) => {
+        if (current) setError(reason instanceof Error ? reason.message : String(reason));
+      },
+    );
+    return () => {
+      current = false;
+      for (const stop of stops) stop();
+    };
+  }, [channel, id, document, comments, edits, me]);
+
+  const files = useFiles(vault, paths, path, opened.workspace);
+  const commentsView = useMemo((): NoteCommentsView => {
+    const shown = threads.filter((thread) => thread.resolved === undefined);
+    // The text a new thread is being written on shows as the active one.
+    return {
+      threads:
+        draft === undefined
+          ? shown
+          : [...shown, { id: "", anchor: draft, created: 0, comments: [], resolved: undefined }],
+      active: draft === undefined ? active : "",
+      onActivate: setActive,
+      onComment: setDraft,
+      request,
+    };
+  }, [threads, draft, active, request]);
+
+  if (error !== undefined) return <p role="alert">{error}</p>;
+  if (!ready) return <p role="status">{t("sharedOpening")}</p>;
+  return (
+    <div className="shared-with-comments">
+      <article>
+        <h1>{titleOf(path)}</h1>
+        <button
+          type="button"
+          className="shared-comment"
+          onClick={() => {
+            setRequest((count) => count + 1);
+          }}
+        >
+          {t("command_comment")}
+        </button>
+        <NoteEditor
+          document={document}
+          editable={edits}
+          label={titleOf(path)}
+          files={files}
+          comments={commentsView}
+          {...(collaboration === undefined ? {} : { collaboration })}
+        />
+      </article>
+      <CommentsPanel
+        comments={{ document: comments, threads }}
+        me={me}
+        canComment
+        active={active}
+        onActivate={setActive}
+        draft={draft}
+        onDraftDone={() => {
+          setDraft(undefined);
+        }}
+        commentKeys={undefined}
+      />
+    </div>
   );
 }
