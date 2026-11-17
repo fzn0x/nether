@@ -511,6 +511,42 @@ describe("writing through the public API", () => {
     expect(vault.getMap("notes").get(made.json<Answer>().id)).toBe("Projects/Launch/Tasks.md");
   });
 
+  it("makes no note in a teamspace deleted as it is made", async () => {
+    // Held as the note is placed, after its unit was found by its path.
+    const { gate, wrap } = holding((text) => text.includes("FOR KEY SHARE"));
+    const test = await start({ wrapDb: wrap });
+    const board = (
+      await test.server.inject({
+        method: "POST",
+        url: `/api/workspaces/${test.workspaceId}/teamspaces`,
+        headers: bearer(test.token),
+        payload: { name: "Board" },
+      })
+    ).json<{ id: string }>().id;
+    const secret = await token(test);
+    gate.armed = true;
+    const making = call(test, "POST", "notes", secret, {
+      payload: { path: "Board/Plan.md", markdown: "The plan\n" },
+    });
+    const first = await Promise.race([
+      gate.held.then(() => "held"),
+      Promise.resolve(making).then(() => "answered"),
+    ]);
+    expect(first).toBe("held");
+    const deleted = await test.server.inject({
+      method: "DELETE",
+      url: `/api/workspaces/${test.workspaceId}/teamspaces/${board}`,
+      headers: bearer(test.token),
+    });
+    expect(deleted.statusCode).toBe(204);
+    gate.release();
+    expect((await making).statusCode).toBe(409);
+    const { rows } = await test.db.query("SELECT note FROM note_units WHERE workspace_id = $1", [
+      test.workspaceId,
+    ]);
+    expect(rows).toHaveLength(0);
+  });
+
   it("leaves nothing of a note whose path an app listed first", async () => {
     const test = await start();
     const board = (
