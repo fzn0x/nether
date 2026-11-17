@@ -3,7 +3,11 @@
 // NetherVaultsPlugin.java. It keeps the list of the phone's vaults, each a
 // folder in the app's Documents, which the Files app shows under On My
 // iPhone, Nether, and does to a vault's folder what needs the disk, through
-// `VaultFolder`, one call at a time on a queue of its own.
+// `VaultFolder`, one call at a time on a queue of its own. It keeps the list
+// of the servers signed in to, without their tokens, which the page keeps in
+// the Keychain, and opens a provider's sign-in in the system's sheet, which
+// takes the app's scheme back itself.
+import AuthenticationServices
 import Capacitor
 import Foundation
 import Vaults
@@ -28,7 +32,11 @@ public class NetherVaultsPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "delete", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "makeFolder", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "removeFolder", returnType: CAPPluginReturnPromise),
-        CAPPluginMethod(name: "mark", returnType: CAPPluginReturnPromise)
+        CAPPluginMethod(name: "mark", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "servers", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "saveServer", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "forgetServer", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "signIn", returnType: CAPPluginReturnPromise)
     ]
 
     /// The points the page reaches, for the smoke test and tools/perf.
@@ -120,12 +128,24 @@ public class NetherVaultsPlugin: CAPPlugin, CAPBridgedPlugin {
     @objc func openVault(_ call: CAPPluginCall) {
         let id = call.getString("id")
         let name = call.getString("name")
+        let fresh = call.getBool("fresh", false)
         onDisk(call) { [self] in
             let registry = try readRegistry()
             let known = id.flatMap { id in registry.vaults.first { $0["id"] == id } }
             if let id, known == nil { throw VaultError("No vault \(id) is on this phone.") }
-            let shown = known?["name"] ?? VaultFolder.trim(name ?? "")
-            let folderName = known?["folder"] ?? VaultFolder.folderName(shown)
+            var shown = known?["name"] ?? VaultFolder.trim(name ?? "")
+            var folderName = known?["folder"] ?? VaultFolder.folderName(shown)
+            // A fresh vault, as a workspace opened on the phone, never takes a folder that is there.
+            if known == nil && fresh {
+                let base = folderName
+                let named = shown.isEmpty ? base : shown
+                var n = 2
+                while FileManager.default.fileExists(atPath: vaultsFolder.appendingPathComponent(folderName).path) {
+                    folderName = "\(base) \(n)"
+                    shown = "\(named) \(n)"
+                    n += 1
+                }
+            }
             let root = vaultsFolder.appendingPathComponent(folderName).path
             do {
                 try FileManager.default.createDirectory(atPath: root, withIntermediateDirectories: true)
@@ -158,6 +178,96 @@ public class NetherVaultsPlugin: CAPPlugin, CAPBridgedPlugin {
         let id = call.getString("id", "")
         onDisk(call) { [self] in
             try ["path": folderOf(id).root]
+        }
+    }
+
+    // The servers signed in to, beside the list of vaults: their accounts,
+    // without their tokens, which the page keeps in the Keychain.
+
+    private var serversFile: String {
+        supportFolder.appendingPathComponent("servers.json").path
+    }
+
+    private func readServers() throws -> [[String: Any]] {
+        let file = serversFile
+        guard FileManager.default.fileExists(atPath: file) else { return [] }
+        let data = try Data(contentsOf: URL(fileURLWithPath: file))
+        guard let kept = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            throw VaultError("The list of servers could not be read.")
+        }
+        return kept["servers"] as? [[String: Any]] ?? []
+    }
+
+    /// The list without the server at an address, and with `first` at its head, if given.
+    private func saveServers(first: [String: Any]?, without url: String) throws {
+        try FileManager.default.createDirectory(at: supportFolder, withIntermediateDirectories: true)
+        let others = try readServers().filter { ($0["url"] as? String) != url }
+        let servers = (first.map { [$0] } ?? []) + others
+        let data = try JSONSerialization.data(
+            withJSONObject: ["servers": servers], options: [.prettyPrinted, .sortedKeys])
+        try VaultFolder.replaceFile(at: serversFile, with: data, disk: disk)
+    }
+
+    @objc func servers(_ call: CAPPluginCall) {
+        onDisk(call) { [self] in
+            try ["servers": readServers()]
+        }
+    }
+
+    @objc func saveServer(_ call: CAPPluginCall) {
+        let account = call.getObject("account").map { $0 as [String: Any] }
+        onDisk(call) { [self] in
+            guard let account, let url = account["url"] as? String, !url.isEmpty else {
+                throw VaultError("A server's account needs its address.")
+            }
+            try saveServers(first: account, without: url)
+            return nil
+        }
+    }
+
+    @objc func forgetServer(_ call: CAPPluginCall) {
+        let url = call.getString("url", "")
+        onDisk(call) { [self] in
+            try saveServers(first: nil, without: url)
+            return nil
+        }
+    }
+
+    // A provider's sign-in (ADR 0087).
+
+    /// The sign-in sheet open now, kept until it ends.
+    private var signingIn: ASWebAuthenticationSession?
+
+    /// Opens a provider's sign-in in the system's sheet, which takes the app's
+    /// scheme back itself, so no other app can; answers with the address it
+    /// came back to, or with none when the person cancelled it.
+    @objc func signIn(_ call: CAPPluginCall) {
+        guard let address = call.getString("url").flatMap({ URL(string: $0) }),
+            let scheme = call.getString("scheme")
+        else {
+            call.reject("A sign-in needs its address and the app's scheme.")
+            return
+        }
+        DispatchQueue.main.async { [self] in
+            let session = ASWebAuthenticationSession(url: address, callbackURLScheme: scheme) {
+                [weak self] url, error in
+                self?.signingIn = nil
+                if let url {
+                    call.resolve(["url": url.absoluteString])
+                } else if let error = error as? ASWebAuthenticationSessionError,
+                    error.code == .canceledLogin
+                {
+                    call.resolve()
+                } else {
+                    call.reject(error?.localizedDescription ?? "The sign-in sheet failed.", nil, error)
+                }
+            }
+            session.presentationContextProvider = self
+            signingIn = session
+            if !session.start() {
+                signingIn = nil
+                call.reject("The sign-in sheet could not open.")
+            }
         }
     }
 
@@ -307,5 +417,12 @@ public class NetherVaultsPlugin: CAPPlugin, CAPBridgedPlugin {
         let start = info.kp_proc.p_un.__p_starttime
         let started = Double(start.tv_sec) + Double(start.tv_usec) / 1_000_000
         return Int64((Date().timeIntervalSince1970 - started) * 1000)
+    }
+}
+
+extension NetherVaultsPlugin: ASWebAuthenticationPresentationContextProviding {
+    /// The sign-in sheet shows over the app's own window.
+    public func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {
+        bridge?.webView?.window ?? ASPresentationAnchor()
     }
 }
