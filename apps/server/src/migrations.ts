@@ -492,6 +492,41 @@ export const migrations: readonly Migration[] = [
       ALTER TABLE workspaces ADD COLUMN ai boolean NOT NULL DEFAULT true;
     `,
   },
+  {
+    version: 18,
+    name: "published sites",
+    sql: `
+      -- Whether its notes may be published (ADR 0076): on until an owner or
+      -- admin turns it off, when its sites answer as not there.
+      ALTER TABLE workspaces ADD COLUMN publishing boolean NOT NULL DEFAULT true;
+
+      -- A site: a note with its subpages, or a folder, published as the one
+      -- who published it, who takes it with them when they leave.
+      CREATE TABLE sites (
+        id uuid PRIMARY KEY,
+        workspace_id uuid NOT NULL,
+        publisher_id uuid NOT NULL,
+        -- Its address on this server, /p/<name>/.
+        name text NOT NULL UNIQUE,
+        title text NOT NULL,
+        root_note text,
+        root_folder text,
+        created_at timestamptz NOT NULL DEFAULT now(),
+        CHECK ((root_note IS NULL) <> (root_folder IS NULL)),
+        UNIQUE (workspace_id, root_note),
+        UNIQUE (workspace_id, root_folder),
+        FOREIGN KEY (workspace_id, publisher_id)
+          REFERENCES memberships (workspace_id, user_id) ON DELETE CASCADE
+      );
+
+      -- The files a site's pages showed, which it serves by their hash.
+      CREATE TABLE site_files (
+        site_id uuid NOT NULL REFERENCES sites (id) ON DELETE CASCADE,
+        hash text NOT NULL,
+        PRIMARY KEY (site_id, hash)
+      );
+    `,
+  },
 ];
 
 /** The schema version this server writes and reads. */
