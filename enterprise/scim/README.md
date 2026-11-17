@@ -12,9 +12,10 @@ and LDAP
   and `PATCH` in the forms Okta and Entra ID send.
 - `src/users.ts`: the accounts a directory makes, takes over, changes,
   deactivates and removes.
+- `src/groups.ts`: a directory's groups, read, with their members.
 - `src/discovery.ts`: what a directory's address says of itself.
 - `src/scim.ts`: the SCIM server at `/api/scim/<directory>/v2`.
 
-Groups, and the LDAP pull, come next.
+Making and changing groups, and the LDAP pull, come next.
 
 Roadmap: Phase 5, enterprise, mobile and scale.
