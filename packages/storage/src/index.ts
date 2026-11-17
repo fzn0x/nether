@@ -12,6 +12,7 @@ export {
   isNotePath,
   noteTitle,
 } from "./files.ts";
+export { type DeviceFolder, DeviceFiles } from "./device.ts";
 export { LinkIndex, normalizeLink } from "./links.ts";
 export { MemoryFiles, sha256 } from "./memory.ts";
 export { type OpfsDirectory, type OpfsFile, OpfsFiles } from "./opfs.ts";

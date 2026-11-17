@@ -50,6 +50,25 @@ describe("commandShown", () => {
     }
     expect(commandIds.filter((id) => shownIn(web, id))).toHaveLength(commandIds.length - 3);
   });
+
+  it("leaves out of the mobile apps what comes to them in later parts", () => {
+    const phone = { web: false, sync: false, mobile: true };
+    for (const id of [
+      "export",
+      "openGraph",
+      "newCanvas",
+      "checkUpdates",
+      "updateChecks",
+      "servers",
+      "sync",
+      "share",
+    ] as const) {
+      expect(shownIn(phone, id)).toBe(false);
+    }
+    for (const id of ["newNote", "import", "search", "appearance", "closeVault"] as const) {
+      expect(shownIn(phone, id)).toBe(true);
+    }
+  });
 });
 
 describe("shownEntries", () => {

@@ -114,6 +114,22 @@ test("the vault shows one note under a bar, its notes in a drawer over it", asyn
   expect(pageErrors(errors)).toEqual([]);
 });
 
+test("a dialog opened from the drawer shows above it, and a note made there closes it", async ({
+  page,
+}) => {
+  await openVault(page);
+  const drawer = await openDrawer(page);
+  await drawer.getByRole("button", { name: "New note", exact: true }).tap();
+  const dialog = page.getByRole("dialog", { name: "New note" });
+  // Pressed, not just shown: nothing of the drawer lies over it.
+  await dialog.getByRole("textbox", { name: "Name" }).tap();
+  await dialog.getByRole("textbox", { name: "Name" }).fill("Pocket");
+  await dialog.getByRole("button", { name: "Create" }).tap();
+  await expect(dialog).toBeHidden();
+  await expect(drawer).toBeHidden();
+  await expect(page.locator(".phone-title")).toHaveText("Pocket");
+});
+
 test("menus and dialogs are sheets along the bottom, without tabs or panes", async ({ page }) => {
   await openVault(page);
   const size = page.viewportSize() ?? { width: 0, height: 0 };

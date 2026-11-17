@@ -3,7 +3,11 @@
 // with VITE_NETHER_SYNC=off leaves their commands and menu out, as for a
 // copy meant never to reach a server. The web app, built with
 // VITE_NETHER_TARGET=web, is its server's, so it always syncs (ADR 0053),
-// and leaves out what a page in a browser cannot do yet.
+// and leaves out what a page in a browser cannot do yet. The mobile apps,
+// built with VITE_NETHER_TARGET=mobile, keep vaults on the phone (ADR 0087)
+// and leave out what comes to them in later parts: sync and signing in,
+// exports through the share sheet, the graph and canvases, and updates,
+// which the stores give.
 import type { CommandId } from "./commands.ts";
 
 /** What a build is made for. */
@@ -12,11 +16,18 @@ export interface Build {
   readonly web: boolean;
   /** Whether sync and collaboration show. */
   readonly sync: boolean;
+  /** The mobile apps, for Android and iOS. */
+  readonly mobile?: boolean;
 }
 
 const web = import.meta.env.VITE_NETHER_TARGET === "web";
+const mobile = import.meta.env.VITE_NETHER_TARGET === "mobile";
 
-export const build: Build = { web, sync: web || import.meta.env.VITE_NETHER_SYNC !== "off" };
+export const build: Build = {
+  web,
+  mobile,
+  sync: web || (!mobile && import.meta.env.VITE_NETHER_SYNC !== "off"),
+};
 
 export const syncShown = build.sync;
 
@@ -37,9 +48,19 @@ const syncCommands: ReadonlySet<CommandId> = new Set([
  */
 const notOnTheWeb: ReadonlySet<CommandId> = new Set(["sync", "checkUpdates", "updateChecks"]);
 
+/** What the mobile apps leave out until the parts that bring them (ADR 0087). */
+const notOnPhonesYet: ReadonlySet<CommandId> = new Set([
+  "export",
+  "openGraph",
+  "newCanvas",
+  "checkUpdates",
+  "updateChecks",
+]);
+
 /** Whether a build shows a command. */
 export function shownIn(build: Build, id: CommandId): boolean {
   if (build.web && notOnTheWeb.has(id)) return false;
+  if (build.mobile === true && notOnPhonesYet.has(id)) return false;
   return build.sync || !syncCommands.has(id);
 }
 

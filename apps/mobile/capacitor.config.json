@@ -1,0 +1,19 @@
+{
+  "appId": "io.github.fzn0x.nether",
+  "appName": "Nether",
+  "webDir": "dist",
+  "loggingBehavior": "debug",
+  "android": {
+    "allowMixedContent": false
+  },
+  "plugins": {
+    "CapacitorSQLite": {
+      "androidIsEncryption": false,
+      "iosIsEncryption": false,
+      "iosDatabaseLocation": "Library/CapacitorDatabase"
+    },
+    "SystemBars": {
+      "insetsHandling": "css"
+    }
+  }
+}

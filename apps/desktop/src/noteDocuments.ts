@@ -153,6 +153,18 @@ export class OpenNote {
     if (this.#loaded === current) this.#ready(current);
   }
 
+  /**
+   * Saves what is waiting at once, the document's updates to the index and
+   * its text to the file, and keeps the note open: as a phone's app leaves
+   * the screen, before the system may end it (ADR 0087).
+   */
+  async save(): Promise<void> {
+    const current = this.#loaded;
+    if (current === undefined) return;
+    await this.#persist(current);
+    await this.#flush(current);
+  }
+
   /** Saves what is waiting at once, then lets the document go. */
   async close(): Promise<void> {
     this.#closing = true;
@@ -486,6 +498,14 @@ export class NoteDocuments {
 
   constructor(vault: Vault) {
     this.#vault = vault;
+  }
+
+  /** Saves every open note at once, and waits for those closing to finish theirs. */
+  async flush(): Promise<void> {
+    await Promise.all([
+      ...[...this.#open.values()].map((entry) => entry.note.save()),
+      ...this.#closing.values(),
+    ]);
   }
 
   /** Opens a note, or holds the one already open. */
