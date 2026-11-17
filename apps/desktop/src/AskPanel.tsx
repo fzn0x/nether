@@ -149,14 +149,26 @@ export function AskPanel(props: {
   readonly allowedNow: () => Promise<boolean>;
   /** Search by meaning, when it is on for the vault (ADR 0074). */
   readonly meaning?: MeaningSource | undefined;
+  /** Where search by meaning sends the question, to say so, while it does. */
+  readonly meaningVia?: string | undefined;
   readonly turns: readonly AskedTurn[];
   readonly onTurns: (turns: readonly AskedTurn[]) => void;
   readonly onOpen: (note: NoteId, part?: NotePart) => void;
   /** Changes when the app's command asks for the question's field. */
   readonly focusRequest: number;
 }) {
-  const { vault, provider, workspaceId, through, allowedNow, meaning, turns, onTurns, onOpen } =
-    props;
+  const {
+    vault,
+    provider,
+    workspaceId,
+    through,
+    allowedNow,
+    meaning,
+    meaningVia,
+    turns,
+    onTurns,
+    onOpen,
+  } = props;
   const [question, setQuestion] = useState("");
   const [phase, setPhase] = useState<Phase>({ kind: "idle" });
   const [notice, setNotice] = useState<string | undefined>();
@@ -302,6 +314,7 @@ export function AskPanel(props: {
           ? t("askSends", { name, where: providerWhere(provider) })
           : t("askSendsThrough", { name, where: providerWhere(provider, true), server: through })}
       </p>
+      {meaningVia === undefined ? null : <p className="hint">{meaningVia}</p>}
       {turns.length === 0 && !busy ? <p className="hint">{t("askIntro")}</p> : null}
       <ol className="ask-turns" aria-label={t("askConversation")}>
         {turns.map((turn, index) => (

@@ -589,6 +589,8 @@ export const messages = {
     "Asks {name}, {where}: your question, and passages of the notes the vault's search finds for it.",
   askSendsThrough:
     "Asks {name}, {where}, through {server}: your question, and passages of the notes the vault's search finds for it.",
+  askMeaningVia:
+    "Search by meaning also sends the question to {model} on {name}, to find the notes it is about.",
   askIntro:
     "Ask a question, and the answer comes from your notes alone, each statement citing the passage it is from.",
   askConversation: "Questions and answers",

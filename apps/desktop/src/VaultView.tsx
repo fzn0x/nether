@@ -95,6 +95,7 @@ import { PluginSettings } from "./PluginSettings.tsx";
 
 import { useAi } from "./useAi.ts";
 import { useMeaning } from "./useMeaning.ts";
+import type { MeaningSource } from "./askNotes.ts";
 import { useAppearance } from "./useAppearance.ts";
 import { useBookmarks } from "./useBookmarks.ts";
 import { TrashPanel } from "./TrashPanel.tsx";
@@ -330,6 +331,26 @@ export function VaultView(props: {
   const ai = useAi(vault, sync.link);
   // Search by meaning, when it is on for the vault (ADR 0074).
   const meaning = useMeaning(vault, ai, sync.link);
+  // Asking your notes finds notes by meaning too, while search by meaning runs.
+  const meaningSearch = meaning.panel?.search;
+  const askMeaning = useMemo((): MeaningSource | undefined => {
+    if (meaningSearch === undefined) return undefined;
+    return async (question, limit) =>
+      (await meaningSearch(question)).slice(0, limit).map((hit) => {
+        const heading = hit.heading.split(" > ").at(-1);
+        return { note: hit.note.id, heading: heading === "" ? undefined : heading };
+      });
+  }, [meaningSearch]);
+  const meaningProvider = ai.settings.providers.find(
+    (provider) => provider.id === meaning.choice?.provider,
+  );
+  const askMeaningVia =
+    askMeaning === undefined || meaning.choice === undefined
+      ? undefined
+      : t("askMeaningVia", {
+          model: meaning.choice.model,
+          name: meaningProvider?.name ?? meaning.choice.provider,
+        });
   // The questions asked of the vault's notes, kept while it is open, and
   // the count that asks the question's box for focus.
   const [askTurns, setAskTurns] = useState<readonly AskedTurn[]>([]);
@@ -1977,6 +1998,8 @@ export function VaultView(props: {
                       : hostOf(sync.link.server)
                   }
                   allowedNow={ai.allowedNow}
+                  meaning={askMeaning}
+                  meaningVia={askMeaningVia}
                   turns={askTurns}
                   onTurns={setAskTurns}
                   onOpen={openNote}
