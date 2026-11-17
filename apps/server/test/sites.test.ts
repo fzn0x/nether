@@ -352,7 +352,7 @@ describe("a published page", () => {
     const test = await start();
     const ids = await store(test, { "Home.md": "Home\n" });
     await publish(test, { note: ids["Home.md"], name: "home" });
-    for (const url of ["/p/nothing/", "/p/nothing/Page", "/p/home/Other", "/p/x/"]) {
+    for (const url of ["/p/nothing/", "/p/nothing/Page", "/p/home/Other", "/p/x/", "/p/", "/p"]) {
       const answer = await visit(test, url);
       expect(answer.statusCode, url).toBe(404);
       expect(answer.headers["content-security-policy"]).toBe(pagePolicy);

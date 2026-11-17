@@ -141,6 +141,10 @@ export function registerPublished(
     return reply.type("text/css; charset=utf-8").send(siteStyle);
   });
 
+  // Under /p/ are only sites, not the web app.
+  app.get("/p", { onRequest: limit }, (request, reply) => notThere(request, reply));
+  app.get("/p/", { onRequest: limit }, (request, reply) => notThere(request, reply));
+
   // A site's address ends with a slash, so its own address is one.
   app.get<{ Params: { site: string } }>(
     "/p/:site",
