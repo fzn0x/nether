@@ -33,6 +33,8 @@ export class MemoryVault implements SyncVault {
   readonly comments = new Map<string, Y.Doc>();
   /** When each note was last written or edited here, as a file's time. */
   readonly modified = new Map<string, number>();
+  /** The notes sync sent to the trash as removed elsewhere, in order. */
+  readonly removed: string[] = [];
   readonly #listeners = new Set<(id?: string) => void>();
 
   paths(): Map<string, string> {
@@ -78,6 +80,7 @@ export class MemoryVault implements SyncVault {
 
   remove(id: string): Promise<void> {
     this.notes.delete(id);
+    this.removed.push(id);
     return Promise.resolve();
   }
 
