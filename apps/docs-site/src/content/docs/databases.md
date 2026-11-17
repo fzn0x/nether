@@ -167,6 +167,11 @@ that is there already sets its new property as well.
   runs none.
 - **What a trigger sets runs no trigger**, so one rule never sets off
   another, nor itself.
+- **A rule that names a property the database no longer has does not
+  run**, after the property is deleted in another app or by hand. The
+  database shows as before, and **Triggers** lists the rule as not
+  running, with why, and with **Remove**. It stays in the file until it is
+  removed.
 
 Triggers are Nether's own: no other app runs them. The built-in **Buttons
 and triggers** plugin runs them, and with it off, in the settings' Plugins

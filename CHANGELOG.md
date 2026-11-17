@@ -220,7 +220,10 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   property into its value on this device: in a cell, by a card moved on a
   board, in a row made in a column or on a day, in the row's properties,
   or by a button. It does not run for changes that arrive by sync, from
-  another app or through the REST API, and what it sets runs no rule. The
+  another app or through the REST API, and what it sets runs no rule. A
+  rule that names a property the database no longer has does not run, and
+  never hides the database; the panel shows it as not running, with why,
+  and it stays in the file until removed. The
   Buttons plugin is now Buttons and triggers, and runs them
   ([ADR 0072](docs/adr/0072-buttons-are-meta-bind-button-blocks-and-triggers-are-schema-rules-run-where-the-change-is-made.md)).
 
