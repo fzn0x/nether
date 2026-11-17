@@ -7,6 +7,12 @@ packages:
 # Supply-chain hardening: only resolve versions that have been public for 7 days.
 minimumReleaseAge: 10080
 
+# One name for each folder in node_modules/.pnpm on every system: pnpm's
+# default is 60 characters on Windows and 120 elsewhere. Capacitor writes
+# these paths into the committed native projects (CapApp-SPM's Package.swift,
+# capacitor.settings.gradle), so they must not change with the system.
+virtualStoreDirMaxLength: 60
+
 onlyBuiltDependencies:
   - lefthook
 

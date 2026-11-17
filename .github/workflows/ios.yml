@@ -1,0 +1,130 @@
+name: iOS
+
+# The iOS app (ADR 0087), on macOS, whose runners cost more than Linux's: it
+# runs only for changes to the app, its plugin, or the page it is built from.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "apps/mobile/**"
+      - "apps/desktop/src/**"
+      - "apps/desktop/index.html"
+      - "apps/desktop/package.json"
+      - "apps/desktop/vite.config.ts"
+      - "packages/**"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+      - ".github/workflows/ios.yml"
+      - ".github/scripts/check-swift-licenses.mjs"
+      - ".github/scripts/licenses.mjs"
+  pull_request:
+    paths:
+      - "apps/mobile/**"
+      - "apps/desktop/src/**"
+      - "apps/desktop/index.html"
+      - "apps/desktop/package.json"
+      - "apps/desktop/vite.config.ts"
+      - "packages/**"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+      - ".github/workflows/ios.yml"
+      - ".github/scripts/check-swift-licenses.mjs"
+      - ".github/scripts/licenses.mjs"
+
+concurrency:
+  group: ios-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  TURBO_TELEMETRY_DISABLED: "1"
+
+jobs:
+  # The page built for the app, the Swift packages' licenses, the app built
+  # for the simulator and signed to run there, which needs no account, the
+  # plugin's tests on the simulator, and the app started in it with a vault.
+  # No signing identity, team or profile is ever in the repository.
+  ios:
+    name: iOS app
+    runs-on: macos-26
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Build the page and copy it into the app
+        run: pnpm --filter @nether/mobile build
+      - run: xcodebuild -version
+      - name: Resolve the Swift packages
+        run: >-
+          xcodebuild -resolvePackageDependencies
+          -project apps/mobile/ios/App/App.xcodeproj -scheme App
+          -clonedSourcePackagesDirPath "$RUNNER_TEMP/SourcePackages"
+      - name: Check the Swift packages' licenses against ADR 0001
+        run: >-
+          node .github/scripts/check-swift-licenses.mjs
+          apps/mobile/ios/App/App.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved
+          "$RUNNER_TEMP/SourcePackages/checkouts"
+      - name: Build the app for the simulator, signed to run locally
+        run: >-
+          xcodebuild build -quiet
+          -project apps/mobile/ios/App/App.xcodeproj -scheme App -configuration Debug
+          -destination "generic/platform=iOS Simulator"
+          -clonedSourcePackagesDirPath "$RUNNER_TEMP/SourcePackages"
+          -derivedDataPath "$RUNNER_TEMP/DerivedData"
+          CODE_SIGN_IDENTITY=- CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM= PROVISIONING_PROFILE_SPECIFIER=
+      - name: Boot an iPhone simulator
+        id: simulator
+        run: |
+          udid=$(xcrun simctl list devices available --json | jq -r '
+            [.devices | to_entries | sort_by(.key)[] | select(.key | test("SimRuntime\\.iOS"))
+              | .value[] | select(.name | startswith("iPhone"))] | last | .udid')
+          echo "Booting $udid"
+          echo "udid=$udid" >> "$GITHUB_OUTPUT"
+          xcrun simctl bootstatus "$udid" -b
+      - name: Test the plugin on the simulator
+        working-directory: apps/mobile/plugin
+        run: |
+          xcodebuild -list
+          scheme=NetherMobilePlugin
+          if xcodebuild -list -json | jq -e '.workspace.schemes | index("NetherMobilePlugin-Package")' > /dev/null; then
+            scheme=NetherMobilePlugin-Package
+          fi
+          xcodebuild test -scheme "$scheme" \
+            -destination "id=${{ steps.simulator.outputs.udid }}" \
+            -clonedSourcePackagesDirPath "$RUNNER_TEMP/PluginPackages" \
+            -derivedDataPath "$RUNNER_TEMP/PluginData"
+      - name: Start the app in the simulator with a vault
+        run: >-
+          pnpm --filter @nether/mobile smoke:ios
+          "$RUNNER_TEMP/DerivedData/Build/Products/Debug-iphonesimulator/App.app"
+          "${{ steps.simulator.outputs.udid }}"
+      # Package.resolved pins the Swift packages, as pnpm-lock.yaml pins npm's,
+      # and cap sync writes the app's own package of plugins: both committed as made.
+      - name: Check the pinned packages and the synced project are committed
+        run: |
+          changed=$(git status --porcelain -- apps/mobile/ios apps/mobile/plugin)
+          if [ -n "$changed" ]; then
+            echo "$changed"
+            git diff -- apps/mobile/ios
+            echo "::error::Commit these files as Xcode and cap sync made them."
+            cat apps/mobile/ios/App/App.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved
+            exit 1
+          fi
+      - uses: actions/upload-artifact@v7
+        if: failure()
+        with:
+          name: ios-failure
+          path: |
+            apps/mobile/smoke-failure.png
+            apps/mobile/ios/App/App.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved
+          if-no-files-found: ignore
+          retention-days: 7
