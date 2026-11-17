@@ -51,6 +51,7 @@ COPY enterprise/server/package.json enterprise/server/
 COPY enterprise/admin/package.json enterprise/admin/
 COPY enterprise/sso/package.json enterprise/sso/
 COPY enterprise/policies/package.json enterprise/policies/
+COPY enterprise/permissions/package.json enterprise/permissions/
 COPY enterprise/audit/package.json enterprise/audit/
 COPY enterprise/scim/package.json enterprise/scim/
 COPY enterprise/ha/package.json enterprise/ha/
@@ -83,6 +84,7 @@ COPY --from=build /src/enterprise/server/src/ enterprise/server/src/
 COPY --from=build /src/enterprise/admin/src/ enterprise/admin/src/
 COPY --from=build /src/enterprise/sso/src/ enterprise/sso/src/
 COPY --from=build /src/enterprise/policies/src/ enterprise/policies/src/
+COPY --from=build /src/enterprise/permissions/src/ enterprise/permissions/src/
 COPY --from=build /src/enterprise/audit/src/ enterprise/audit/src/
 COPY --from=build /src/enterprise/scim/src/ enterprise/scim/src/
 COPY --from=build /src/enterprise/ha/src/ enterprise/ha/src/

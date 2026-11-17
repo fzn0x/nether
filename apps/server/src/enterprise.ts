@@ -24,7 +24,15 @@ import type { Every } from "./jobs.ts";
 import type { SecuritySettings } from "./settings.ts";
 import type { SignInGuards } from "./signIns.ts";
 
-export const enterpriseFeatures = ["sso", "scim", "audit", "policies", "admin", "ha"] as const;
+export const enterpriseFeatures = [
+  "sso",
+  "scim",
+  "audit",
+  "policies",
+  "permissions",
+  "admin",
+  "ha",
+] as const;
 
 export type EnterpriseFeature = (typeof enterpriseFeatures)[number];
 

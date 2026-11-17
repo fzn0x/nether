@@ -1,0 +1,12 @@
+{
+  "name": "@nether/mobile-plugin",
+  "version": "0.1.0",
+  "private": true,
+  "description": "The mobile apps' own Capacitor plugin on iOS (ADR 0087): NetherVaults, each vault's folder on the phone, in Swift.",
+  "license": "AGPL-3.0-or-later",
+  "capacitor": {
+    "ios": {
+      "src": "ios"
+    }
+  }
+}

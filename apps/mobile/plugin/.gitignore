@@ -1,0 +1,5 @@
+# What SwiftPM and Xcode make when the plugin's tests run on their own. The
+# packages the app ships are pinned in the app's Package.resolved.
+.build/
+.swiftpm/
+Package.resolved

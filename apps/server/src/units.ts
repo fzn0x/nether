@@ -9,6 +9,7 @@ import { type Database, type Queryable, readText, readTextOrNull, readTime } fro
 import { fail, uuidField } from "./http.ts";
 import { accountOf, signedIn } from "./sessions.ts";
 import { membership } from "./workspaces.ts";
+import { type Place, cut, generalLevel, placeOf } from "./places.ts";
 import { type ServerEvents, accountActor, originOf } from "./events.ts";
 
 export type Level = "view" | "comment" | "edit" | "full";
@@ -71,16 +72,23 @@ function unitOf(row: Record<string, unknown>): Unit {
 
 /**
  * The units an account may open in a workspace, General's key among them,
- * each with its level; empty for one not in the workspace.
+ * each with its level, and its place there; empty, with no place, for one
+ * not in the workspace. Its role's settings decide General's level, whether
+ * it opens teamspaces, and the highest level anything opens at (ADR 0089).
  */
 export async function accessible(
   db: Queryable,
   userId: string,
   workspaceId: string,
-): Promise<{ readonly levels: Map<string, Level>; readonly units: Map<string, Unit> }> {
+): Promise<{
+  readonly levels: Map<string, Level>;
+  readonly units: Map<string, Unit>;
+  readonly place: Place | undefined;
+}> {
   const found = new Map<string, Level>();
-  const member = await membership(db, userId, workspaceId);
-  if (member === undefined) return { levels: found, units: new Map() };
+  const place = await placeOf(db, userId, workspaceId);
+  if (place === undefined) return { levels: found, units: new Map(), place };
+  const { settings } = place;
   const { rows } = await db.query(
     `SELECT u.id, u.kind, u.name, u.owner_id, u.root_note, u.parent_id, u.restricted, g.level
        FROM units u LEFT JOIN unit_grants g ON g.unit_id = u.id AND g.user_id = $2
@@ -91,8 +99,9 @@ export async function accessible(
   const granted = new Map(
     rows.flatMap((row) => (isLevel(row.level) ? [[readText(row, "id"), row.level] as const] : [])),
   );
-  // Guests never open General; everyone else has full access to it.
-  if (member.role !== "guest") found.set(general, "full");
+  // A guest's role opens no General; the others' open it at full access.
+  const opened = generalLevel(settings);
+  if (opened !== undefined) found.set(general, opened);
   const levelOf = (id: string | null, depth: number): Level | undefined => {
     if (id === null) return found.get(general);
     const unit = units.get(id);
@@ -100,14 +109,15 @@ export async function accessible(
     if (unit === undefined || depth > 64) return undefined;
     const grant = granted.get(id);
     if (unit.kind === "private") return unit.ownerId === userId ? "full" : undefined;
-    if (unit.kind === "team") return member.role === "guest" ? undefined : grant;
+    if (unit.kind === "team") return settings.teamspaces === "none" ? undefined : grant;
     return unit.restricted ? grant : higher(grant, levelOf(unit.parentId, depth + 1));
   };
-  for (const id of units.keys()) {
-    const level = levelOf(id, 0);
+  for (const [id, unit] of units) {
+    // A private space is its member's own, whatever their role's At most.
+    const level = unit.kind === "private" ? levelOf(id, 0) : cut(levelOf(id, 0), settings);
     if (level !== undefined) found.set(id, level);
   }
-  return { levels: found, units };
+  return { levels: found, units, place };
 }
 
 /** The unit a document belongs to: a vault document's own, or the one the record gives a note. */
@@ -285,9 +295,11 @@ export function registerUnits(
     async (request, reply) => {
       const workspace = request.params.workspace.toLowerCase();
       const me = accountOf(request).id;
-      const place = await membership(db, me, workspace);
+      const place = await placeOf(db, me, workspace);
       if (place === undefined) return fail(reply, 404, noWorkspace);
-      if (place.role === "guest") return fail(reply, 403, "Guests make no teamspaces.");
+      if (place.settings.teamspaces !== "make") {
+        return fail(reply, 403, "Guests make no teamspaces.");
+      }
       if (place.encryption !== "none") {
         return fail(reply, 409, "An encrypted workspace has no teamspaces yet.");
       }
@@ -449,9 +461,9 @@ export function registerUnits(
       if (!("id" in unit)) return fail(reply, unit[0], unit[1]);
       if (unit.kind === "private")
         return fail(reply, 400, "A private space is its member's alone.");
-      const them = await membership(db, user, workspace);
+      const them = await placeOf(db, user, workspace);
       if (them === undefined) return fail(reply, 404, "This workspace has no such member.");
-      if (them.role === "guest" && unit.kind === "team") {
+      if (unit.kind === "team" && them.settings.teamspaces === "none") {
         return fail(reply, 400, "Guests join pages, not teamspaces.");
       }
       await db.transaction(async (tx) => {
@@ -745,9 +757,9 @@ export function registerUnits(
     async (request, reply) => {
       const workspace = request.params.workspace.toLowerCase();
       const me = accountOf(request).id;
-      const place = await membership(db, me, workspace);
+      const place = await placeOf(db, me, workspace);
       if (place === undefined) return fail(reply, 404, noWorkspace);
-      if (place.role === "guest") return fail(reply, 403, "Guests have no private space.");
+      if (!place.settings.privateSpace) return fail(reply, 403, "Guests have no private space.");
       if (place.encryption !== "none") {
         return fail(reply, 409, "An encrypted workspace has no private spaces yet.");
       }

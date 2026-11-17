@@ -15,7 +15,7 @@ import type { SyncControl } from "./sync.ts";
 import { type ApiCaller, apiCaller, callerActor, callerOf } from "./tokens.ts";
 import { type EventTarget, type ServerEvents, originOf } from "./events.ts";
 import { type Level, type Unit, accessible, general } from "./units.ts";
-import { membership } from "./workspaces.ts";
+import { membership, placeOf } from "./places.ts";
 
 /** How many notes a page lists unless asked, and the most it lists. */
 const pageSize = 100;
@@ -313,8 +313,13 @@ export function registerApi(
   events: ServerEvents,
   policies: ApiPolicies,
 ) {
-  /** Whether a workspace's data policy lets the API give its text (ADR 0088). */
-  const exported = async (workspace: string) => (await policies.of(workspace)).export;
+  /**
+   * Whether the API gives a workspace's text to an account: its data policy
+   * lets it (ADR 0088), and so does the account's role there (ADR 0089).
+   */
+  const exported = async (workspace: string, userId: string) =>
+    (await policies.of(workspace)).export &&
+    (await placeOf(db, userId, workspace))?.settings.export === true;
   const caller = apiCaller(db);
 
   /**
@@ -418,7 +423,9 @@ export function registerApi(
       if (!("workspace" in reached)) return fail(reply, reached[0], reached[1]);
       const row = await listedNote(db, reached, request.params.note);
       if (row === undefined) return fail(reply, 404, noNote);
-      if (!(await exported(reached.workspace))) return fail(reply, 403, exportOff);
+      if (!(await exported(reached.workspace, callerOf(request).userId))) {
+        return fail(reply, 403, exportOff);
+      }
       const note = await noteAnswer(sync, reached, row);
       const id = readText(row, "note");
       await toldRead(request, "note.read_by_api", reached.workspace, [id], {
@@ -502,7 +509,9 @@ export function registerApi(
       if (!("workspace" in reached)) return fail(reply, reached[0], reached[1]);
       const found = await findDatabase(db, sync, reached, request.params.note);
       if (found === undefined) return fail(reply, 404, noDatabase);
-      if (!(await exported(reached.workspace))) return fail(reply, 403, exportOff);
+      if (!(await exported(reached.workspace, callerOf(request).userId))) {
+        return fail(reply, 403, exportOff);
+      }
       const after = request.query.after === undefined ? undefined : readCursor(request.query.after);
       if (request.query.after !== undefined && after === undefined) {
         return fail(reply, 400, badCursor);
@@ -550,14 +559,11 @@ export function registerApi(
       }
       if (request.query.q.trim() === "") return fail(reply, 400, "Type something to search for.");
       // Results show passages of notes: a workspace the policy keeps is left out.
-      if (only !== undefined && !(await exported(only))) return fail(reply, 403, exportOff);
-      const found = await search(
-        db,
-        me.userId,
-        request.query.q,
-        request.query.limit,
-        only,
-        exported,
+      if (only !== undefined && !(await exported(only, me.userId))) {
+        return fail(reply, 403, exportOff);
+      }
+      const found = await search(db, me.userId, request.query.q, request.query.limit, only, (id) =>
+        exported(id, me.userId),
       );
       // The notes whose passages it gave, never what was searched for.
       await toldRead(

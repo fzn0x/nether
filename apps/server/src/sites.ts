@@ -23,7 +23,6 @@ import {
 import { fail, limitByAddress, uuidField } from "./http.ts";
 import { accountOf, signedIn } from "./sessions.ts";
 import { accessible, unitOfDocument } from "./units.ts";
-import { membership } from "./workspaces.ts";
 import { hasControl, isName, unitForPath } from "./writes.ts";
 import { type EventDetails, type ServerEvents, accountActor, originOf } from "./events.ts";
 
@@ -230,13 +229,15 @@ export function registerSites(
 
   /** The workspace and what the account may do in it, or why it may do nothing. */
   async function placed(userId: string, workspace: string) {
-    const place = await membership(db, userId, workspace);
+    const { levels, units, place } = await accessible(db, userId, workspace);
     if (place === undefined) return [404, noWorkspace] as const;
     if (place.encryption !== "none") return [409, encrypted] as const;
-    const { levels, units } = await accessible(db, userId, workspace);
     return {
       workspace,
-      admin: place.role === "owner" || place.role === "admin",
+      // Whether its role manages the workspace: its publishing switch and every site (ADR 0089).
+      admin: place.settings.workspace,
+      // Whether its role publishes what it has full access to.
+      publishes: place.settings.publishing,
       levels,
       reached: { workspace, opens: [...levels.keys()], levels, units },
     };
@@ -352,6 +353,8 @@ export function registerSites(
       if (!(await fullAt(place, me, { note, folder: folder ?? null }))) {
         return fail(reply, 403, noFull);
       }
+      if (!place.publishes)
+        return fail(reply, 403, "Your role in this workspace publishes nothing.");
       if (!(await options.policies.of(place.workspace)).sites) return fail(reply, 403, sitesOff);
       const id = randomUUID();
       const made = await db

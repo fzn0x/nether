@@ -117,7 +117,8 @@ workspace the vault syncs with, and each one's role:
   workspace always keeps one whose account is active.
 - **Admins** invite people and change or remove members and guests.
 - **Members** read and write every note.
-- **Guests** only read.
+- **Guests** open only the pages shared with them, at the level they are
+  given there. A guest who edits a page adds its images and files too.
 
 To invite someone, owners and admins choose their role and, if only they
 should be able to accept, their email address, then **Make an invitation

@@ -1,10 +1,10 @@
 // The mobile apps' own plugin (ADR 0087), `NetherVaults`, in apps/mobile:
-// Java on Android, what Go is on the desktop. It keeps the list of vaults on
-// the phone, and does to each vault's folder only what needs the disk:
-// lists, reads with each file's SHA-256, writes in one step after checking
-// the file is still what the page read, moves, and makes and removes
-// folders. Paths are the vault's, separated by slashes; bytes cross the
-// bridge as base64.
+// Java on Android and Swift on iOS, what Go is on the desktop. It keeps the
+// list of vaults on the phone, and does to each vault's folder only what
+// needs the disk: lists, reads with each file's SHA-256, writes in one step
+// after checking the file is still what the page read, moves, and makes and
+// removes folders. Paths are the vault's, separated by slashes; bytes cross
+// the bridge as base64.
 import { registerPlugin } from "@capacitor/core";
 import type { FileHash, FileInfo, FileText } from "@nether/storage";
 
