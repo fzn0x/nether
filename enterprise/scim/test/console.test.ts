@@ -230,11 +230,14 @@ describe("the discovery endpoints", () => {
     });
     const types = await scim(test, okta, "GET", "/ResourceTypes");
     expect(types.json()).toMatchObject({
-      totalResults: 1,
-      Resources: [{ id: "User", endpoint: "/Users" }],
+      totalResults: 2,
+      Resources: [
+        { id: "User", endpoint: "/Users" },
+        { id: "Group", endpoint: "/Groups" },
+      ],
     });
     expect((await scim(test, okta, "GET", "/ResourceTypes/User")).statusCode).toBe(200);
-    expect((await scim(test, okta, "GET", "/ResourceTypes/Group")).statusCode).toBe(404);
+    expect((await scim(test, okta, "GET", "/ResourceTypes/Device")).statusCode).toBe(404);
     const schemas = await scim(test, okta, "GET", "/Schemas");
     const attributes = schemas
       .json<{ Resources: { attributes: { name: string }[] }[] }>()
