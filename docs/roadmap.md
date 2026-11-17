@@ -161,7 +161,7 @@ One feature per pull request, in this order:
 - [ ] Advanced permissions: custom roles, group-based access and domain-restricted sharing.
 - [ ] Data policies: retention rules, legal hold, and public sharing and export restricted per workspace.
 - [ ] Private AI endpoint enforcement: an admin locks AI to an approved internal endpoint for the whole organization.
-- [ ] High availability and the Helm chart: several server nodes with documented failover and zero-downtime upgrades, the sync service scaled out.
+- [ ] High availability and the Helm chart: several server nodes with documented failover and zero-downtime upgrades, the sync service scaled out. A workspace's stores are numbered in the order they commit, and the encrypted relay reads its updates in that order on each node, the bus between nodes only a hint ([ADR 0082](adr/0082-several-nodes-share-sync-through-valkey-take-their-order-from-postgresql-and-roll-out-one-at-a-time.md)); merging stores, job claims, the bus over Valkey, upgrades and the Helm chart come next.
 - [ ] The mobile apps, for iOS and Android: offline editing, quick capture and the share sheet.
 - [ ] Integrations as plugins: GitHub, Slack, and Google Drive and Calendar through CalDAV and ICS first, with the admin's own OAuth credentials.
 

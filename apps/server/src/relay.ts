@@ -14,18 +14,23 @@
 // stored before it are sent, so a subscriber's numbers only grow. Pushing a
 // note tells the vault document's subscribers, as { type: "stored", document, seq }.
 //
-// A document's pushes and snapshots take their turn, one after another:
-// each is numbered, stored, answered and sent on before the next is
-// numbered. A client told a number has so been sent every update of the
-// document numbered before it, and keeps that number as how far it has
-// read. Two stored at once could be answered out of order, as PostgreSQL
-// answers two connections, and a client would read past the one answered
-// last, never to be sent it (#174). The turns are this process's, as its
-// subscribers are.
+// The database gives the relay its order (ADR 0082). A workspace's updates
+// are numbered in the order they commit, so this node reads each workspace
+// it has subscribers in after the last number it read, in order, and sends
+// what it reads to its own subscribers: when it stores a push, when the bus
+// hints that another node did, when a socket subscribes, and every few
+// seconds. A pusher is told its number once this node has read past it, so
+// it has been sent every update of the document numbered before it, and
+// keeps that number as how far it has read. Answered as stored, two pushes
+// could be told out of order, and a client would read past the one told
+// last, never to be sent it (#174).
+import { randomUUID } from "node:crypto";
 import type { FastifyInstance } from "fastify";
 import type { WebSocket } from "ws";
-import { type Database, readBytes, readCount } from "./db.ts";
+import type { ClusterBus, Unsubscribe } from "./cluster.ts";
+import { type Database, readBytes, readCount, readText } from "./db.ts";
 import { socketCookieToken } from "./cookies.ts";
+import { lockNumbers } from "./numbers.ts";
 import { sessionAccount } from "./sessions.ts";
 import { parseDocumentName } from "./sync.ts";
 import { base64Bytes, membership, writes } from "./workspaces.ts";
@@ -34,11 +39,15 @@ import { base64Bytes, membership, writes } from "./workspaces.ts";
 const batch = 500;
 /** An update's largest size, as Hocuspocus allows: 16 MiB. */
 const largest = 16 * 1024 * 1024;
+/** How often a node reads each workspace it has subscribers in, hints or none. */
+const readEvery = 5_000;
+/** How long a node waits to read again after a read failed. */
+const retryAfter = 1_000;
 
 interface Subscription {
   /** Whether the updates stored before it began have been sent. */
   ready: boolean;
-  /** Updates pushed meanwhile, sent once it is ready. */
+  /** Updates read meanwhile, sent once it is ready. */
   readonly waiting: { seq: number; data: string }[];
 }
 
@@ -46,6 +55,19 @@ interface Client {
   readonly socket: WebSocket;
   userId: string | undefined;
   readonly subscriptions: Map<string, Subscription>;
+}
+
+/** A workspace's updates as this node reads them, in order, for its own subscribers. */
+interface Reader {
+  /** The last number read. */
+  watermark: number;
+  /** The read under way, if one is. */
+  reading: Promise<void> | undefined;
+  /** Whether another read was asked for while one was under way. */
+  again: boolean;
+  /** Pushes waiting to be told their numbers, until this node has read past them. */
+  readonly waiters: { readonly seq: number; readonly resolve: () => void }[];
+  readonly unsubscribe: Unsubscribe;
 }
 
 type Message = Readonly<Record<string, unknown>>;
@@ -56,23 +78,23 @@ export interface RelayControl {
   disconnect(userId: string): void;
 }
 
-export function registerRelay(app: FastifyInstance, db: Database): RelayControl {
+/** The bus's topic for a workspace's encrypted updates: a hint that there are new ones to read. */
+function topicOf(workspace: string): string {
+  return `relay.${workspace}`;
+}
+
+export function registerRelay(app: FastifyInstance, db: Database, bus: ClusterBus): RelayControl {
   /** Each document's subscribers. */
   const subscribers = new Map<string, Set<Client>>();
   const clients = new Set<Client>();
-  /** Each document's last push or snapshot under way, which the next waits for. */
-  const turns = new Map<string, Promise<void>>();
-
-  /** Runs a change to a document's stored updates after the one under way, and gives its outcome. */
-  function inTurn(document: string, work: () => Promise<void>): Promise<void> {
-    const turn = (turns.get(document) ?? Promise.resolve()).then(work);
-    const settled = turn.catch(() => undefined);
-    turns.set(document, settled);
-    void settled.then(() => {
-      if (turns.get(document) === settled) turns.delete(document);
-    });
-    return turn;
-  }
+  /** How many subscriptions this node has in each workspace. */
+  const subscribed = new Map<string, number>();
+  /** Each workspace's reader, made as it gains its first subscription here. */
+  const readers = new Map<string, Promise<Reader>>();
+  /** Which socket here pushed each number not yet read: it is not sent its own update back. */
+  const pushedBy = new Map<number, Client>();
+  /** This node, which hears its own hints and passes them over. */
+  const node = randomUUID();
 
   function send(client: Client, message: object): void {
     if (client.socket.readyState === client.socket.OPEN)
@@ -93,6 +115,132 @@ export function registerRelay(app: FastifyInstance, db: Database): RelayControl 
       else subscription.waiting.push(update);
     }
   }
+
+  /** Sends an update read to this node's subscribers, and tells of a note's to the vault's. */
+  function deliver(workspace: string, document: string, seq: number, data: Uint8Array): void {
+    const pusher = pushedBy.get(seq);
+    pushedBy.delete(seq);
+    relay(`${workspace}/${document}`, { seq, data: Buffer.from(data).toString("base64") }, pusher);
+    if (document === "vault") return;
+    for (const listener of subscribers.get(`${workspace}/vault`) ?? []) {
+      if (listener !== pusher) send(listener, { type: "stored", document, seq });
+    }
+  }
+
+  /** Whether a read was asked for while one went on; read anew after each wait. */
+  function askedAgain(reader: Reader): boolean {
+    return reader.again;
+  }
+
+  /** Reads a workspace's updates after the reader's last number, in order, and sends them on. */
+  function read(workspace: string, reader: Reader): Promise<void> {
+    if (reader.reading !== undefined) {
+      reader.again = true;
+      return reader.reading;
+    }
+    const reading = (async () => {
+      try {
+        do {
+          reader.again = false;
+          for (;;) {
+            const { rows } = await db.query(
+              `SELECT name, seq, data FROM encrypted_updates
+                WHERE workspace_id = $1 AND seq > $2 ORDER BY seq LIMIT $3`,
+              [workspace, reader.watermark, batch],
+            );
+            for (const row of rows) {
+              const seq = readCount(row, "seq");
+              deliver(workspace, readText(row, "name"), seq, readBytes(row, "data"));
+              reader.watermark = seq;
+            }
+            for (const waiter of reader.waiters.filter((each) => each.seq <= reader.watermark)) {
+              reader.waiters.splice(reader.waiters.indexOf(waiter), 1);
+              waiter.resolve();
+            }
+            if (rows.length < batch) break;
+          }
+        } while (askedAgain(reader));
+      } finally {
+        // Cleared as it ends, so a read asked for from here on starts anew.
+        reader.reading = undefined;
+      }
+    })();
+    reader.reading = reading;
+    reading.catch((error: unknown) => {
+      app.log.error({ err: error }, "The relay could not read a workspace's updates");
+      // Pushes wait on it: read again in a moment.
+      setTimeout(() => {
+        read(workspace, reader).catch(() => undefined);
+      }, retryAfter).unref();
+    });
+    return reading;
+  }
+
+  /** The workspace's reader, made from the last number stored when this node has none. */
+  function readerOf(workspace: string): Promise<Reader> {
+    let made = readers.get(workspace);
+    if (made === undefined) {
+      made = (async () => {
+        const { rows } = await db.query(
+          "SELECT coalesce(max(seq), 0) AS seq FROM encrypted_updates WHERE workspace_id = $1",
+          [workspace],
+        );
+        const reader: Reader = {
+          watermark: readCount(rows[0], "seq"),
+          reading: undefined,
+          again: false,
+          waiters: [],
+          unsubscribe: bus.subscribe(topicOf(workspace), (message) => {
+            if (message !== node) read(workspace, reader).catch(() => undefined);
+          }),
+        };
+        return reader;
+      })();
+      readers.set(workspace, made);
+      const kept = made;
+      kept.catch(() => {
+        if (readers.get(workspace) === kept) readers.delete(workspace);
+      });
+    }
+    return made;
+  }
+
+  /** A client's subscription to a document ends; its workspace's reader goes with its last. */
+  function leave(client: Client, name: string): void {
+    if (!client.subscriptions.delete(name)) return;
+    const listeners = subscribers.get(name);
+    listeners?.delete(client);
+    if (listeners?.size === 0) subscribers.delete(name);
+    const workspace = parseDocumentName(name)?.workspaceId;
+    if (workspace === undefined) return;
+    const left = (subscribed.get(workspace) ?? 1) - 1;
+    if (left > 0) {
+      subscribed.set(workspace, left);
+      return;
+    }
+    subscribed.delete(workspace);
+    const made = readers.get(workspace);
+    readers.delete(workspace);
+    made
+      ?.then((reader) => {
+        reader.unsubscribe();
+        // No one here is left to send to: what waited is told at once.
+        for (const waiter of reader.waiters.splice(0)) waiter.resolve();
+      })
+      .catch(() => undefined);
+  }
+
+  // Each workspace read every few seconds, for any hint lost on the way.
+  const timer = setInterval(() => {
+    for (const [workspace, made] of readers) {
+      made.then((reader) => read(workspace, reader)).catch(() => undefined);
+    }
+  }, readEvery);
+  timer.unref();
+  app.addHook("onClose", (_instance, done) => {
+    clearInterval(timer);
+    done();
+  });
 
   /** The account's place in a document's workspace, if the document is an encrypted workspace's. */
   async function place(client: Client, name: unknown) {
@@ -119,7 +267,8 @@ export function registerRelay(app: FastifyInstance, db: Database): RelayControl 
       });
       return;
     }
-    // Subscribed first, so nothing pushed while the stored updates are read is lost.
+    // Subscribed first, so nothing stored while the stored updates are read is lost.
+    leave(client, name);
     const subscription: Subscription = { ready: false, waiting: [] };
     client.subscriptions.set(name, subscription);
     let listeners = subscribers.get(name);
@@ -128,6 +277,9 @@ export function registerRelay(app: FastifyInstance, db: Database): RelayControl 
       subscribers.set(name, listeners);
     }
     listeners.add(client);
+    subscribed.set(found.workspaceId, (subscribed.get(found.workspaceId) ?? 0) + 1);
+    // The reader sends what is stored from here on; what was before, this reads.
+    await readerOf(found.workspaceId);
     let last = after;
     for (;;) {
       const { rows } = await db.query(
@@ -166,24 +318,43 @@ export function registerRelay(app: FastifyInstance, db: Database): RelayControl 
       refuse(client, id, "That is not an update.");
       return;
     }
-    await inTurn(`${found.workspaceId}/${found.document}`, async () => {
-      const { rows } = await db.query(
-        `INSERT INTO encrypted_updates (workspace_id, name, seq, data)
-         VALUES ($1, $2, nextval('document_seq'), $3) RETURNING seq`,
-        [found.workspaceId, found.document, data],
-      );
-      const seq = readCount(rows[0], "seq");
-      send(client, { type: "pushed", id, seq });
-      relay(name, { seq, data: message.data as string }, client);
-      if (found.document !== "vault") {
-        const vault = `${found.workspaceId}/vault`;
-        for (const listener of subscribers.get(vault) ?? []) {
-          if (listener !== client) {
-            send(listener, { type: "stored", document: found.document, seq });
-          }
-        }
+    const workspace = found.workspaceId;
+    let drawn: number | undefined;
+    const seq = await db
+      .transaction(async (tx) => {
+        // Numbered in the order pushes commit (ADR 0082).
+        await lockNumbers(tx, workspace);
+        const { rows } = await tx.query(
+          `INSERT INTO encrypted_updates (workspace_id, name, seq, data)
+           VALUES ($1, $2, nextval('document_seq'), $3) RETURNING seq`,
+          [workspace, found.document, data],
+        );
+        drawn = readCount(rows[0], "seq");
+        // Known before the commit, so no read of it sends the pusher its own update.
+        pushedBy.set(drawn, client);
+        return drawn;
+      })
+      .catch((error: unknown) => {
+        if (drawn !== undefined) pushedBy.delete(drawn);
+        throw error;
+      });
+    // Other nodes read it on this hint; this node reads it before it answers.
+    bus.publish(topicOf(workspace), node);
+    const made = readers.get(workspace);
+    if (made === undefined) {
+      // No one here subscribes in the workspace, the pusher neither.
+      pushedBy.delete(seq);
+    } else {
+      const reader = await made;
+      if (reader.watermark < seq) {
+        const told = new Promise<void>((resolve) => {
+          reader.waiters.push({ seq, resolve });
+        });
+        read(workspace, reader).catch(() => undefined);
+        await told;
       }
-    });
+    }
+    send(client, { type: "pushed", id, seq });
   }
 
   async function compact(client: Client, message: Message): Promise<void> {
@@ -202,33 +373,31 @@ export function registerRelay(app: FastifyInstance, db: Database): RelayControl 
       refuse(client, id, "That is not a snapshot.");
       return;
     }
-    // In turn too: no push numbered before `through` is still being stored.
-    await inTurn(`${found.workspaceId}/${found.document}`, async () => {
-      const done = await db.transaction(async (tx) => {
-        // Only over what is there: a snapshot replaces stored updates, up to one
-        // of them; anything else changes nothing.
-        const { rows } = await tx.query(
-          `SELECT 1 FROM encrypted_updates WHERE workspace_id = $1 AND name = $2 AND seq = $3
-            FOR UPDATE`,
-          [found.workspaceId, found.document, through],
-        );
-        if (rows.length === 0) return false;
-        await tx.query(
-          "DELETE FROM encrypted_updates WHERE workspace_id = $1 AND name = $2 AND seq <= $3",
-          [found.workspaceId, found.document, through],
-        );
-        await tx.query(
-          "INSERT INTO encrypted_updates (workspace_id, name, seq, data) VALUES ($1, $2, $3, $4)",
-          [found.workspaceId, found.document, through, data],
-        );
-        return true;
-      });
-      if (!done) {
-        refuse(client, id, "A snapshot must replace the updates up to one stored.");
-        return;
-      }
-      send(client, { type: "compacted", id });
+    // Every update numbered up to `through` has committed, as numbers follow commits.
+    const done = await db.transaction(async (tx) => {
+      // Only over what is there: a snapshot replaces stored updates, up to one
+      // of them; anything else changes nothing.
+      const { rows } = await tx.query(
+        `SELECT 1 FROM encrypted_updates WHERE workspace_id = $1 AND name = $2 AND seq = $3
+          FOR UPDATE`,
+        [found.workspaceId, found.document, through],
+      );
+      if (rows.length === 0) return false;
+      await tx.query(
+        "DELETE FROM encrypted_updates WHERE workspace_id = $1 AND name = $2 AND seq <= $3",
+        [found.workspaceId, found.document, through],
+      );
+      await tx.query(
+        "INSERT INTO encrypted_updates (workspace_id, name, seq, data) VALUES ($1, $2, $3, $4)",
+        [found.workspaceId, found.document, through, data],
+      );
+      return true;
     });
+    if (!done) {
+      refuse(client, id, "A snapshot must replace the updates up to one stored.");
+      return;
+    }
+    send(client, { type: "compacted", id });
   }
 
   app.get("/api/relay", { websocket: true }, (socket, request) => {
@@ -274,8 +443,7 @@ export function registerRelay(app: FastifyInstance, db: Database): RelayControl 
           else if (message.type === "push") await push(client, message);
           else if (message.type === "compact") await compact(client, message);
           else if (message.type === "unsubscribe" && typeof message.name === "string") {
-            client.subscriptions.delete(message.name);
-            subscribers.get(message.name)?.delete(client);
+            leave(client, message.name);
           } else {
             refuse(client, message.id, "That is not a message the relay knows.");
           }
@@ -287,11 +455,7 @@ export function registerRelay(app: FastifyInstance, db: Database): RelayControl 
     });
     socket.on("close", () => {
       clients.delete(client);
-      for (const name of client.subscriptions.keys()) {
-        const listeners = subscribers.get(name);
-        listeners?.delete(client);
-        if (listeners?.size === 0) subscribers.delete(name);
-      }
+      for (const name of [...client.subscriptions.keys()]) leave(client, name);
     });
   });
 

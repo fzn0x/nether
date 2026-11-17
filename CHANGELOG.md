@@ -319,12 +319,18 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- A device back from being away could skip a note stored at the same
+  moment as another, when the server's database numbered the two in one
+  order and committed them in the other. A workspace's stores now take
+  their numbers in the order they commit, and the encrypted relay reads
+  them in that order, which also holds across several server nodes
+  ([ADR 0082](docs/adr/0082-several-nodes-share-sync-through-valkey-take-their-order-from-postgresql-and-roll-out-one-at-a-time.md)).
 - In an encrypted workspace, two devices changing a note at once now each
   get the other's change. Before, when the server answered their two
   changes out of order, as PostgreSQL may, one device could miss the
-  other's change, and later syncs did not bring it. The relay now stores,
-  answers and sends a document's changes one at a time, in the order it
-  numbers them.
+  other's change, and later syncs did not bring it. The relay now tells a
+  device its change's number only after sending it every change numbered
+  before it.
 
 ## [0.1.0] - 2026-11-15
 
