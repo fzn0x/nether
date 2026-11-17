@@ -20,6 +20,7 @@ import { registerSessions } from "./sessions.ts";
 import { registerSetup } from "./setup.ts";
 import { registerRelay } from "./relay.ts";
 import { registerSync } from "./sync.ts";
+import { registerLinks } from "./links.ts";
 import { registerTokens } from "./tokens.ts";
 import { registerUnits } from "./units.ts";
 import { purgeVersions, registerVersions } from "./versions.ts";
@@ -199,6 +200,14 @@ export async function buildApp(config: Config, services: Services): Promise<Fast
   };
   registerMembers(app, services.db, reconnect);
   registerUnits(app, services.db, reconnect, sync);
+  // Share links, which open a shared page to anyone with one (ADR 0071).
+  registerLinks(app, services.db, {
+    publicUrl: config.publicUrl,
+    webApp: config.webApp !== null,
+    disconnect: (userId) => {
+      sync.disconnect(userId);
+    },
+  });
   // The public API, for personal access tokens (ADR 0059).
   registerTokens(app, services.db);
   const api = registerApi(app, services.db, sync);

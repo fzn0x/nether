@@ -873,6 +873,73 @@ export async function removeGrant(
   });
 }
 
+/** A page's share link, as those with full access to it see it (ADR 0071). */
+export interface ShareLink {
+  readonly id: string;
+  readonly url: string;
+  readonly level: string;
+  readonly password: boolean;
+  readonly expiresAt: string | null;
+  readonly createdBy: string | null;
+}
+
+function shareLinkOf(value: unknown, base: string): ShareLink {
+  const link = record(value);
+  return {
+    id: text(link.id, base),
+    url: text(link.url, base),
+    level: text(link.level, base),
+    password: link.password === true,
+    expiresAt: typeof link.expiresAt === "string" ? link.expiresAt : null,
+    createdBy: typeof link.createdBy === "string" ? link.createdBy : null,
+  };
+}
+
+/** A page's share links. */
+export async function shareLinks(
+  fetcher: Fetch,
+  base: string,
+  token: string,
+  workspaceId: string,
+  unit: string,
+): Promise<ShareLink[]> {
+  const answer = record(
+    await workspaceRequest(fetcher, base, token, workspaceId, `/units/${unit}/links`),
+  );
+  return (Array.isArray(answer.links) ? answer.links : []).map((each) => shareLinkOf(each, base));
+}
+
+/** Makes a share link to a page shared on its own. */
+export async function makeShareLink(
+  fetcher: Fetch,
+  base: string,
+  token: string,
+  workspaceId: string,
+  unit: string,
+  link: { readonly level: string; readonly expiresAt?: string; readonly password?: string },
+): Promise<ShareLink> {
+  return shareLinkOf(
+    await workspaceRequest(fetcher, base, token, workspaceId, `/units/${unit}/links`, {
+      body: link,
+    }),
+    base,
+  );
+}
+
+/** Revokes a share link, which ends the visits it started. */
+export async function revokeShareLink(
+  fetcher: Fetch,
+  base: string,
+  token: string,
+  workspaceId: string,
+  unit: string,
+  link: string,
+): Promise<void> {
+  await workspaceRequest(fetcher, base, token, workspaceId, `/units/${unit}/links/${link}`, {
+    method: "DELETE",
+  });
+}
+
 /** Shares a page on its own, with its subpages; gives its unit. */
 export async function sharePage(
   fetcher: Fetch,

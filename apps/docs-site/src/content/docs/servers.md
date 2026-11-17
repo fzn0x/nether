@@ -200,8 +200,19 @@ invite a guest by a link: a guest opens the pages shared with them, and
 nothing else of the workspace. **Stop sharing it on its own** puts it back
 with its space.
 
-An encrypted workspace has no spaces or shared pages yet: everyone in it
-opens all of it.
+### Share links
+
+A page shared on its own can also be opened by anyone with its link, with
+no account. Under **Anyone with the link**, in its **Share this page**
+dialog, **Make a link** makes one and copies it; give it a date to expire
+on, and a password, if you want them. The link opens the page and its
+subpages in the web app, to read, with their images; whoever opens it
+sees nothing else of the workspace, not even other pages' names. **Copy
+link** copies it again, and **Revoke** stops it, which ends what it
+opened. A server opens links only when it serves the web app.
+
+An encrypted workspace has no spaces, shared pages or links yet: everyone
+in it opens all of it.
 
 ## End-to-end encryption
 
