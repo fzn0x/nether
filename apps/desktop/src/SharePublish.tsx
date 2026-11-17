@@ -28,7 +28,8 @@ export function SharePublish(props: {
   readonly link: VaultLink;
   readonly note: NoteEntry;
   readonly onStatus: (status: string) => void;
-  readonly onError: (error: string) => void;
+  /** Shows an error, or with none, takes the one shown away. */
+  readonly onError: (error: string | undefined) => void;
 }) {
   const { link, note, onStatus, onError } = props;
   const { server, workspaceId } = link;
@@ -63,6 +64,8 @@ export function SharePublish(props: {
   const act = (work: (token: string) => Promise<string>) => {
     if (busy) return;
     setBusy(true);
+    // A new try takes the last one's error away.
+    onError(undefined);
     session()
       .then(async (token) => {
         const said = await work(token);
