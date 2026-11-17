@@ -78,8 +78,9 @@ const firefox = {
     gecko: {
       id: "nether-clipper@fzn0x.github.io",
       strict_min_version: "140.0",
-      // A clip is a page's content, sent to the server the person names.
-      data_collection_permissions: { required: ["websiteContent"] },
+      // A clip is a page's content, sent to the server the person names,
+      // with the API token that signs them in to it.
+      data_collection_permissions: { required: ["authenticationInfo", "websiteContent"] },
     },
   },
 };
