@@ -71,7 +71,8 @@ with no account, to read, to comment on or to edit.
 [Buttons](../buttons/) in a note, written as Obsidian's Meta Bind writes
 them, run commands, make notes from templates and set properties. A page
 or a folder [publishes](../publishing/) as a site the server draws for
-anyone, its links only between its own pages. The
+anyone, on a domain of your own if you like, its links only between its
+own pages. The
 [roadmap](../roadmap/) lists what each phase delivers.
 
 The full requirements, the architecture and the decision records live in
