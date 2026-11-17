@@ -20,6 +20,15 @@ Click **Export** and choose where to save. The dialog shows how many notes
 are done, and **Cancel** stops the export and leaves nothing behind. Once
 it is saved, **Show in folder** opens the folder it is in.
 
+## On a phone
+
+On Android and iOS there is no folder to choose: an export goes to the
+share sheet once it is made, so you can save it to Files, mail it, or send
+it to another app. Markdown files and web pages export as on the desktop,
+and a database's CSV too; a PDF comes later. **Send a copy**, in the Note
+menu and the command palette, sends the note's Markdown to the share
+sheet, as text and as its file.
+
 ## What each export holds
 
 **Markdown files, in a ZIP.** The notes' files exactly as they are in the

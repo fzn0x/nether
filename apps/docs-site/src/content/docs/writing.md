@@ -137,6 +137,26 @@ paragraph in Arabic, Hebrew, Persian or Urdu and it starts at the right,
 beside paragraphs in English that start at the left. Nothing is added to
 the file for it.
 
+## Quick capture, on a phone
+
+On Android and iOS, touch and hold Nether's icon for four shortcuts.
+**Capture** opens the capture sheet at once, before the vault has opened:
+type, choose the vault, the one you opened last unless you pick another,
+and **Save**. **New note**, **Today's note** and **Search** open that vault
+at those commands.
+
+Share text, a link, images or files to Nether from another app, and each
+becomes a new note too. On Android the capture sheet opens with what you
+shared, and Nether goes back to the other app once you save. On iOS,
+Nether's own sheet in the share sheet asks for the vault, and Nether
+files the note as it next opens.
+
+A capture's note goes in the vault's Inbox folder. Its title is the shared
+page's title, or the first line you typed, or the time. A shared link is
+its `source` property, the time it was made its `created`, and shared
+files go in the Inbox beside it, shown in it. To use another folder, open
+**Settings**, **Quick capture**.
+
 ## What happens to your file
 
 Nether rewrites only the blocks you change. The rest of the file keeps its
