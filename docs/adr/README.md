@@ -86,3 +86,4 @@ record supersedes it and says so. Start a new one from
 | [0077](0077-a-site-holds-a-custom-domain-its-dns-proves-and-tells-search-engines-what-each-page-is.md) | A site holds a custom domain its DNS proves, and tells search engines what each page is | Accepted |
 | [0078](0078-building-with-ai-reads-a-checked-json-reply-into-an-import-plan-the-user-previews.md) | Building with AI reads a checked JSON reply into an import plan the user previews | Accepted |
 | [0079](0079-enterprise-features-are-in-every-image-off-and-switched-in-the-console-or-pinned-by-the-environment.md) | Enterprise features are in every image, off, and switched in the console or pinned by the environment | Accepted |
+| [0080](0080-single-sign-on-binds-saml-and-oidc-providers-to-email-domains-and-enforcement-refuses-other-ways-in.md) | Single sign-on binds SAML and OIDC providers to email domains, and enforcement refuses other ways in | Accepted |
