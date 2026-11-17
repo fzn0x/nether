@@ -19,8 +19,11 @@ export type EnterprisePins = Readonly<Record<EnterpriseFeature, boolean | undefi
 /** What a module's plugin is given. */
 export interface EnterpriseContext {
   readonly db: Database;
-  /** Whether the module's feature is on now. */
-  readonly isOn: () => Promise<boolean>;
+  /**
+   * Whether the module's feature is on now; asked within a transaction, as
+   * a listener of the server's events is, it reads through it.
+   */
+  readonly isOn: (db?: Queryable) => Promise<boolean>;
   /** A route's check that answers 404 while the module's feature is off. */
   readonly whenOn: (
     request: FastifyRequest,
@@ -92,10 +95,10 @@ export class EnterpriseSwitches {
     return this.#available.has(feature);
   }
 
-  #read(): Promise<ReadonlyMap<string, boolean>> {
+  #read(db: Queryable = this.#db): Promise<ReadonlyMap<string, boolean>> {
     const kept = this.#chosen;
     if (kept !== undefined && Date.now() - kept.at < keptFor) return kept.values;
-    const values = this.#db
+    const values = db
       .query("SELECT key, value FROM instance_settings WHERE key LIKE 'enterprise.%'")
       .then(({ rows }) => new Map(rows.map((row) => [String(row.key), row.value === true])));
     this.#chosen = { at: Date.now(), values };
@@ -107,11 +110,11 @@ export class EnterpriseSwitches {
   }
 
   /** Whether a feature is on now. */
-  async on(feature: EnterpriseFeature): Promise<boolean> {
+  async on(feature: EnterpriseFeature, db?: Queryable): Promise<boolean> {
     if (!this.#available.has(feature)) return false;
     const pin = this.#pins[feature];
     if (pin !== undefined) return pin;
-    return (await this.#read()).get(settingKey(feature)) ?? false;
+    return (await this.#read(db)).get(settingKey(feature)) ?? false;
   }
 
   /** Every feature's switch, as the console shows them. */
@@ -183,7 +186,7 @@ export async function registerEnterprise(
     }
   }
   for (const module of modules) {
-    const isOn = () => switches.on(module.feature);
+    const isOn = (db?: Queryable) => switches.on(module.feature, db);
     const whenOn = async (request: FastifyRequest, reply: FastifyReply) =>
       (await isOn()) ? undefined : notFound(request, reply);
     await app.register(module.plugin, { db, isOn, whenOn, ...shared });
