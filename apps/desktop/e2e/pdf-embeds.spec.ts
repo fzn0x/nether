@@ -108,7 +108,8 @@ test("a highlight's embed shows its passage above it, as the PDF draws it", asyn
   await edit(page, "Papers/Reading.pdf", reading);
   await edit(
     page,
-    "Papers/Reading highlights.md",
+    // At the top, where an embed finds it by its name before the link index has read it.
+    "Reading highlights.md",
     "> [!quote] [[Reading.pdf#page=1&selection=1,13,1,25&color=note|Reading, page 1]]\n> all you need\n>\n> Why it matters.\n\n^hl000001\n",
   );
   await edit(page, "Cites.md", "# Cites\n\n![[Reading highlights#^hl000001]]\n");
