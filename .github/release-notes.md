@@ -25,6 +25,7 @@ and the server.
 | Linux, any (x64) | [nether-{version}-x86_64.appimage]({url}/nether-{version}-x86_64.appimage), or the [Flatpak bundle]({url}/nether-{version}-x86_64.flatpak) |
 | The server (amd64 and arm64) | `ghcr.io/fzn0x/nether-server:{version}`, started with PostgreSQL and Valkey by the [`docker-compose.yml`](https://github.com/fzn0x/nether/blob/v{version}/deploy/docker/docker-compose.yml): see [Run a server](https://fzn0x.github.io/nether/self-hosting/) |
 | The server on Kubernetes | `helm install nether oci://ghcr.io/fzn0x/charts/nether --version {version}`: see [Kubernetes](https://fzn0x.github.io/nether/kubernetes/) |
+| Android 7 or later | [nether-{version}-android.apk]({url}/nether-{version}-android.apk), installed over the last one; see [On Android](https://fzn0x.github.io/nether/install/#on-android) |
 | The web clipper | Chrome, Edge and Brave: [nether-clipper-chrome-{version}.zip]({url}/nether-clipper-chrome-{version}.zip); Firefox: [nether-clipper-firefox-{version}.xpi]({url}/nether-clipper-firefox-{version}.xpi), or [the ZIP]({url}/nether-clipper-firefox-{version}.zip) to load for a session. See [Web clipper](https://fzn0x.github.io/nether/clipper/) |
 
 Nether installed from the Windows installer, the macOS disk image or the

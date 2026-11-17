@@ -63,9 +63,14 @@ themselves: download the next release when it comes.
 
 ## On Android
 
-The Android app is on its way, and not in the stores yet. Each build of
-the repository makes a debug APK, `nether-android-debug`, among its
-artifacts, for Android 7 and later. Install it, then give a vault a name:
+Each [release](https://github.com/fzn0x/nether/releases/latest) has the
+Android app, `nether-<version>-android.apk`, for Android 7 and later: free,
+with no store and no account. Open it on the phone, and allow your browser
+or files app to install apps when Android asks, once. The next release's
+APK installs over it and keeps your vaults, as every release is signed with
+the same key; its certificate's SHA-256 is
+`4D:41:BA:99:71:85:85:75:FF:88:BE:AC:1B:87:D2:C6:95:8C:DA:0F:22:F5:B7:47:45:9F:90:32:78:55:4B:EB`,
+which `apksigner verify --print-certs` shows. Then give a vault a name:
 it is a folder of Markdown notes in the app's own storage, which works
 with no account. Opening the same name again finds its notes, and the
 app opens to the vault it had open last. Each note is saved as you leave
