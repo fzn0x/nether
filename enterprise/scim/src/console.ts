@@ -1,10 +1,12 @@
 // The console's Directories page's routes (ADR 0085), for instance admins
 // while the feature is on: each directory with its domains, whether it may
-// make accounts at other domains, its SCIM address and its token. A token
-// is shown once, when it is made, and replaces the one before at once;
-// only its SHA-256 is kept. Removing a directory keeps what its groups
-// gave: each place becomes the account's own, and its accounts stay as
-// they are, managed by no directory.
+// make accounts at other domains, and a SCIM directory's address and
+// token, or an LDAP directory's settings and runs. A token is shown once,
+// when it is made, and replaces the one before at once; only its SHA-256
+// is kept. An LDAP directory's bind password is sealed, and never shown.
+// Removing a directory keeps what its groups gave: each place becomes the
+// account's own, and its accounts stay as they are, managed by no
+// directory.
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import type { Config } from "@nether/server/src/config.ts";
 import { type Database, type Queryable, readText, readTextOrNull } from "@nether/server/src/db.ts";
@@ -40,14 +42,24 @@ import {
   setMapping,
 } from "./groupWrites.ts";
 import type { GroupRow } from "./groups.ts";
+import {
+  type LdapBody,
+  LdapRefused,
+  type LdapView,
+  ldapView,
+  ldapWrite,
+  presetInputs,
+} from "./ldapConsole.ts";
+import { keptSettings, ldapInputSchema } from "./ldapSettings.ts";
 import { scimBase } from "./scim.ts";
 
 interface DirectoryInput {
   readonly id: string;
-  readonly kind?: "scim";
+  readonly kind?: "scim" | "ldap";
   readonly name?: string;
   readonly domains?: readonly string[];
   readonly otherDomains?: boolean;
+  readonly ldap?: LdapBody;
 }
 
 interface Params {
@@ -62,6 +74,7 @@ const properties = {
     items: { type: "string", minLength: 1, maxLength: 253 },
   },
   otherDomains: { type: "boolean" },
+  ldap: ldapInputSchema,
 } as const;
 
 const newBody = {
@@ -70,8 +83,7 @@ const newBody = {
   additionalProperties: false,
   properties: {
     id: { type: "string", pattern: directoryIdPattern },
-    // LDAP directories come with the LDAP pull (ADR 0085, part 4).
-    kind: { type: "string", enum: ["scim"] },
+    kind: { type: "string", enum: ["scim", "ldap"] },
     ...properties,
   },
 } as const;
@@ -170,10 +182,12 @@ export function registerConsole(app: FastifyInstance, context: ConsoleContext): 
   const admins = (what: string) => ({ preHandler: [whenOn, account, instanceAdmin(what)] });
   const actorOf = (request: FastifyRequest): EventActor => accountActor(accountOf(request).id);
 
-  /** What the page shows of a directory: never its token, only its last characters. */
+  /** What the page shows of a directory: never its token, only its last characters, nor its password. */
   async function view(directory: Directory) {
     const counts = await accountCounts(db, directory.id);
     const ends = directory.token?.expiresAt;
+    const ldap: LdapView | null =
+      directory.kind === "ldap" ? await ldapView(db, directory.id) : null;
     return {
       id: directory.id,
       kind: directory.kind,
@@ -191,6 +205,7 @@ export function registerConsole(app: FastifyInstance, context: ConsoleContext): 
               ended: ends.getTime() <= Date.now(),
               endsSoon: ends.getTime() - Date.now() < warnDays * 86_400_000,
             },
+      ldap,
     };
   }
 
@@ -202,7 +217,9 @@ export function registerConsole(app: FastifyInstance, context: ConsoleContext): 
     try {
       return await work();
     } catch (error) {
-      if (error instanceof Refused) return fail(reply, error.status, error.message);
+      if (error instanceof Refused || error instanceof LdapRefused) {
+        return fail(reply, error.status, error.message);
+      }
       throw error;
     }
   }
@@ -212,6 +229,9 @@ export function registerConsole(app: FastifyInstance, context: ConsoleContext): 
     return {
       directories: await Promise.all((await listDirectories(db)).map(view)),
       publicUrl: config.publicUrl,
+      // Whether LDAP directories' bind passwords can be kept, and the presets their form starts from.
+      secretKey: config.secretKey !== null,
+      ldapPresets: presetInputs(),
       // How the accounts a directory makes, which have no password, sign in.
       signIn: {
         providers: Number(sso.rows[0]?.count ?? 0),
@@ -229,14 +249,29 @@ export function registerConsole(app: FastifyInstance, context: ConsoleContext): 
       return refusing(reply, async () => {
         const domains = domainsOf(body.domains ?? []);
         const name = (body.name ?? "").trim();
+        const kind = body.kind ?? "scim";
+        if (kind === "scim" && body.ldap !== undefined) {
+          throw new Refused(400, "A SCIM directory has no LDAP settings.");
+        }
+        // An LDAP directory's settings, checked, and its bind password, sealed.
+        const ldap =
+          kind === "ldap" ? ldapWrite(config, body.id, body.ldap ?? {}, undefined) : undefined;
         await db.transaction(async (tx) => {
           if ((await findDirectory(tx, body.id)) !== undefined) {
             throw new Refused(409, `There is a directory named ${body.id} already.`);
           }
           await domainsFree(tx, body.id, domains);
           await tx.query(
-            "INSERT INTO directories (id, kind, name, other_domains) VALUES ($1, 'scim', $2, $3)",
-            [body.id, name, body.otherDomains ?? false],
+            `INSERT INTO directories (id, kind, name, other_domains, settings, secrets)
+             VALUES ($1, $2, $3, $4, $5::jsonb, $6)`,
+            [
+              body.id,
+              kind,
+              name,
+              body.otherDomains ?? false,
+              JSON.stringify(ldap?.settings ?? {}),
+              ldap?.secrets ?? null,
+            ],
           );
           await setDomains(tx, body.id, domains);
           await events.emit(
@@ -245,7 +280,14 @@ export function registerConsole(app: FastifyInstance, context: ConsoleContext): 
               action: "directory.created",
               actor: actorOf(request),
               target: { type: "directory", id: body.id, name },
-              details: { kind: "scim", domains, otherDomains: body.otherDomains ?? false },
+              details: {
+                kind,
+                domains,
+                otherDomains: body.otherDomains ?? false,
+                ...(ldap === undefined
+                  ? {}
+                  : { url: ldap.settings.url, bindDn: ldap.settings.bindDn }),
+              },
             },
             originOf(request),
           );
@@ -278,6 +320,26 @@ export function registerConsole(app: FastifyInstance, context: ConsoleContext): 
             "UPDATE directories SET name = $2, other_domains = $3, updated_at = now() WHERE id = $1",
             [id, name, otherDomains],
           );
+          // An LDAP directory's settings, and its bind password when sent;
+          // a new address or bind DN asks for the password again.
+          let ldap: { readonly settings: boolean; readonly password: boolean } | undefined;
+          if (body.ldap !== undefined) {
+            if (kept.kind !== "ldap") {
+              throw new Refused(400, "A SCIM directory has no LDAP settings.");
+            }
+            const row = await tx.query("SELECT settings FROM directories WHERE id = $1", [id]);
+            const before = keptSettings(row.rows[0]?.settings);
+            const written = ldapWrite(config, id, body.ldap, before);
+            await tx.query(
+              `UPDATE directories SET settings = $2::jsonb, secrets = coalesce($3, secrets)
+                WHERE id = $1`,
+              [id, JSON.stringify(written.settings), written.secrets ?? null],
+            );
+            ldap = {
+              settings: JSON.stringify(before) !== JSON.stringify(written.settings),
+              password: written.secrets !== undefined,
+            };
+          }
           await events.emit(
             tx,
             {
@@ -291,6 +353,8 @@ export function registerConsole(app: FastifyInstance, context: ConsoleContext): 
                   otherDomains: kept.otherDomains,
                 },
                 to: { name, domains: domains ?? [...kept.domains], otherDomains },
+                // Never the settings' secrets: only that they changed.
+                ...(ldap === undefined ? {} : { ldap }),
               },
             },
             originOf(request),
