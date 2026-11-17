@@ -335,7 +335,13 @@ describe("the relay", () => {
     const told = second.received.findIndex((message) => message.type === "pushed");
     expect(sent).toBeGreaterThanOrEqual(0);
     expect(sent).toBeLessThan(told);
-    expect(first.received.some((message) => message.type === "updates")).toBe(true);
+    // And the first is sent the second's, after its own number.
+    const later = Math.max(fromLaptop, fromPhone);
+    await first.next(
+      (message) =>
+        message.type === "updates" &&
+        (message.updates as { seq: number }[]).some((update) => update.seq === later),
+    );
   });
 
   it("replaces the updates up to one with a snapshot", async () => {
