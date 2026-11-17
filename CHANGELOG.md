@@ -301,6 +301,15 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `NETHER_SSO_PRIVATE` lets providers be on the server's own network. CI
   signs in through Keycloak, by SAML and by OpenID Connect
   ([ADR 0080](docs/adr/0080-single-sign-on-binds-saml-and-oidc-providers-to-email-domains-and-enforcement-refuses-other-ways-in.md)).
+- AI locked to approved endpoints, the `policies` feature's first part: an
+  instance admin lists the addresses AI may go to, in the console's AI
+  endpoints section or with `NETHER_AI_ENDPOINTS`, and for every workspace
+  on the server the desktop and web apps then use only a provider at one
+  of them, or under one, for writing assist, asking the notes, building
+  with AI and search by meaning. The AI tab shows the approved addresses
+  and marks a provider elsewhere; the server refuses to keep or relay to
+  one
+  ([ADR 0086](docs/adr/0086-ai-is-locked-to-the-endpoints-an-instance-admin-approves-in-the-apps-and-the-relay.md)).
 
 ### Changed
 

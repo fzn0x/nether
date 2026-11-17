@@ -15,6 +15,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { adminModule } from "../../../enterprise/admin/src/index.ts";
+import { policiesModule } from "../../../enterprise/policies/src/index.ts";
 import { ssoModule } from "../../../enterprise/sso/src/index.ts";
 import { TestIdp, emailFormat } from "../../../enterprise/sso/test/idp.ts";
 import { buildApp } from "../../server/src/app.ts";
@@ -106,7 +107,7 @@ const app = await buildApp(
     resolveTxt,
     blobs: new DiskBlobs(await mkdtemp(join(tmpdir(), "nether-web-e2e-"))),
     // As the image has them: each off until the console turns it on (ADR 0079).
-    enterpriseModules: [adminModule, ssoModule],
+    enterpriseModules: [adminModule, policiesModule, ssoModule],
   },
 );
 await app.listen({ host: "127.0.0.1", port });

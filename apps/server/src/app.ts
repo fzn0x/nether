@@ -25,6 +25,7 @@ import type { Mailer } from "./mail.ts";
 import { registerOidc } from "./oidc.ts";
 import { registerSessions } from "./sessions.ts";
 import { SecuritySettings } from "./settings.ts";
+import { AiEndpoints } from "./aiEndpoints.ts";
 import { registerSetup } from "./setup.ts";
 import { registerRelay } from "./relay.ts";
 import { type ClusterBus, ProcessBus } from "./cluster.ts";
@@ -164,9 +165,13 @@ export async function buildApp(config: Config, services: Services): Promise<Fast
   // the pinned ones written where every node and query reads them.
   const security = new SecuritySettings(services.db, config.security);
   await security.applyPins();
+  // The approved AI endpoints, a lock while the `policies` feature is on (ADR 0086).
+  const aiEndpoints = new AiEndpoints(services.db, config.aiEndpoints, () =>
+    switches.on("policies"),
+  );
 
   registerSetup(app, services.db, services.setupCode);
-  registerSessions(app, services.db, security);
+  registerSessions(app, services.db, security, aiEndpoints);
   registerInvitations(app, services.db);
   registerWorkspaces(app, services.db);
   registerVersions(app, services.db);
@@ -272,6 +277,7 @@ export async function buildApp(config: Config, services: Services): Promise<Fast
     mode: config.ai,
     privatePolicy: config.aiPrivate,
     secretKey: config.secretKey,
+    endpoints: aiEndpoints,
     ...(services.aiResolve === undefined ? {} : { resolve: services.aiResolve }),
   });
   if (services.mailer !== undefined) {
@@ -287,7 +293,7 @@ export async function buildApp(config: Config, services: Services): Promise<Fast
   }));
   await registerEnterprise(
     app,
-    { db: services.db, config, disconnect: reconnect, security },
+    { db: services.db, config, disconnect: reconnect, security, aiEndpoints },
     switches,
     modules,
   );

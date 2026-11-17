@@ -7,12 +7,22 @@
 // pass through the server, and a workspace whose owners turned AI off. An
 // account's own provider reaches public addresses alone, over https; only
 // the admin's may reach the server's own network, as NETHER_AI_PRIVATE
-// allows. Nothing of what is sent or answered is logged or kept.
+// allows. While an instance admin locks AI to approved endpoints (ADR
+// 0086), a provider elsewhere is neither kept nor used. Nothing of what is
+// sent or answered is logged or kept.
 import { randomUUID } from "node:crypto";
 import { isIP } from "node:net";
 import { Transform, type TransformCallback } from "node:stream";
-import { type ProviderKind, apiBase, callOf, callPath, requestHeaders } from "@nether/ai";
+import {
+  type ProviderKind,
+  apiBase,
+  callOf,
+  callPath,
+  isApproved,
+  requestHeaders,
+} from "@nether/ai";
 import type { FastifyInstance } from "fastify";
+import { type AiEndpoints, lockedMessage } from "./aiEndpoints.ts";
 import type { AiMode } from "./config.ts";
 import { type Database, type Row, readText, readTextOrNull } from "./db.ts";
 import { fail, limitBy, nameField, uuidField } from "./http.ts";
@@ -26,6 +36,8 @@ export interface AiOptions {
   readonly privatePolicy: PrivatePolicy;
   /** The key that seals providers' keys; without one the server keeps none. */
   readonly secretKey: Buffer | null;
+  /** The approved endpoints, which lock every provider to them while they hold one. */
+  readonly endpoints: AiEndpoints;
   /** What resolves providers' hosts; the system's resolver unless a test gives another. */
   readonly resolve?: Resolver;
   /** How long a provider has to begin its answer, in milliseconds. */
@@ -185,11 +197,17 @@ export function registerAi(app: FastifyInstance, db: Database, options: AiOption
     );
     const ids = rows.map((row) => readText(row, "id"));
     const wanted = chosen[0] === undefined ? null : readText(chosen[0], "provider_id");
+    const lock = await options.endpoints.locked();
     return {
       mode,
       keepsKeys: seal !== undefined,
       manage: { own: mode === "on", instance: mode !== "off" && me.instanceAdmin },
-      providers: rows.map(shown),
+      // The only addresses a provider may be at, or null when nothing is locked (ADR 0086).
+      endpoints: lock,
+      providers: rows.map((row) => ({
+        ...shown(row),
+        allowed: lock === null || isApproved(readText(row, "url"), lock),
+      })),
       default: wanted !== null && ids.includes(wanted) ? wanted : (ids[0] ?? ""),
     };
   });
@@ -224,6 +242,8 @@ export function registerAi(app: FastifyInstance, db: Database, options: AiOption
       const url = request.body.url.trim().replace(/\/+$/, "");
       const problem = urlProblem(url, scope, options.privatePolicy);
       if (problem !== undefined) return fail(reply, 400, problem);
+      const lock = await options.endpoints.locked();
+      if (lock !== null && !isApproved(url, lock)) return fail(reply, 403, lockedMessage(lock));
       const key = request.body.key ?? "";
       if (key !== "" && seal === undefined) return fail(reply, 409, noKeys);
       const { rows: counted } = await db.query(
@@ -286,6 +306,9 @@ export function registerAi(app: FastifyInstance, db: Database, options: AiOption
       const url = change.url?.trim().replace(/\/+$/, "") ?? readText(row, "url");
       const problem = urlProblem(url, scope, options.privatePolicy);
       if (problem !== undefined) return fail(reply, 400, problem);
+      // A new address must be approved; a name or a model may change on any.
+      const lock = change.url === undefined ? null : await options.endpoints.locked();
+      if (lock !== null && !isApproved(url, lock)) return fail(reply, 403, lockedMessage(lock));
       if (typeof change.key === "string" && change.key !== "" && seal === undefined) {
         return fail(reply, 409, noKeys);
       }
@@ -386,6 +409,11 @@ export function registerAi(app: FastifyInstance, db: Database, options: AiOption
       }
       const row = await usable(me, request.params.provider);
       if (row === undefined) return fail(reply, 404, noProvider);
+      // Locked to approved endpoints, nothing goes to a provider elsewhere (ADR 0086).
+      const lock = await options.endpoints.locked();
+      if (lock !== null && !isApproved(readText(row, "url"), lock)) {
+        return fail(reply, 403, lockedMessage(lock));
+      }
       const kind: ProviderKind = readText(row, "kind") === "anthropic" ? "anthropic" : "openai";
       const call = callOf(kind, `/${request.params["*"]}`);
       const path = call === undefined ? undefined : callPath(kind, call);

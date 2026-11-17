@@ -3,7 +3,8 @@
 // or the environment pins it. The server never imports these; this entry
 // gives them to it.
 import { adminModule } from "@nether/enterprise-admin";
+import { policiesModule } from "@nether/enterprise-policies";
 import { ssoModule } from "@nether/enterprise-sso";
 import { runServer } from "@nether/server/src/start.ts";
 
-runServer({ enterpriseModules: [adminModule, ssoModule] });
+runServer({ enterpriseModules: [adminModule, policiesModule, ssoModule] });

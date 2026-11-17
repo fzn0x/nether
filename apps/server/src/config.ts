@@ -1,6 +1,7 @@
 // The server's configuration, read from environment variables.
 import { isIP } from "node:net";
 import { fileURLToPath } from "node:url";
+import { endpointsVariable, maxEndpoints, readEndpoints } from "./aiEndpoints.ts";
 import { type EnterprisePins, enterpriseFeatures, switchVariable } from "./enterprise.ts";
 import { type SecurityPins, securityNames, securitySettings } from "./settings.ts";
 
@@ -80,6 +81,8 @@ export interface Config {
   readonly enterprise: EnterprisePins;
   /** The security settings the environment pins; unset ones are the console's (ADR 0084). */
   readonly security: SecurityPins;
+  /** The approved AI endpoints, when NETHER_AI_ENDPOINTS pins them; else the console's (ADR 0086). */
+  readonly aiEndpoints: readonly string[] | undefined;
 }
 
 export interface WebAppConfig {
@@ -164,6 +167,20 @@ function readSecurityPins(env: NodeJS.ProcessEnv): SecurityPins {
     pins[name] = value;
   }
   return pins as SecurityPins;
+}
+
+/** The approved AI endpoints NETHER_AI_ENDPOINTS pins, a comma-separated list (ADR 0086). */
+function readAiEndpoints(env: NodeJS.ProcessEnv): readonly string[] | undefined {
+  const text = env[endpointsVariable]?.trim() ?? "";
+  if (text === "") return undefined;
+  try {
+    return readEndpoints(text.split(","));
+  } catch (error) {
+    throw new ConfigError(
+      endpointsVariable,
+      `must list http or https addresses, ${String(maxEndpoints)} at most: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
 }
 
 function readPort(env: NodeJS.ProcessEnv): number {
@@ -533,5 +550,6 @@ export function readConfig(env: NodeJS.ProcessEnv): Config {
     webApp: readWebApp(env),
     enterprise,
     security: readSecurityPins(env),
+    aiEndpoints: readAiEndpoints(env),
   };
 }

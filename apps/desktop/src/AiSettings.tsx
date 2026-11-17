@@ -8,7 +8,7 @@
 // provider is set up.
 import { type ProviderKind, isLocal, providerUrl } from "@nether/ai";
 import { type SyntheticEvent, useEffect, useState } from "react";
-import type { AiProviderEntry, ServerAi, VaultAiChoice } from "./ai.ts";
+import { type AiProviderEntry, type ServerAi, type VaultAiChoice, allowedBy } from "./ai.ts";
 import { providerWhere } from "./aiWords.ts";
 import { backend } from "./backend.ts";
 import { MeaningSettings } from "./MeaningSettings.tsx";
@@ -323,6 +323,8 @@ export function AiSettings(props: {
   const manages = workspace?.role === "owner" || workspace?.role === "admin";
   const adds = relay === undefined || relay.manage.own || relay.manage.instance;
   const encryptedHere = resolution.reason === "encryptedRelay";
+  // The endpoints the vault's server locks AI to, if any (ADR 0086).
+  const lock = workspace?.endpoints ?? relay?.endpoints ?? null;
 
   return (
     <div className="settings-form ai-settings">
@@ -331,6 +333,9 @@ export function AiSettings(props: {
         <p className="hint">
           {relay === undefined ? t("aiIntro") : t("aiIntroServer", { server: host })}
         </p>
+        {lock === null ? null : (
+          <p role="status">{t("aiLocked", { server: host, endpoints: lock.join(", ") })}</p>
+        )}
         {relay?.mode === "off" ? (
           <p role="status">{t("aiServerOff", { server: host })}</p>
         ) : (
@@ -355,6 +360,9 @@ export function AiSettings(props: {
                         ) : null}
                       </div>
                       <p className="hint">{providerWhere(provider, relay !== undefined)}</p>
+                      {allowedBy(lock, provider) ? null : (
+                        <p className="hint">{t("aiNotApproved", { server: host })}</p>
+                      )}
                       <div className="ai-provider-actions">
                         {changes(relay, provider) ? (
                           <button
@@ -465,6 +473,9 @@ export function AiSettings(props: {
                 {encrypted ? <p className="hint">{t("aiVaultEncrypted")}</p> : null}
                 {resolution.reason === "missing" ? (
                   <p role="status">{t("aiVaultMissing")}</p>
+                ) : null}
+                {resolution.reason === "notApproved" ? (
+                  <p role="status">{t("aiVaultNotApproved", { server: host })}</p>
                 ) : null}
               </>
             )}

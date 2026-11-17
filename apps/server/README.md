@@ -76,6 +76,8 @@ token as `Authorization: Bearer <token>`. Every error is
 | `PATCH /api/admin/workspaces/:id/members/:user` | instance admin | Sets a member's `role`, any of the four, keeping at least one owner (409 otherwise); closes the member's sync connections |
 | `GET /api/admin/security` | instance admin | With the `admin` feature on: each security setting's `name`, `value`, `pinnedBy` (its variable, or `null`) and, for a number, `min` and `max` (ADR 0084) |
 | `PUT /api/admin/security` | instance admin | Sets settings by name, all or none: 400 for one unknown or out of range, 409 for one its variable pins; gives the settings as they are then |
+| `GET /api/admin/ai-endpoints` | instance admin | With the `policies` feature on: the approved AI `endpoints`, and `pinnedBy`, `NETHER_AI_ENDPOINTS` or `null` (ADR 0086) |
+| `PUT /api/admin/ai-endpoints` | instance admin | Sets the approved `endpoints`, 20 at most, each an http or https address; an empty list locks nothing; 400 for one that is not an address, 409 while the variable pins them |
 | `GET /api/setup`, `POST /api/setup` | | First-run setup, above |
 | `GET /api/sign-in-methods` | | Which ways to sign in this server offers: `password`, `emailCode` when it can send email, and `oidc` with the provider's name |
 | `POST /api/sessions` | | Signs in with `email` and `password`; gives `token` and `expiresAt` |
@@ -87,7 +89,7 @@ token as `Authorization: Bearer <token>`. Every error is
 | `GET /api/sessions` | yes | The account's sessions, the current one marked |
 | `DELETE /api/sessions/current` | yes | Signs out |
 | `POST /api/sessions/revoke` | yes | Ends the session `session`, or every other one, with `password` |
-| `GET /api/me` | yes | The account, and the workspaces it is in with its role in each |
+| `GET /api/me` | yes | The account, the workspaces it is in with its role in each, and `aiEndpoints`: the only addresses its apps may send AI requests to, or `null` when nothing is locked (ADR 0086) |
 | `PUT /api/me/password` | yes | Changes the password from `current`; ends every other session |
 | `POST /api/workspaces/:id/invitations` | owner, admin; full on the page | Invites someone as `admin` or `member`, for one `email` or anyone; or as a `guest` to one shared page (`unit`) at a `level`; gives `token` |
 | `GET /api/workspaces/:id/invitations` | owner, admin | The invitations not yet accepted |
@@ -494,6 +496,7 @@ machine.
 | `NETHER_SIGN_IN_TRIES_ACCOUNT` | unset, 10 | Sign-in tries per account in 15 minutes, from 3 to 100 |
 | `NETHER_SIGN_IN_TRIES_ADDRESS` | unset, 30 | Sign-in tries, and email codes redeemed, per address in 5 minutes, from 5 to 1000 |
 | `NETHER_SIGN_IN_EMAIL_CODES` | unset, on | Whether a code by email signs in, where the server can send email |
+| `NETHER_AI_ENDPOINTS` | unset | The approved AI endpoints, comma-separated, 20 at most, as `https://llm.example.com/v1`; with the `policies` feature on, every app sends AI requests only to them or under them (ADR 0086) |
 
 An enterprise feature is off until an instance admin turns it on in the
 admin console (ADR 0079). Its variable, set to `on` or `off` (or `true`,
@@ -510,6 +513,12 @@ shows it as set by the variable; a value out of its range stops the
 server at startup, naming the variable. A session lasts by the lengths as
 they are now, so a shorter one ends sessions past it at their next
 request.
+
+`NETHER_AI_ENDPOINTS` pins the approved AI endpoints that the console's AI
+endpoints section otherwise sets (ADR 0086). They lock AI only while the
+`policies` feature is on: the relay then refuses, and does not keep, a
+provider at any other address, and `/api/me` gives the list to the apps,
+which keep to it.
 
 Set `NETHER_TRUST_PROXY` whenever the server is behind a proxy, or every
 client shares the proxy's address and its limits on signing in. Use `on`

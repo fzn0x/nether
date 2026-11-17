@@ -3,14 +3,16 @@
 // workspace's switch. Reading them costs a call to the Go service, or the
 // server, as the vault opens; the workspace's server is asked only once
 // a provider is set up, and again before any text is sent, so an owner or
-// admin who turns AI off is heard before the next request. When the server
-// cannot be reached, what it last said holds.
+// admin who turns AI off, or locks it to approved endpoints (ADR 0086), is
+// heard before the next request. When the server cannot be reached, what it
+// last said holds.
 import type { Vault } from "@nether/storage";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   type AiResolution,
   type AiSettingsView,
   type VaultAiChoice,
+  allowedBy,
   keepWorkspaceAi,
   knownWorkspaceAi,
   noProviders,
@@ -20,6 +22,7 @@ import {
 } from "./ai.ts";
 import { backend } from "./backend.ts";
 import { t } from "./messages.ts";
+import type { AIProvider } from "./mygo.ts";
 import { account, setWorkspaceAi } from "./server.ts";
 import { type VaultLink, hostOf } from "./sync.ts";
 
@@ -28,6 +31,8 @@ export interface WorkspaceAi {
   readonly name: string;
   /** Whether its members' apps may offer AI in it. */
   readonly on: boolean;
+  /** The endpoints its server locks AI to, or null when it locks nothing. */
+  readonly endpoints: readonly string[] | null;
   /** This account's role in it, once the server has said. */
   readonly role: string | undefined;
   /** Why the server could not be asked, the last time it was. */
@@ -46,8 +51,12 @@ export interface VaultAi {
   readonly setChoice: (choice: VaultAiChoice) => Promise<void>;
   /** Turns AI on or off for the workspace's members, as its owners and admins may. */
   readonly setWorkspace: (on: boolean) => Promise<void>;
-  /** Asks the workspace's server again, before text is sent; whether AI may run. */
-  readonly allowedNow: () => Promise<boolean>;
+  /**
+   * Asks the workspace's server again, before text is sent; whether AI may
+   * run, through `provider` or else the vault's own, by its switch and the
+   * endpoints it locks AI to.
+   */
+  readonly allowedNow: (provider?: AIProvider) => Promise<boolean>;
   /** Asks the workspace's server of its switch even with no provider set up, as the AI tab does for its owners and admins. */
   readonly lookUpWorkspace: () => void;
 }
@@ -59,11 +68,17 @@ const askLimit = 5000;
 async function askServer(vault: Vault, link: VaultLink): Promise<WorkspaceAi> {
   const token = await backend.serverToken(link.server);
   if (token === undefined) throw new Error(t("syncSignedOut", { server: hostOf(link.server) }));
-  const { workspaces } = await account(backend.serverFetch, link.server, token);
+  const { workspaces, aiEndpoints } = await account(backend.serverFetch, link.server, token);
   const found = workspaces.find((workspace) => workspace.id === link.workspaceId);
   if (found === undefined) throw new Error(t("aiNoWorkspace", { workspace: link.workspaceName }));
-  await keepWorkspaceAi(vault, link.workspaceId, found.ai);
-  return { name: found.name, on: found.ai, role: found.role, error: undefined };
+  await keepWorkspaceAi(vault, link.workspaceId, { on: found.ai, endpoints: aiEndpoints });
+  return {
+    name: found.name,
+    on: found.ai,
+    endpoints: aiEndpoints,
+    role: found.role,
+    error: undefined,
+  };
 }
 
 export function useAi(vault: Vault | undefined, link: VaultLink | undefined): VaultAi {
@@ -118,7 +133,8 @@ export function useAi(vault: Vault | undefined, link: VaultLink | undefined): Va
       const known = await knownWorkspaceAi(vault, link.workspaceId);
       const kept: WorkspaceAi = {
         name: link.workspaceName,
-        on: known ?? true,
+        on: known?.on ?? true,
+        endpoints: known?.endpoints ?? null,
         role: undefined,
         error: undefined,
       };
@@ -141,16 +157,25 @@ export function useAi(vault: Vault | undefined, link: VaultLink | undefined): Va
         choice,
         encrypted: link?.encrypted === true,
         workspaceAllows: link === undefined || (workspace?.on ?? true),
+        // The vault's server's lock, or in the web app its own server's.
+        endpoints:
+          link === undefined
+            ? (settings.server?.endpoints ?? null)
+            : (workspace?.endpoints ?? settings.server?.endpoints ?? null),
       }),
     [settings, choice, link, workspace],
   );
 
-  const latest = useRef({ vault, link, workspace });
-  latest.current = { vault, link, workspace };
+  const latest = useRef({ vault, link, workspace, resolution });
+  latest.current = { vault, link, workspace, resolution };
 
-  const allowedNow = useCallback(async () => {
-    const { vault: open, link: linked, workspace: known } = latest.current;
+  const allowedNow = useCallback(async (provider?: AIProvider) => {
+    const { vault: open, link: linked, workspace: known, resolution: now } = latest.current;
     if (open === undefined || linked === undefined) return true;
+    // Whether the provider about to be used may be, by what the server said.
+    const using = provider ?? now.provider;
+    const allows = (said: { readonly on: boolean; readonly endpoints: readonly string[] | null }) =>
+      said.on && (using === undefined || allowedBy(said.endpoints, using));
     try {
       // A server that does not answer soon holds no request back for long.
       let timer: ReturnType<typeof setTimeout> | undefined;
@@ -163,9 +188,10 @@ export function useAi(vault: Vault | undefined, link: VaultLink | undefined): Va
         clearTimeout(timer);
       });
       setWorkspaceState(fresh);
-      return fresh.on;
+      return allows(fresh);
     } catch {
-      return known?.on ?? (await knownWorkspaceAi(open, linked.workspaceId)) ?? true;
+      const said = known ?? (await knownWorkspaceAi(open, linked.workspaceId));
+      return said === undefined ? true : allows(said);
     }
   }, []);
 
@@ -177,7 +203,7 @@ export function useAi(vault: Vault | undefined, link: VaultLink | undefined): Va
   }, []);
 
   const setWorkspace = useCallback(async (on: boolean) => {
-    const { vault: open, link: linked } = latest.current;
+    const { vault: open, link: linked, workspace: known } = latest.current;
     if (open === undefined || linked === undefined) return;
     const shown = (value: boolean) => {
       setWorkspaceState((previous) =>
@@ -196,7 +222,10 @@ export function useAi(vault: Vault | undefined, link: VaultLink | undefined): Va
       shown(!on);
       throw error;
     }
-    await keepWorkspaceAi(open, linked.workspaceId, on);
+    await keepWorkspaceAi(open, linked.workspaceId, {
+      on,
+      endpoints: known?.endpoints ?? null,
+    });
   }, []);
 
   return {
