@@ -52,6 +52,10 @@ What any design must live with:
 - **A note changes in many places**: in the app on this device, on other
   devices whose changes arrive by sync, in other apps that edit its file,
   and through the server's REST API.
+- **A note's text comes from whoever may edit it**: a member with edit
+  access, a guest, and anyone holding an edit link, with no account. A
+  button's label is theirs too. Meta Bind's vaults are one person's;
+  Nether's sync.
 
 ## Decision
 
@@ -77,7 +81,8 @@ actions:
   app's page.
 - **`command`** runs a command of the registry by its ID: the app's own,
   as `dayNote`, or a plugin's, `plugin-id:command`. An Obsidian command
-  Nether does not have is named as missing.
+  Nether does not have is named as missing. The button asks first, as
+  below.
 - **`createNote`** makes a note at `folderPath`/`fileName`, the first free
   name after it, or opens it with `openIfAlreadyExists`; `openNote` opens
   it.
@@ -96,6 +101,25 @@ actions:
   true`), `input`, `runTemplaterFile` and the actions that change the
   note's text, makes the button say so and run none of its actions. Code
   in a note never runs outside the sandbox.
+
+**A button that runs commands asks first.** A button labelled "Open the
+plan" could run `trashNote`, or a plugin's command, on the owner's device
+at one click, written by anyone who may edit the note. So:
+
+- **The first time a button runs a `command` on this device**, before any
+  of its actions, the app asks, naming each command it has by its title as
+  the palette shows it: "This button runs: Move to trash. Run it?", with
+  Run and Cancel. Cancel runs none of the button's actions.
+- **Run is remembered on this device** for that note and the button's
+  text, as the SHA-256 of its block, in the vault's index settings beside
+  this device's other choices, not in the vault's folder. Any edit to the
+  button asks again. The newest fifty of a note's buttons are kept.
+- **A command a plugin from the vault adds asks every time**, since its
+  code can change.
+- **The other actions run without asking**: `updateMetadata`,
+  `createNote`, `templaterCreateNote`, `open` and `sleep` do what editing
+  the note or following a link already does. `open` opens only `http`,
+  `https` and `mailto` addresses in the browser.
 
 **Buttons are a built-in plugin's**, `automations`, on the plugin API: it
 adds the `meta-bind-button` language and a Button entry to the slash menu.
@@ -155,6 +179,14 @@ Turned off, no trigger runs.
   the Buttons plugin, whose language that is, would read it wrong.
 - **Running Meta Bind's JavaScript actions.** Only the sandbox runs code
   from a vault, and these have no permissions to ask for.
+- **Running commands without asking, as Meta Bind does.** Meta Bind's
+  vault is its owner's alone. A synced note's buttons are written by
+  others, and one click would run what they chose.
+- **Asking about every action.** Setting a property, making a note and
+  opening a link do no more than editing the note or clicking a link;
+  asking each time would teach clicking Run without reading.
+- **Remembering a run in the vault's folder.** It would sync, so one
+  person's Run would let a button run on every device unasked.
 - **Triggers in the base.** Its keys are Obsidian's, and a base Obsidian
   rewrites would drop them.
 - **Triggers in a file beside the database.** A second file to keep in
@@ -172,4 +204,6 @@ Turned off, no trigger runs.
   A later item could run triggers on the server for the API's changes,
   where it can read them.
 - Each command, core or a plugin's, can be a button's action, as the
-  command palette lists them.
+  command palette lists them. A button that runs one asks once on each
+  device, and again after each edit; one that runs a vault plugin's
+  command asks each time.
