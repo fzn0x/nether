@@ -129,6 +129,14 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   highlights in yellow, red, blue or purple, and each recolored from the
   list. The PDF's own outline shows beside its pages, its links to its
   pages and to the web work, and Back returns from where one was followed.
+- PDFs embedded in notes are drawn by pdf.js in the note, on every system,
+  once they come near the screen and not before
+  ([ADR 0067](docs/adr/0067-pdf-embeds-draw-with-pdf-js-when-on-screen-and-an-area-is-pdf-plus-plus-rect.md)):
+  the whole PDF in a box, at `#page=` and `#height=`, with Open to its
+  tab; a passage or PDF++'s `&rect=` box alone; and above a highlight's
+  embed, its passage. An area of a page is highlighted by a drag or from
+  the keyboard, written as PDF++'s `&rect=`. Every view and embed of a PDF
+  shares one loaded copy.
 
 ### Changed
 
