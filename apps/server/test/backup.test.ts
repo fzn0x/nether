@@ -100,11 +100,14 @@ function noteState(text: string): Uint8Array {
 
 /** Every table's rows, in a stable order, for two databases to be compared. */
 async function contents(db: Database): Promise<Record<string, unknown[]>> {
-  // The running nodes' heartbeats are theirs, never in a backup.
+  // The running nodes' heartbeats are theirs, never in a backup. Its jobs'
+  // claims are compared neither: the server's purge claims its row at a
+  // moment of its own, which may come after the backup was written.
   const { rows: tables } = await db.query(
     `SELECT table_name FROM information_schema.tables
      WHERE table_schema = current_schema() AND table_type = 'BASE TABLE'
-       AND table_name NOT IN ('schema_migrations', 'cluster_nodes') ORDER BY table_name`,
+       AND table_name NOT IN ('schema_migrations', 'cluster_nodes', 'cluster_jobs')
+     ORDER BY table_name`,
   );
   const all: Record<string, unknown[]> = {};
   for (const { table_name: table } of tables) {
