@@ -688,3 +688,56 @@ test("comment and edit links let someone with no account comment and edit, as th
   }
   expect(problems).toEqual([]);
 });
+
+test("asks the workspace's notes through the server's relay, citing the passage it read", async ({
+  page,
+}) => {
+  const problems = problemsOf(page);
+  await signIn(page, { email: "ada@example.org", password: "a long password" });
+  await openTeam(page);
+  await newNote(page, "Garden", "The roses bloom in June.");
+  await expect.poll(() => fileText(page, "Garden.md")).toBe("The roses bloom in June.\n");
+  // Once the vault's search finds it, so does asking.
+  const tabs = page.locator(".sidebar-tabs");
+  await tabs.getByRole("button", { name: "Search" }).click();
+  await page.getByRole("searchbox", { name: "Search the vault" }).fill("roses");
+  await expect(page.locator(".search-panel").getByText("Garden").first()).toBeVisible({
+    timeout: 20_000,
+  });
+
+  const { settings, tab } = await aiTab(page);
+  await tab.getByRole("button", { name: "Add a provider" }).click();
+  await tab.getByLabel("For").selectOption("instance");
+  await tab.getByLabel("Name", { exact: true }).fill("Team model");
+  await tab.getByLabel("Address").fill("http://127.0.0.1:4178/v1");
+  await tab.getByLabel("Model").fill("test-model");
+  await tab.getByLabel("Key", { exact: true }).fill("sk-team");
+  await tab.getByRole("button", { name: "Save" }).click();
+  await expect(tab.getByRole("listitem").filter({ hasText: "Team model" })).toBeVisible();
+  await settings.getByRole("button", { name: "Close" }).click();
+
+  await tabs.getByRole("button", { name: "Ask" }).click();
+  const panel = page.getByRole("region", { name: "Ask your notes" });
+  await expect(panel).toContainText(
+    "Asks Team model, test-model at 127.0.0.1:4178, through 127.0.0.1:4175",
+  );
+  await panel.getByRole("textbox", { name: "Your question" }).fill("When do the roses bloom?");
+  await page.keyboard.press("Enter");
+  const answer = panel.locator(".ask-answer").last();
+  await expect(answer).toHaveText("Your notes say: The roses bloom in June. [1]");
+  expect(await violations(page)).toEqual([]);
+  const heard =
+    await ask<{ authorization?: string; body: { messages: { content: string }[] } }[]>("/model");
+  const last = heard.at(-1);
+  expect(last?.authorization).toBe("Bearer sk-team");
+  expect(last?.body.messages.at(-1)?.content).toContain('From "Garden"');
+  await answer.getByRole("button", { name: /^\[1\] 1\. Garden/ }).click();
+  await expect(page.getByRole("textbox", { name: "Garden, note text" })).toBeVisible();
+
+  // Gone again, so the other tests see no AI.
+  const again = await aiTab(page);
+  await again.tab.getByRole("button", { name: "Remove Team model" }).click();
+  await expect(again.tab.getByText("No provider is set up yet.")).toBeVisible();
+  await again.settings.getByRole("button", { name: "Close" }).click();
+  expect(problems).toEqual([]);
+});
