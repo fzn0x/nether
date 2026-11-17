@@ -180,6 +180,16 @@ provider sends people back to the **Redirect address** the page shows, as
 An issuer for every tenant at once, as Entra ID's `common`, is refused:
 give your own tenant's.
 
+- **Okta**: make an OIDC web app integration with the redirect address
+  as its sign-in redirect URI, and give Nether its issuer, as
+  `https://<your org>.okta.com`, with the client's ID and secret.
+- **Microsoft Entra ID**: register an application with the redirect
+  address as a web redirect URI, add a client secret, and give Nether
+  `https://login.microsoftonline.com/<your tenant ID>/v2.0` as its
+  issuer. Add the `email` optional claim: Entra ID says nothing of
+  whether an address is verified, so Nether trusts one only at the
+  provider's own domains.
+
 ### Who signs in
 
 A provider's first sign-in for someone finds their account by the email
@@ -189,8 +199,43 @@ the provider's sign-in finds the account by who the provider says it is,
 whatever address it gives later. An address at another domain links
 nothing through SAML, whose answers cannot say they verified it.
 
-Making people sign in only through single sign-on, refusing their
-passwords and codes, comes in a later version.
+### Requiring single sign-on
+
+A provider can be required at its domains: change it, and turn on
+**Require it: accounts at these domains sign in through it alone**.
+Under **What single sign-on requires**, the page can also require it of
+everyone:
+
+- **Everyone signs in through a provider**: every account does. One at
+  a provider's domains uses that provider; one at no provider's domain
+  may use any provider it is linked to, the server's own
+  `NETHER_OIDC_ISSUER` among them.
+- **Instance admins too**: off, as it starts, instance admins keep their
+  passwords and email codes, so one can sign in to fix a provider that
+  breaks. The page warns when no instance admin has a password and the
+  server sends no codes.
+
+An account single sign-on covers cannot sign in with a password or a
+code, join a workspace by setting a password, set one, or sign in
+through another domain's provider. A sign-in through its provider in
+the last ten minutes, not its password, lets it end its other sessions
+or make a token. Its sessions and tokens that began another way end as
+the page saves the change, its apps connect again, and any that remain
+end at their next request; turning the requirement off later brings
+none back. The page will not save a change that would end your own
+session: sign in through the provider first.
+
+The apps ask for the email address first, and go straight to its
+domain's provider. Under **Everyone**, they offer the providers, and the
+password and the code only behind **Sign in as an instance admin**. A
+password at a required domain gets an answer naming its provider; under
+**Everyone**, one elsewhere answers as a wrong password does. Neither
+tells whether an account exists.
+
+**If a provider breaks** and instance admins are covered too, set
+`NETHER_SSO_ENFORCE=off` on the server and restart it: sign-in through
+the providers goes on, and every other way in comes back until it is
+unset. `NETHER_ENTERPRISE_SSO=off` turns single sign-on off altogether.
 ## AI endpoints
 
 With **Data policies** on, the console shows **AI endpoints**: the

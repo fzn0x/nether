@@ -486,6 +486,7 @@ machine.
 | `NETHER_AI_PRIVATE` | `off` | Addresses that are not public which the admin's AI providers may reach, as a model on your own network: `on` for any, or addresses and ranges such as `192.168.1.20, 10.0.0.0/8`; those may use `http://`. An account's own providers reach public addresses only |
 | `NETHER_SECRET_KEY` | none | 32 random bytes in base64, as `openssl rand -base64 32` makes them, which seal AI providers' keys at rest; without it the server keeps no keys. Keep it with your backups' secrets: a restore needs the same key to open them |
 | `NETHER_ENTERPRISE_SSO` | unset | Single sign-on |
+| `NETHER_SSO_ENFORCE` | unset | `off` stops single sign-on requiring its providers, as the console sets it, until unset: the way back in when a provider breaks (ADR 0080) |
 | `NETHER_ENTERPRISE_SCIM` | unset | Provisioning through SCIM and LDAP |
 | `NETHER_ENTERPRISE_AUDIT` | unset | Audit logs |
 | `NETHER_ENTERPRISE_POLICIES` | unset | Data policies and advanced permissions |
