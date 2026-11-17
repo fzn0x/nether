@@ -1,0 +1,62 @@
+name: Identity provider report
+description: Tell how single sign-on, SCIM or LDAP went with your own provider
+labels: [provider report]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Nether's single sign-on, SCIM and LDAP work with the provider you
+        bring: Nether has no account at any of them. CI tests them against
+        Keycloak and OpenLDAP, and against answers shaped as Okta's and
+        Microsoft Entra ID's. A report from a real tenant tells everyone
+        whether the [admin guide](https://fzn0x.github.io/nether/admin/)'s
+        steps hold for it. Remove secrets, tokens and private names first.
+  - type: dropdown
+    id: provider
+    attributes:
+      label: Which provider?
+      options:
+        - Okta
+        - Microsoft Entra ID
+        - Active Directory
+        - Keycloak
+        - Google Workspace
+        - Another
+    validations:
+      required: true
+  - type: dropdown
+    id: feature
+    attributes:
+      label: What did you set up?
+      multiple: true
+      options:
+        - Single sign-on, SAML
+        - Single sign-on, OpenID Connect
+        - Single sign-on, required
+        - SCIM users
+        - SCIM groups
+        - LDAP pull
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Nether server version
+      description: The console's Nodes page, or `/health`, shows it.
+    validations:
+      required: true
+  - type: dropdown
+    id: outcome
+    attributes:
+      label: How did it go?
+      options:
+        - It worked as the guide says
+        - It worked, with steps the guide does not have
+        - It did not work
+    validations:
+      required: true
+  - type: textarea
+    id: details
+    attributes:
+      label: What differed from the guide, or what failed
+      description: The steps you took at the provider, what Nether showed, and the server's log lines around it.
