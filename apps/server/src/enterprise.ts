@@ -9,7 +9,8 @@ import type { FastifyInstance, FastifyPluginAsync, FastifyReply, FastifyRequest 
 import type { AiEndpoints } from "./aiEndpoints.ts";
 import type { Config } from "./config.ts";
 import type { DataPolicies } from "./dataPolicies.ts";
-import type { Database } from "./db.ts";
+import type { Database, Queryable } from "./db.ts";
+import type { ServerEvents } from "./events.ts";
 import type { SecuritySettings } from "./settings.ts";
 
 export const enterpriseFeatures = ["sso", "scim", "audit", "policies", "admin", "ha"] as const;
@@ -33,14 +34,23 @@ export interface EnterpriseServices {
   readonly security: SecuritySettings;
   /** The approved AI endpoints (ADR 0086), which the `policies` module's page reads and sets. */
   readonly aiEndpoints: AiEndpoints;
+  /**
+   * The server's events (ADR 0081): what a module listens to, as audit logs
+   * do, and tells of when it changes what the server's routes would, as the
+   * console setting a member's role does.
+   */
+  readonly events: ServerEvents;
   /** The workspaces' data policies (ADR 0088), which the `policies` module's page reads and sets. */
   readonly dataPolicies: DataPolicies;
 }
 
 /** What a module's plugin is given. */
 export interface EnterpriseContext extends EnterpriseServices {
-  /** Whether the module's feature is on now. */
-  readonly isOn: () => Promise<boolean>;
+  /**
+   * Whether the module's feature is on now; asked within a transaction, as
+   * a listener of the server's events is, it reads through it.
+   */
+  readonly isOn: (db?: Queryable) => Promise<boolean>;
   /** A route's check that answers 404 while the module's feature is off. */
   readonly whenOn: (
     request: FastifyRequest,
@@ -108,10 +118,10 @@ export class EnterpriseSwitches {
     return this.#available.has(feature);
   }
 
-  #read(): Promise<ReadonlyMap<string, boolean>> {
+  #read(db: Queryable = this.#db): Promise<ReadonlyMap<string, boolean>> {
     const kept = this.#chosen;
     if (kept !== undefined && Date.now() - kept.at < keptFor) return kept.values;
-    const values = this.#db
+    const values = db
       .query("SELECT key, value FROM instance_settings WHERE key LIKE 'enterprise.%'")
       .then(({ rows }) => new Map(rows.map((row) => [String(row.key), row.value === true])));
     this.#chosen = { at: Date.now(), values };
@@ -123,11 +133,11 @@ export class EnterpriseSwitches {
   }
 
   /** Whether a feature is on now. */
-  async on(feature: EnterpriseFeature): Promise<boolean> {
+  async on(feature: EnterpriseFeature, db?: Queryable): Promise<boolean> {
     if (!this.#available.has(feature)) return false;
     const pin = this.#pins[feature];
     if (pin !== undefined) return pin;
-    return (await this.#read()).get(settingKey(feature)) ?? false;
+    return (await this.#read(db)).get(settingKey(feature)) ?? false;
   }
 
   /** Every feature's switch, as the console shows them. */
@@ -154,9 +164,12 @@ export class EnterpriseSwitches {
     >;
   }
 
-  /** Keeps the console's choice for a feature the environment does not pin; this server sees it at once. */
-  async set(feature: EnterpriseFeature, on: boolean): Promise<void> {
-    await this.#db.query(
+  /**
+   * Keeps the console's choice for a feature the environment does not pin,
+   * in `db`'s transaction when given one; this server sees it at once.
+   */
+  async set(feature: EnterpriseFeature, on: boolean, db: Queryable = this.#db): Promise<void> {
+    await db.query(
       `INSERT INTO instance_settings (key, value) VALUES ($1, to_jsonb($2::boolean))
         ON CONFLICT (key) DO UPDATE SET value = excluded.value, updated_at = now()`,
       [settingKey(feature), on],
@@ -195,7 +208,7 @@ export async function registerEnterprise(
     }
   }
   for (const module of modules) {
-    const isOn = () => switches.on(module.feature);
+    const isOn = (db?: Queryable) => switches.on(module.feature, db);
     const whenOn = async (request: FastifyRequest, reply: FastifyReply) =>
       (await isOn()) ? undefined : notFound(request, reply);
     await app.register(module.plugin, { ...services, isOn, whenOn });

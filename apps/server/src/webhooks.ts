@@ -4,14 +4,22 @@
 // shown when it is made and when a new one replaces it, never in a list.
 // Encrypted workspaces have none: the server cannot name their notes.
 import { randomUUID } from "node:crypto";
-import type { FastifyInstance } from "fastify";
-import { type Database, type Row, readText, readTextOrNull, readTime } from "./db.ts";
+import type { FastifyInstance, FastifyRequest } from "fastify";
+import {
+  type Database,
+  type Queryable,
+  type Row,
+  readText,
+  readTextOrNull,
+  readTime,
+} from "./db.ts";
 import { fail, uuidField } from "./http.ts";
 import { type WorkspaceParams, reach, type registerApi, workspaceParams } from "./api.ts";
 import { addressProblem, newSecret, type PrivatePolicy } from "./outbound.ts";
 import { type EventType, eventTypes } from "./outbox.ts";
-import { type ApiCaller, callerOf } from "./tokens.ts";
+import { type ApiCaller, callerActor, callerOf } from "./tokens.ts";
 import { membership } from "./workspaces.ts";
+import { type EventDetails, type ServerEvents, originOf } from "./events.ts";
 
 /** The most webhooks a workspace has. */
 export const maxWebhooks = 20;
@@ -87,8 +95,32 @@ export function registerWebhooks(
   db: Database,
   policy: PrivatePolicy,
   checks: ReturnType<typeof registerApi>,
+  serverEvents: ServerEvents,
 ): void {
   const preHandler = [checks.caller, checks.limit];
+
+  /** Tells of a change to a webhook, in its transaction: where it sends, by its origin alone. */
+  const told = (
+    tx: Queryable,
+    request: FastifyRequest,
+    action: "webhook.created" | "webhook.changed" | "webhook.deleted" | "webhook.secret_changed",
+    workspace: string,
+    webhook: string,
+    details: EventDetails = {},
+  ) => {
+    const caller = callerOf(request);
+    return serverEvents.emit(
+      tx,
+      {
+        action,
+        actor: callerActor(caller),
+        workspace,
+        target: { type: "webhook", id: webhook },
+        details,
+      },
+      originOf(request),
+    );
+  };
 
   /** The workspace whose webhooks a caller manages, or why it may not. */
   async function managed(
@@ -159,6 +191,11 @@ export function registerWebhooks(
             request.body.events ?? eventTypes,
           ],
         );
+        await told(tx, request, "webhook.created", workspace, id, {
+          // Its origin alone: a path or query may hold a secret of its own.
+          to: new URL(request.body.url).origin,
+          events: [...(request.body.events ?? eventTypes)],
+        });
         return true;
       });
       if (!made) {
@@ -192,22 +229,39 @@ export function registerWebhooks(
         const problem = addressProblem(url, policy);
         if (problem !== undefined) return fail(reply, 400, problem);
       }
-      const { rows } = await db.query(
-        `UPDATE webhooks SET
-           url = COALESCE($3, url),
-           events = COALESCE($4, events),
-           enabled = COALESCE($5, enabled),
-           failing_since = CASE WHEN $5 IS TRUE AND NOT enabled THEN NULL ELSE failing_since END,
-           last_error = CASE WHEN $5 IS TRUE AND NOT enabled THEN NULL ELSE last_error END
-         WHERE workspace_id = $1 AND id = $2 RETURNING id`,
-        [
-          workspace,
-          request.params.webhook.toLowerCase(),
-          url === undefined ? null : new URL(url).href,
-          events ?? null,
-          enabled ?? null,
-        ],
-      );
+      const rows = await db.transaction(async (tx) => {
+        const changed = await tx.query(
+          `UPDATE webhooks SET
+             url = COALESCE($3, url),
+             events = COALESCE($4, events),
+             enabled = COALESCE($5, enabled),
+             failing_since = CASE WHEN $5 IS TRUE AND NOT enabled THEN NULL ELSE failing_since END,
+             last_error = CASE WHEN $5 IS TRUE AND NOT enabled THEN NULL ELSE last_error END
+           WHERE workspace_id = $1 AND id = $2 RETURNING id`,
+          [
+            workspace,
+            request.params.webhook.toLowerCase(),
+            url === undefined ? null : new URL(url).href,
+            events ?? null,
+            enabled ?? null,
+          ],
+        );
+        if (changed.rows.length > 0) {
+          await told(
+            tx,
+            request,
+            "webhook.changed",
+            workspace,
+            request.params.webhook.toLowerCase(),
+            {
+              ...(url === undefined ? {} : { to: new URL(url).origin }),
+              ...(events === undefined ? {} : { events: [...events] }),
+              ...(enabled === undefined ? {} : { enabled }),
+            },
+          );
+        }
+        return changed.rows;
+      });
       if (rows.length === 0) return fail(reply, 404, noWebhook);
       return shown((await one(workspace, request.params.webhook)) ?? {});
     },
@@ -219,10 +273,19 @@ export function registerWebhooks(
     async (request, reply) => {
       const workspace = await managed(callerOf(request), request.params.workspace, true);
       if (typeof workspace !== "string") return fail(reply, workspace[0], workspace[1]);
-      const { rows } = await db.query(
-        "DELETE FROM webhooks WHERE workspace_id = $1 AND id = $2 RETURNING id",
-        [workspace, request.params.webhook.toLowerCase()],
-      );
+      const rows = await db.transaction(async (tx) => {
+        const removed = await tx.query(
+          "DELETE FROM webhooks WHERE workspace_id = $1 AND id = $2 RETURNING id, url",
+          [workspace, request.params.webhook.toLowerCase()],
+        );
+        const row = removed.rows[0];
+        if (row !== undefined) {
+          await told(tx, request, "webhook.deleted", workspace, readText(row, "id"), {
+            to: new URL(readText(row, "url")).origin,
+          });
+        }
+        return removed.rows;
+      });
       if (rows.length === 0) return fail(reply, 404, noWebhook);
       return reply.code(204).send();
     },
@@ -236,10 +299,22 @@ export function registerWebhooks(
       const workspace = await managed(callerOf(request), request.params.workspace, true);
       if (typeof workspace !== "string") return fail(reply, workspace[0], workspace[1]);
       const secret = newSecret();
-      const { rows } = await db.query(
-        "UPDATE webhooks SET secret = $3 WHERE workspace_id = $1 AND id = $2 RETURNING id",
-        [workspace, request.params.webhook.toLowerCase(), secret],
-      );
+      const rows = await db.transaction(async (tx) => {
+        const changed = await tx.query(
+          "UPDATE webhooks SET secret = $3 WHERE workspace_id = $1 AND id = $2 RETURNING id",
+          [workspace, request.params.webhook.toLowerCase(), secret],
+        );
+        if (changed.rows.length > 0) {
+          await told(
+            tx,
+            request,
+            "webhook.secret_changed",
+            workspace,
+            request.params.webhook.toLowerCase(),
+          );
+        }
+        return changed.rows;
+      });
       if (rows.length === 0) return fail(reply, 404, noWebhook);
       return { ...shown((await one(workspace, request.params.webhook)) ?? {}), secret };
     },

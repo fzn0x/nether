@@ -9,6 +9,7 @@ import { type Database, type Queryable, readText, readTextOrNull, readTime } fro
 import { fail, uuidField } from "./http.ts";
 import { accountOf, signedIn } from "./sessions.ts";
 import { membership } from "./workspaces.ts";
+import { type ServerEvents, accountActor, originOf } from "./events.ts";
 
 export type Level = "view" | "comment" | "edit" | "full";
 
@@ -258,6 +259,7 @@ export function registerUnits(
   db: Database,
   changed: (userId: string) => void,
   vaults: VaultEditor,
+  events: ServerEvents,
 ): void {
   const account = signedIn(db);
 
@@ -302,6 +304,16 @@ export function registerUnits(
           "INSERT INTO unit_grants (unit_id, user_id, level) VALUES ($1, $2, 'full')",
           [id, me],
         );
+        await events.emit(
+          tx,
+          {
+            action: "teamspace.created",
+            actor: accountActor(me),
+            workspace,
+            target: { type: "unit", id, name },
+          },
+          originOf(request),
+        );
         return id;
       });
       if (made === undefined) return fail(reply, 409, "A teamspace has that name already.");
@@ -344,14 +356,29 @@ export function registerUnits(
       if (unit.kind !== "team") return fail(reply, 404, noUnit);
       const { name } = request.body;
       if (!isFolderName(name)) return fail(reply, 400, badName);
-      const { rows } = await db.query(
-        `UPDATE units SET name = $3 WHERE id = $1 AND workspace_id = $2
-           AND NOT EXISTS (SELECT 1 FROM units WHERE workspace_id = $2 AND kind = 'team'
-                             AND lower(name) = lower($3) AND id <> $1)
-         RETURNING id`,
-        [unit.id, workspace, name],
-      );
-      if (rows.length === 0) return fail(reply, 409, "A teamspace has that name already.");
+      const renamed = await db.transaction(async (tx) => {
+        const { rows } = await tx.query(
+          `UPDATE units SET name = $3 WHERE id = $1 AND workspace_id = $2
+             AND NOT EXISTS (SELECT 1 FROM units WHERE workspace_id = $2 AND kind = 'team'
+                               AND lower(name) = lower($3) AND id <> $1)
+           RETURNING id`,
+          [unit.id, workspace, name],
+        );
+        if (rows.length === 0) return false;
+        await events.emit(
+          tx,
+          {
+            action: "teamspace.changed",
+            actor: accountActor(accountOf(request).id),
+            workspace,
+            target: { type: "unit", id: unit.id, name },
+            details: { from: unit.name, to: name },
+          },
+          originOf(request),
+        );
+        return true;
+      });
+      if (!renamed) return fail(reply, 409, "A teamspace has that name already.");
       // Its folder takes the new name in its list, so no app finds its notes
       // outside it and puts them elsewhere.
       if (unit.name !== null && unit.name !== name) {
@@ -378,12 +405,27 @@ export function registerUnits(
         [unit.id],
       );
       // Its notes would fall to General, where everyone sees them: move or delete them first.
-      const { rows } = await db.query(
-        `DELETE FROM units WHERE id = $1
-           AND NOT EXISTS (SELECT 1 FROM note_units WHERE unit_id = $1)
-         RETURNING id`,
-        [unit.id],
-      );
+      const rows = await db.transaction(async (tx) => {
+        const removed = await tx.query(
+          `DELETE FROM units WHERE id = $1
+             AND NOT EXISTS (SELECT 1 FROM note_units WHERE unit_id = $1)
+           RETURNING id`,
+          [unit.id],
+        );
+        if (removed.rows.length > 0) {
+          await events.emit(
+            tx,
+            {
+              action: "teamspace.deleted",
+              actor: accountActor(accountOf(request).id),
+              workspace,
+              target: { type: "unit", id: unit.id, name: unit.name },
+            },
+            originOf(request),
+          );
+        }
+        return removed.rows;
+      });
       if (rows.length === 0) {
         return fail(reply, 409, "The teamspace still has notes: move or delete them first.");
       }
@@ -411,11 +453,30 @@ export function registerUnits(
       if (them.role === "guest" && unit.kind === "team") {
         return fail(reply, 400, "Guests join pages, not teamspaces.");
       }
-      await db.query(
-        `INSERT INTO unit_grants (unit_id, user_id, level) VALUES ($1, $2, $3)
-         ON CONFLICT (unit_id, user_id) DO UPDATE SET level = excluded.level`,
-        [unit.id, user, request.body.level],
-      );
+      await db.transaction(async (tx) => {
+        const before = await tx.query(
+          "SELECT level FROM unit_grants WHERE unit_id = $1 AND user_id = $2 FOR UPDATE",
+          [unit.id, user],
+        );
+        const from = before.rows.length === 0 ? null : readText(before.rows[0], "level");
+        await tx.query(
+          `INSERT INTO unit_grants (unit_id, user_id, level) VALUES ($1, $2, $3)
+           ON CONFLICT (unit_id, user_id) DO UPDATE SET level = excluded.level`,
+          [unit.id, user, request.body.level],
+        );
+        if (from === request.body.level) return;
+        await events.emit(
+          tx,
+          {
+            action: "grant.set",
+            actor: accountActor(accountOf(request).id),
+            workspace,
+            target: { type: "account", id: user },
+            details: { unit: unit.id, kind: unit.kind, from, to: request.body.level },
+          },
+          originOf(request),
+        );
+      });
       changed(user);
       return { user, level: request.body.level };
     },
@@ -450,6 +511,17 @@ export function registerUnits(
           unit.id,
           user,
         ]);
+        await events.emit(
+          tx,
+          {
+            action: "grant.removed",
+            actor: accountActor(accountOf(request).id),
+            workspace,
+            target: { type: "account", id: user },
+            details: { unit: unit.id, kind: unit.kind, from: readText(theirs, "level") },
+          },
+          originOf(request),
+        );
         return undefined;
       });
       if (outcome !== undefined) return fail(reply, outcome[0], outcome[1]);
@@ -547,6 +619,17 @@ export function registerUnits(
            ON CONFLICT (workspace_id, note) DO UPDATE SET unit_id = excluded.unit_id`,
           [workspace, note, id],
         );
+        await events.emit(
+          tx,
+          {
+            action: "page.shared",
+            actor: accountActor(me),
+            workspace,
+            target: { type: "note", id: note },
+            details: { unit: id, restricted },
+          },
+          originOf(request),
+        );
         return true;
       });
       if (!made) return fail(reply, 409, "This page is shared on its own already.");
@@ -574,10 +657,24 @@ export function registerUnits(
       );
       if (!("id" in unit)) return fail(reply, unit[0], unit[1]);
       if (unit.kind !== "page") return fail(reply, 404, noUnit);
-      await db.query("UPDATE units SET restricted = $2 WHERE id = $1", [
-        unit.id,
-        request.body.restricted,
-      ]);
+      await db.transaction(async (tx) => {
+        await tx.query("UPDATE units SET restricted = $2 WHERE id = $1", [
+          unit.id,
+          request.body.restricted,
+        ]);
+        if (unit.restricted === request.body.restricted) return;
+        await events.emit(
+          tx,
+          {
+            action: "page.changed",
+            actor: accountActor(accountOf(request).id),
+            workspace,
+            target: { type: "note", id: unit.rootNote ?? unit.id },
+            details: { unit: unit.id, restricted: request.body.restricted },
+          },
+          originOf(request),
+        );
+      });
       await everyone(workspace);
       return { id: unit.id, restricted: request.body.restricted };
     },
@@ -615,6 +712,17 @@ export function registerUnits(
           unit.parentId,
         ]);
         await tx.query("DELETE FROM units WHERE id = $1", [unit.id]);
+        await events.emit(
+          tx,
+          {
+            action: "page.unshared",
+            actor: accountActor(me),
+            workspace,
+            target: { type: "note", id: unit.rootNote ?? unit.id },
+            details: { unit: unit.id },
+          },
+          originOf(request),
+        );
       });
       await everyone(workspace);
       return reply.code(204).send();
@@ -633,16 +741,31 @@ export function registerUnits(
       if (place.encryption !== "none") {
         return fail(reply, 409, "An encrypted workspace has no private spaces yet.");
       }
-      await db.query(
-        `INSERT INTO units (id, workspace_id, kind, owner_id)
-         VALUES ($3, $1, 'private', $2) ON CONFLICT DO NOTHING`,
-        [workspace, me, randomUUID()],
-      );
-      const { rows } = await db.query(
-        "SELECT id FROM units WHERE workspace_id = $1 AND kind = 'private' AND owner_id = $2",
-        [workspace, me],
-      );
-      const id = readText(rows[0], "id");
+      const id = await db.transaction(async (tx) => {
+        const made = await tx.query(
+          `INSERT INTO units (id, workspace_id, kind, owner_id)
+           VALUES ($3, $1, 'private', $2) ON CONFLICT DO NOTHING RETURNING id`,
+          [workspace, me, randomUUID()],
+        );
+        const { rows } = await tx.query(
+          "SELECT id FROM units WHERE workspace_id = $1 AND kind = 'private' AND owner_id = $2",
+          [workspace, me],
+        );
+        const unit = readText(rows[0], "id");
+        if (made.rows.length > 0) {
+          await events.emit(
+            tx,
+            {
+              action: "private_space.created",
+              actor: accountActor(me),
+              workspace,
+              target: { type: "unit", id: unit, name: "Private" },
+            },
+            originOf(request),
+          );
+        }
+        return unit;
+      });
       changed(me);
       return { id, kind: "private", folder: "Private", level: "full", document: vaultDocument(id) };
     },
@@ -669,18 +792,33 @@ export function registerUnits(
       if ((leaves && !writesAt(found.get(current))) || !writesAt(found.get(target))) {
         return fail(reply, 403, "Moving a note takes edit access where it is and where it goes.");
       }
-      if (target === general) {
-        await db.query("DELETE FROM note_units WHERE workspace_id = $1 AND note = $2", [
-          workspace,
-          note,
-        ]);
-      } else {
-        await db.query(
-          `INSERT INTO note_units (workspace_id, note, unit_id) VALUES ($1, $2, $3)
-           ON CONFLICT (workspace_id, note) DO UPDATE SET unit_id = excluded.unit_id`,
-          [workspace, note, target],
+      await db.transaction(async (tx) => {
+        if (target === general) {
+          await tx.query("DELETE FROM note_units WHERE workspace_id = $1 AND note = $2", [
+            workspace,
+            note,
+          ]);
+        } else {
+          await tx.query(
+            `INSERT INTO note_units (workspace_id, note, unit_id) VALUES ($1, $2, $3)
+             ON CONFLICT (workspace_id, note) DO UPDATE SET unit_id = excluded.unit_id`,
+            [workspace, note, target],
+          );
+        }
+        // Who may open it changes with where it is.
+        if (current === target) return;
+        await events.emit(
+          tx,
+          {
+            action: "note.unit_changed",
+            actor: accountActor(accountOf(request).id),
+            workspace,
+            target: { type: "note", id: note },
+            details: { from: current, to: target },
+          },
+          originOf(request),
         );
-      }
+      });
       return { note, unit: target };
     },
   );

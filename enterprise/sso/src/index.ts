@@ -15,8 +15,8 @@ const readEvery = 86_400_000;
 
 export const ssoModule: EnterpriseModule = {
   feature: "sso",
-  plugin: (app, { db, config, isOn, whenOn }) => {
-    const context = { db, config, whenOn };
+  plugin: (app, { db, config, isOn, whenOn, events }) => {
+    const context = { db, config, whenOn, events };
     registerSignIn(app, context);
     registerConsole(app, context);
 

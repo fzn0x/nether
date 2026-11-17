@@ -11,6 +11,7 @@ import { emailField, emailKey, fail, limitBy, limitByAddress } from "./http.ts";
 import type { Mailer } from "./mail.ts";
 import { startSession } from "./sessions.ts";
 import type { SecuritySettings } from "./settings.ts";
+import { type ServerEvents, accountActor, originOf } from "./events.ts";
 
 /** Minutes a code lasts. */
 export const codeMinutes = 15;
@@ -119,6 +120,7 @@ export function registerCodes(
   db: Database,
   mailer: Mailer,
   security: SecuritySettings,
+  events: ServerEvents,
   publicUrl: string | null = null,
 ): void {
   // Off, they answer as on a server without mail, before any try is counted.
@@ -185,7 +187,7 @@ export function registerCodes(
           [emailKey(request.body.email)],
         );
         const row = rows[0];
-        if (row === undefined) return undefined;
+        if (row === undefined) return { failed: "no code asked for" } as const;
         const codeId = readText(row, "code_id");
         const matches =
           digits !== undefined &&
@@ -197,12 +199,12 @@ export function registerCodes(
           await (readNumber(row, "tries") + 1 >= codeTries
             ? tx.query("DELETE FROM sign_in_codes WHERE id = $1", [codeId])
             : tx.query("UPDATE sign_in_codes SET tries = tries + 1 WHERE id = $1", [codeId]));
-          return undefined;
+          return { failed: "wrong code", userId: readText(row, "id") } as const;
         }
         await tx.query("DELETE FROM sign_in_codes WHERE id = $1", [codeId]);
         const id = readText(row, "id");
         return {
-          ...(await startSession(tx, id, request)),
+          ...(await startSession(tx, id, request, "code", events)),
           user: {
             id,
             name: readText(row, "name"),
@@ -211,7 +213,24 @@ export function registerCodes(
           },
         };
       });
-      if (outcome === undefined) return fail(reply, 401, wrongCode);
+      if ("failed" in outcome) {
+        await events.attempt(
+          db,
+          {
+            action: "session.signed_in",
+            outcome: "failure",
+            reason: outcome.failed,
+            actor:
+              "userId" in outcome
+                ? accountActor(outcome.userId)
+                : { kind: "anonymous", email: request.body.email.slice(0, 320) },
+            details: { method: "code" },
+          },
+          originOf(request),
+          request.log,
+        );
+        return fail(reply, 401, wrongCode);
+      }
       return reply.code(201).send(outcome);
     },
   );

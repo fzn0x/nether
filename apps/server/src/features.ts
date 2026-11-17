@@ -17,6 +17,7 @@ import {
 } from "./enterprise.ts";
 import { fail } from "./http.ts";
 import { accountOf, signedIn } from "./sessions.ts";
+import { type ServerEvents, accountActor, originOf } from "./events.ts";
 
 /** A route's check that its account is an instance admin, after `signedIn`. */
 export function instanceAdmin(what: string) {
@@ -37,6 +38,7 @@ export function registerFeatures(
   app: FastifyInstance,
   db: Database,
   switches: EnterpriseSwitches,
+  events: ServerEvents,
   switched: (feature: EnterpriseFeature) => void = () => undefined,
 ): void {
   const account = signedIn(db);
@@ -69,7 +71,21 @@ export function registerFeatures(
       if (!switches.available(feature)) {
         return fail(reply, 409, `This build of Nether has no ${feature} module.`);
       }
-      await switches.set(feature, request.body.on);
+      const was = await switches.on(feature);
+      await db.transaction(async (tx) => {
+        await switches.set(feature, request.body.on, tx);
+        if (was === request.body.on) return;
+        await events.emit(
+          tx,
+          {
+            action: "instance.feature_changed",
+            actor: accountActor(accountOf(request).id),
+            target: { type: "feature", id: feature, name: feature },
+            details: { feature, on: request.body.on },
+          },
+          originOf(request),
+        );
+      });
       switched(feature);
       return (await switches.states()).find((state) => state.feature === feature);
     },
