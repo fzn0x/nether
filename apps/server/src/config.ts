@@ -53,6 +53,13 @@ export interface Config {
    */
   readonly ssoPrivate: boolean | readonly string[];
   /**
+   * Whether single sign-on may require its providers, as the console says
+   * (ADR 0080); false when NETHER_SSO_ENFORCE=off pins it off, the way back
+   * in when a provider breaks: its sign-in goes on, and every other way in
+   * comes back.
+   */
+  readonly ssoEnforce: boolean;
+  /**
    * The 32 bytes that seal what the server keeps secret for its accounts,
    * AI providers' keys among them, from NETHER_SECRET_KEY in base64; none,
    * and the server keeps no such secret.
@@ -539,6 +546,7 @@ export function readConfig(env: NodeJS.ProcessEnv): Config {
     ai: readAi(env),
     aiPrivate: readPrivate(env, "NETHER_AI_PRIVATE", "the admin's AI providers"),
     ssoPrivate: readPrivate(env, "NETHER_SSO_PRIVATE", "single sign-on providers"),
+    ssoEnforce: readPin(env, "NETHER_SSO_ENFORCE") !== false,
     secretKey: readSecretKey(env),
     mail: readMail(env),
     publicUrl,
