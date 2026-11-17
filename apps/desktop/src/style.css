@@ -2469,8 +2469,31 @@ button {
 
 .share-link-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 0.5rem;
   margin-top: 0.25rem;
+}
+
+/* A published site's custom domain and indexing (ADR 0077). */
+.site-domain {
+  margin-top: 0.5rem;
+}
+
+.site-domain-record {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 0.2rem 0.75rem;
+  margin: 0.25rem 0;
+  font-size: 0.875rem;
+}
+
+.site-domain-record dt {
+  font-weight: 600;
+}
+
+.site-domain-record dd {
+  margin: 0;
+  overflow-wrap: anywhere;
 }
 
 .share-link-new {
