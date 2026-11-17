@@ -435,6 +435,11 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- A note made through the API in a page that stops being shared on its
+  own is no longer left listed nowhere. Its making waits until the page's
+  unit is gone, then answers 409, and made again it goes where the page
+  sat. Several locks are now held on one connection, so work holding two
+  never waits for the lock pool.
 - The server takes no note into a page's unit while the page stops being
   shared on its own. A move asked meanwhile, as an app asks that sees the
   page's notes listed where it sits while its unit is still there, waits

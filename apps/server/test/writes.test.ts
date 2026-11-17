@@ -14,7 +14,16 @@ import { readBytes, readText } from "../src/db.ts";
 import { documentNote } from "../src/markdown.ts";
 import { storeDocument } from "../src/sync.ts";
 import { isNotePath, matchesTag } from "../src/writes.ts";
-import { type SetUp, type TestServer, admin, bearer, setUp, startServer } from "./app.ts";
+import {
+  type SetUp,
+  type TestServer,
+  admin,
+  bearer,
+  holding,
+  setUp,
+  soon,
+  startServer,
+} from "./app.ts";
 import { freePort } from "./ports.ts";
 
 let running: TestServer | undefined;
@@ -28,8 +37,8 @@ afterEach(async () => {
 
 type Test = TestServer & SetUp;
 
-async function start(): Promise<Test> {
-  running = await startServer();
+async function start(options: Parameters<typeof startServer>[0] = {}): Promise<Test> {
+  running = await startServer(options);
   return { ...running, ...(await setUp(running)) };
 }
 
@@ -448,6 +457,58 @@ describe("writing through the public API", () => {
       payload: { path: ".nether/plugins/x.md", markdown: "x\n" },
     });
     expect(bad.statusCode).toBe(400);
+  });
+
+  it("makes no note in a page while it stops being shared on its own, and makes it where it sat when asked again", async () => {
+    // Held after the page's list joins General's, before its unit goes: a
+    // note made in the page then would be listed nowhere once it goes (#179).
+    const { gate, wrap } = holding((text) => text.startsWith("DELETE FROM note_units"));
+    const test = await start({ wrapDb: wrap });
+    const stored = await store(test, { "Projects/Launch.md": "The launch\n" });
+    const launch = stored["Projects/Launch.md"];
+    const page = (
+      await test.server.inject({
+        method: "POST",
+        url: `/api/workspaces/${test.workspaceId}/pages`,
+        headers: bearer(test.token),
+        payload: { note: launch },
+      })
+    ).json<{ id: string }>().id;
+    const secret = await token(test);
+    const make = () =>
+      call(test, "POST", "notes", secret, {
+        payload: { path: "Projects/Launch/Tasks.md", markdown: "The tasks\n" },
+      });
+    gate.armed = true;
+    const unsharing = test.server.inject({
+      method: "DELETE",
+      url: `/api/workspaces/${test.workspaceId}/pages/${page}`,
+      headers: bearer(test.token),
+    });
+    await gate.held;
+
+    // It waits for the unit's drop, then finds it gone.
+    const making = make();
+    expect(await soon(making)).toBe("waiting");
+    gate.release();
+    expect((await unsharing).statusCode).toBe(204);
+    expect((await making).statusCode).toBe(409);
+    const { rows: placed } = await test.db.query(
+      "SELECT note FROM note_units WHERE workspace_id = $1",
+      [test.workspaceId],
+    );
+    expect(placed).toHaveLength(0);
+
+    // Asked again, it goes where the page sat.
+    const made = await make();
+    expect(made.statusCode).toBe(201);
+    const { rows } = await test.db.query(
+      "SELECT state FROM documents WHERE workspace_id = $1 AND name = 'vault'",
+      [test.workspaceId],
+    );
+    const vault = new Y.Doc();
+    Y.applyUpdate(vault, readBytes(rows[0], "state"));
+    expect(vault.getMap("notes").get(made.json<Answer>().id)).toBe("Projects/Launch/Tasks.md");
   });
 
   it("leaves nothing of a note whose path an app listed first", async () => {
