@@ -145,7 +145,12 @@ from the same file, such as:
   `NETHER_MAIL_FROM=Nether <nether@example.org>`.
 - **Single sign-on** with your OpenID Connect provider:
   `NETHER_OIDC_ISSUER`, `NETHER_OIDC_CLIENT_ID` and
-  `NETHER_OIDC_CLIENT_SECRET`, with `NETHER_PUBLIC_URL` set.
+  `NETHER_OIDC_CLIENT_SECRET`, with `NETHER_PUBLIC_URL` set. SAML 2.0
+  providers, and more OpenID Connect ones, are added in the
+  [admin console](../admin/#single-sign-on), which needs
+  `NETHER_SECRET_KEY` too. They reach public addresses only:
+  `NETHER_SSO_PRIVATE=loopback`, or an address or range, lets them be on
+  your own network, as Keycloak beside the server.
 - **Attachments in an S3-compatible bucket** instead of the volume:
   `NETHER_STORAGE=s3` with `NETHER_S3_ENDPOINT`, `NETHER_S3_BUCKET`,
   `NETHER_S3_ACCESS_KEY` and `NETHER_S3_SECRET_KEY`.
