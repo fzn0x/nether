@@ -2438,10 +2438,15 @@ export function VaultView(props: {
               onClose={() => {
                 setDialog(undefined);
               }}
-              onTokens={(server) => {
-                setTokensServer(server);
-                setDialog("tokens");
-              }}
+              // Access tokens stay on the desktop and the web (ADR 0087).
+              {...(commandShown("apiTokens")
+                ? {
+                    onTokens: (server: string) => {
+                      setTokensServer(server);
+                      setDialog("tokens");
+                    },
+                  }
+                : {})}
             />
           </Suspense>
         ) : null}

@@ -4,10 +4,11 @@
 // copy meant never to reach a server. The web app, built with
 // VITE_NETHER_TARGET=web, is its server's, so it always syncs (ADR 0053),
 // and leaves out what a page in a browser cannot do yet. The mobile apps,
-// built with VITE_NETHER_TARGET=mobile, keep vaults on the phone (ADR 0087)
-// and leave out what comes to them in later parts: sync and signing in,
-// exports through the share sheet, the graph and canvases, and updates,
-// which the stores give.
+// built with VITE_NETHER_TARGET=mobile, keep vaults on the phone (ADR 0087),
+// sign in and sync as the desktop app does, and leave out what comes to
+// them in later parts, exports through the share sheet, the graph and
+// canvases; updates, which the stores give; and webhooks and access tokens,
+// which stay in the desktop and web apps.
 import type { CommandId } from "./commands.ts";
 
 /** What a build is made for. */
@@ -26,7 +27,7 @@ const mobile = import.meta.env.VITE_NETHER_TARGET === "mobile";
 export const build: Build = {
   web,
   mobile,
-  sync: web || (!mobile && import.meta.env.VITE_NETHER_SYNC !== "off"),
+  sync: web || import.meta.env.VITE_NETHER_SYNC !== "off",
 };
 
 export const syncShown = build.sync;
@@ -48,13 +49,19 @@ const syncCommands: ReadonlySet<CommandId> = new Set([
  */
 const notOnTheWeb: ReadonlySet<CommandId> = new Set(["sync", "checkUpdates", "updateChecks"]);
 
-/** What the mobile apps leave out until the parts that bring them (ADR 0087). */
+/**
+ * What the mobile apps leave out (ADR 0087): what later parts bring, what
+ * the stores do, and webhooks and access tokens, which stay on the desktop
+ * and the web.
+ */
 const notOnPhonesYet: ReadonlySet<CommandId> = new Set([
   "export",
   "openGraph",
   "newCanvas",
   "checkUpdates",
   "updateChecks",
+  "webhooks",
+  "apiTokens",
 ]);
 
 /** Whether a build shows a command. */
