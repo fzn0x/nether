@@ -16,7 +16,7 @@ import { AdminAudit } from "./AdminAudit.tsx";
 import { t } from "./messages.ts";
 import { messageOf, webFetch, webServer } from "./web.ts";
 
-type Feature = "sso" | "scim" | "audit" | "policies" | "admin" | "ha";
+type Feature = "sso" | "scim" | "audit" | "policies" | "permissions" | "admin" | "ha";
 
 interface FeatureState {
   readonly feature: Feature;
@@ -41,6 +41,7 @@ const names = {
   scim: "adminFeatureScim",
   audit: "adminFeatureAudit",
   policies: "adminFeaturePolicies",
+  permissions: "adminFeaturePermissions",
   admin: "adminFeatureAdmin",
   ha: "adminFeatureHa",
 } as const;

@@ -2,6 +2,9 @@ import { defineConfig } from "vitest/config";
 
 export default defineConfig({
   test: {
+    // Each worker holds its own database or server, some 500 MB: one a core
+    // would fill the memory of a machine with many. CI runners have four.
+    maxWorkers: 4,
     // Two devices sync through a real server, whose sign-in checks argon2id
     // hashes, slow by design.
     testTimeout: 30_000,

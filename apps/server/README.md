@@ -99,7 +99,7 @@ token as `Authorization: Bearer <token>`. Every error is
 | `GET /api/sessions` | yes | The account's sessions, the current one marked |
 | `DELETE /api/sessions/current` | yes | Signs out |
 | `POST /api/sessions/revoke` | yes | Ends the session `session`, or every other one, with `password` |
-| `GET /api/me` | yes | The account, the workspaces it is in with its role in each and the `policies` its apps keep to, `export`, `trashDays` and `legalHold`, or `null` (ADR 0088), and `aiEndpoints`: the only addresses its apps may send AI requests to, or `null` when nothing is locked (ADR 0086) |
+| `GET /api/me` | yes | The account, the workspaces it is in with its role in each, what that role `may` do there (ADR 0089), and the `policies` its apps keep to, `export`, `trashDays` and `legalHold`, or `null` (ADR 0088), and `aiEndpoints`: the only addresses its apps may send AI requests to, or `null` when nothing is locked (ADR 0086) |
 | `PUT /api/me/password` | yes | Changes the password from `current`; ends every other session |
 | `POST /api/workspaces/:id/invitations` | owner, admin; full on the page | Invites someone as `admin` or `member`, for one `email` or anyone; or as a `guest` to one shared page (`unit`) at a `level`; gives `token` |
 | `GET /api/workspaces/:id/invitations` | owner, admin | The invitations not yet accepted |
@@ -543,7 +543,8 @@ machine.
 | `NETHER_SSO_ENFORCE` | unset | `off` stops single sign-on requiring its providers, as the console sets it, until unset: the way back in when a provider breaks (ADR 0080) |
 | `NETHER_ENTERPRISE_SCIM` | unset | Provisioning through SCIM and LDAP |
 | `NETHER_ENTERPRISE_AUDIT` | unset | Audit logs |
-| `NETHER_ENTERPRISE_POLICIES` | unset | Data policies and advanced permissions |
+| `NETHER_ENTERPRISE_POLICIES` | unset | Data policies |
+| `NETHER_ENTERPRISE_PERMISSIONS` | unset | Advanced permissions: custom roles, groups' access and sharing domains (ADR 0089), which come in parts; until then each role gives what it always has |
 | `NETHER_ENTERPRISE_ADMIN` | unset | The admin console's usage, workspaces and security pages |
 | `NETHER_ENTERPRISE_HA` | `off` | High availability, set here alone and read as the server starts: `on` makes this node one of several (ADR 0082). It needs `NETHER_REDIS_URL`, attachments every node reads, and `NETHER_SETUP_CODE` while the server has no account; missing one, the server stops, saying which |
 | `NETHER_SESSION_IDLE_DAYS` | unset, 30 | Days a session lasts unused, from 1 to 365 |

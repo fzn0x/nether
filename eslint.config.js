@@ -14,6 +14,7 @@ export default defineConfig(
     "**/.mygo/",
     // The mobile apps' native projects, with the page Capacitor copies into them.
     "apps/mobile/android/",
+    "apps/mobile/ios/",
     "**/playwright-report/",
     "**/test-results/",
     "apps/desktop/src/mygo.ts",

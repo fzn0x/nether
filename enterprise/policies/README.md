@@ -17,7 +17,4 @@ admin turns **Data policies** on (ADR 0079).
   enforces them; this module gives the console its routes under
   `/api/admin/data-policies`.
 
-Still to come here: custom roles, group-based access and
-domain-restricted sharing.
-
 Roadmap: Phase 5, enterprise, mobile and scale.

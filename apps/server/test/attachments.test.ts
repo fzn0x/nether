@@ -85,6 +85,50 @@ describe("attachments", () => {
     expect(missing.statusCode).toBe(404);
   });
 
+  it("takes files from a guest who edits a page, and not from one who views it", async () => {
+    const test = await start();
+    const invited = await test.server.inject({
+      method: "POST",
+      url: `/api/workspaces/${test.workspaceId}/invitations`,
+      headers: bearer(test.token),
+      payload: { role: "member" },
+    });
+    const guest = await test.server.inject({
+      method: "POST",
+      url: "/api/invitations/accept",
+      payload: {
+        token: invited.json<{ token: string }>().token,
+        name: "Gus",
+        email: "gus@example.org",
+        password: "gus's long password",
+      },
+    });
+    const { token, user } = guest.json<{ token: string; user: { id: string } }>();
+    await test.db.query("UPDATE memberships SET role = 'guest' WHERE user_id = $1", [user.id]);
+    const shared = await test.server.inject({
+      method: "POST",
+      url: `/api/workspaces/${test.workspaceId}/pages`,
+      headers: bearer(test.token),
+      payload: { note: randomUUID() },
+    });
+    const page = shared.json<{ id: string }>().id;
+    const give = (level: string) =>
+      test.server.inject({
+        method: "PUT",
+        url: `/api/workspaces/${test.workspaceId}/units/${page}/grants/${user.id}`,
+        headers: bearer(test.token),
+        payload: { level },
+      });
+    await give("view");
+    const viewing = await send(test, png, sha(png), token);
+    expect(viewing.statusCode).toBe(403);
+    expect(viewing.json<{ message: string }>().message).toBe(
+      "Sending files here takes edit access somewhere in this workspace.",
+    );
+    await give("edit");
+    expect((await send(test, png, sha(png), token)).statusCode).toBe(201);
+  });
+
   it("takes files from members only, and as large as the server allows", async () => {
     const test = await start({ NETHER_ATTACHMENT_LIMIT: "1" });
     const invited = await test.server.inject({

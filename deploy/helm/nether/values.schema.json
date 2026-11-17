@@ -56,6 +56,7 @@
             "scim": { "enum": ["on", "off"] },
             "audit": { "enum": ["on", "off"] },
             "policies": { "enum": ["on", "off"] },
+            "permissions": { "enum": ["on", "off"] },
             "admin": { "enum": ["on", "off"] }
           }
         }
