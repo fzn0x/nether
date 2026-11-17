@@ -1016,7 +1016,7 @@ describe("PluginHost, adding", () => {
   it("keeps out a plugin whose manifest is wrong, or which needs another API", () => {
     expect(plugins().add({ manifest: { id: "x" }, load })).toContain("name is not a name.");
     expect(plugins().add({ manifest: { ...manifest, api: "^9.0" }, load })).toEqual([
-      "It works with API ^9.0, and the app speaks 0.1.0.",
+      "It works with API ^9.0, and the app speaks 0.1.1.",
     ]);
   });
 
@@ -1060,6 +1060,8 @@ describe("PluginHost, adding", () => {
       ["code:mermaid", "Diagram", "flowchart LR"],
       ["code:base", "Query", "views:"],
       ["code:meta-bind-button", "Button", "label: Mark done"],
+      // The calendar runs apart, off until a vault turns it on (ADR 0090).
+      ["code:calendar", "Events", "days: 1"],
     ]);
     // The sidebar's Tags and Assigned, and the outline, backlinks and unlinked mentions beside a note.
     expect(
@@ -1070,6 +1072,7 @@ describe("PluginHost, adding", () => {
       ["outline:outline", "note", "Outline", false],
       ["backlinks:linked", "note", "Linked from", false],
       ["backlinks:unlinked", "note", "Unlinked mentions", true],
+      ["calendar:events", "note", "Events", false],
     ]);
   });
 

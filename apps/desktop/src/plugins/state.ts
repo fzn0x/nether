@@ -52,9 +52,12 @@ export function readOn(value: unknown): Record<string, boolean> {
   );
 }
 
-/** Whether a built-in plugin is on: unless the vault turned it off. */
-export function isOn(state: Pick<PluginState, "on">, id: string): boolean {
-  return state.on[id] ?? true;
+/**
+ * Whether a built-in plugin is on: unless the vault turned it off, or, for
+ * one that starts off, as integrations do (ADR 0090), once it turned it on.
+ */
+export function isOn(state: Pick<PluginState, "on">, id: string, startsOff = false): boolean {
+  return state.on[id] ?? !startsOff;
 }
 
 /**
