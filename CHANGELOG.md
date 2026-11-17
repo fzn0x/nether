@@ -135,6 +135,13 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   password; those with full access make, copy and revoke them in the
   Share dialog, and revoking one ends what it opened
   ([ADR 0071](docs/adr/0071-a-share-link-opens-one-shared-page-to-anyone-with-it-through-the-web-app.md)).
+- API tokens and webhooks in the app, which completes the REST API: API
+  tokens on a server, under each account in Servers and signing in and in
+  the Sync menu, list, make with the password again, show once to copy,
+  and revoke an account's tokens; Workspace webhooks, in the Sync menu,
+  add, edit, turn off and on, give a new secret, test and remove a
+  workspace's webhooks, with their recent events. Webhooks also refuse
+  IPv4-translated addresses as not public.
 
 ### Changed
 

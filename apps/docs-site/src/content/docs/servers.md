@@ -242,6 +242,22 @@ waits for it.
 The server cannot search an encrypted workspace, publish it, or keep its
 history; those come from the apps that can read it.
 
+## API tokens and webhooks
+
+Scripts and other services reach a server through its
+[REST API](../api/), with a personal access token:
+
+- **API tokens on** a server, under your account in **Servers and signing
+  in**, or **API tokens** in the **Sync** menu, lists your tokens and makes
+  one: what it is for, whether it only reads, which workspace it reaches
+  and when it expires. Making one asks for your password; if you sign in
+  with single sign-on, leave it empty within ten minutes of signing in. The
+  token shows once, to copy. **Revoke** stops one at once.
+- **Workspace webhooks**, in the **Sync** menu, are for a workspace's
+  owners and admins. A webhook tells another service when a note is made,
+  changed or deleted. Add one with its `https://` address, copy its secret
+  once, then send it a test and read its recent events there.
+
 ## For admins
 
 The [server's README](https://github.com/fzn0x/nether/blob/main/apps/server/README.md)

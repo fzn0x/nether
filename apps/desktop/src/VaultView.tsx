@@ -212,6 +212,13 @@ const NotificationsDialog = lazy(() =>
     default: dialog,
   })),
 );
+// The REST API's tokens and the workspace's webhooks (ADRs 0059 and 0060).
+const TokensDialog = lazy(() =>
+  import("./TokensDialog.tsx").then(({ TokensDialog: dialog }) => ({ default: dialog })),
+);
+const WebhooksDialog = lazy(() =>
+  import("./WebhooksDialog.tsx").then(({ WebhooksDialog: dialog }) => ({ default: dialog })),
+);
 
 const numbers = new Intl.NumberFormat();
 
@@ -385,12 +392,16 @@ export function VaultView(props: {
     | "spaces"
     | "share"
     | "notifications"
+    | "webhooks"
+    | "tokens"
     | "history"
     | "export"
     | "import"
     | "palette"
     | undefined
   >();
+  // The server whose API tokens the tokens dialog shows.
+  const [tokensServer, setTokensServer] = useState<string | undefined>();
   // The settings' tab chosen, which each settings command opens at its own.
   const [settingsTab, setSettingsTab] = useState("templates");
   // A note's menu, open at a point, and the dialog one of its items opened for a note.
@@ -1358,6 +1369,20 @@ export function VaultView(props: {
               setDialog("notifications");
             }
           : undefined,
+      // The server cannot name an encrypted workspace's notes, so it has no webhooks.
+      webhooks:
+        open && sync.link !== undefined && sync.link.encrypted !== true
+          ? () => {
+              setDialog("webhooks");
+            }
+          : undefined,
+      apiTokens:
+        sync.link === undefined
+          ? undefined
+          : () => {
+              setTokensServer(sync.link?.server);
+              setDialog("tokens");
+            },
       shortcuts: open ? openSettings("shortcuts") : undefined,
       plugins: open ? openSettings("plugins") : undefined,
       checkUpdates: updates.available
@@ -2063,6 +2088,30 @@ export function VaultView(props: {
       {dialog === "servers" ? (
         <Suspense fallback={null}>
           <ServersDialog
+            onClose={() => {
+              setDialog(undefined);
+            }}
+            onTokens={(server) => {
+              setTokensServer(server);
+              setDialog("tokens");
+            }}
+          />
+        </Suspense>
+      ) : null}
+      {dialog === "tokens" && tokensServer !== undefined ? (
+        <Suspense fallback={null}>
+          <TokensDialog
+            server={tokensServer}
+            onClose={() => {
+              setDialog(undefined);
+            }}
+          />
+        </Suspense>
+      ) : null}
+      {dialog === "webhooks" && sync.link !== undefined ? (
+        <Suspense fallback={null}>
+          <WebhooksDialog
+            link={sync.link}
             onClose={() => {
               setDialog(undefined);
             }}
