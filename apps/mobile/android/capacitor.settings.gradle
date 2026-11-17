@@ -14,5 +14,11 @@ project(':capacitor-app').projectDir = new File('../../../node_modules/.pnpm/@ca
 include ':capacitor-browser'
 project(':capacitor-browser').projectDir = new File('../../../node_modules/.pnpm/@capacitor+browser@8.0.5_@capacitor+core@8.6.0/node_modules/@capacitor/browser/android')
 
+include ':capacitor-share'
+project(':capacitor-share').projectDir = new File('../../../node_modules/.pnpm/@capacitor+share@8.0.3_@capacitor+core@8.6.0/node_modules/@capacitor/share/android')
+
+include ':capawesome-capacitor-app-shortcuts'
+project(':capawesome-capacitor-app-shortcuts').projectDir = new File('../../../node_modules/.pnpm/@capawesome+capacitor-app-s_a4fba35287cd8dc2a9bb00b24e2feee6/node_modules/@capawesome/capacitor-app-shortcuts/android')
+
 include ':capawesome-capacitor-background-task'
 project(':capawesome-capacitor-background-task').projectDir = new File('../../../node_modules/.pnpm/@capawesome+capacitor-backg_f63febab9ab65e14582168d594266f37/node_modules/@capawesome/capacitor-background-task/android')

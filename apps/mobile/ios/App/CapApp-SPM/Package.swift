@@ -16,6 +16,8 @@ let package = Package(
         .package(name: "CapacitorCommunitySqlite", path: "../../../../../node_modules/.pnpm/@capacitor-community+sqlite@8.1.1_@capacitor+core@8.6.0/node_modules/@capacitor-community/sqlite"),
         .package(name: "CapacitorApp", path: "../../../../../node_modules/.pnpm/@capacitor+app@8.1.2_@capacitor+core@8.6.0/node_modules/@capacitor/app"),
         .package(name: "CapacitorBrowser", path: "../../../../../node_modules/.pnpm/@capacitor+browser@8.0.5_@capacitor+core@8.6.0/node_modules/@capacitor/browser"),
+        .package(name: "CapacitorShare", path: "../../../../../node_modules/.pnpm/@capacitor+share@8.0.3_@capacitor+core@8.6.0/node_modules/@capacitor/share"),
+        .package(name: "CapawesomeCapacitorAppShortcuts", path: "../../../../../node_modules/.pnpm/@capawesome+capacitor-app-s_a4fba35287cd8dc2a9bb00b24e2feee6/node_modules/@capawesome/capacitor-app-shortcuts"),
         .package(name: "CapawesomeCapacitorBackgroundTask", path: "../../../../../node_modules/.pnpm/@capawesome+capacitor-backg_f63febab9ab65e14582168d594266f37/node_modules/@capawesome/capacitor-background-task"),
         .package(name: "NetherMobilePlugin", path: "../../../plugin")
     ],
@@ -29,6 +31,8 @@ let package = Package(
                 .product(name: "CapacitorCommunitySqlite", package: "CapacitorCommunitySqlite"),
                 .product(name: "CapacitorApp", package: "CapacitorApp"),
                 .product(name: "CapacitorBrowser", package: "CapacitorBrowser"),
+                .product(name: "CapacitorShare", package: "CapacitorShare"),
+                .product(name: "CapawesomeCapacitorAppShortcuts", package: "CapawesomeCapacitorAppShortcuts"),
                 .product(name: "CapawesomeCapacitorBackgroundTask", package: "CapawesomeCapacitorBackgroundTask"),
                 .product(name: "NetherMobilePlugin", package: "NetherMobilePlugin")
             ]
