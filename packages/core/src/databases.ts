@@ -94,10 +94,29 @@ export interface View {
   readonly options?: JsonObject;
 }
 
+/**
+ * A rule of a database (ADR 0072): when a row's property becomes a value,
+ * from another, the rule sets others. It is Nether's own; no other app
+ * runs it.
+ */
+export interface Trigger {
+  /** The property it watches. */
+  readonly when: string;
+  /** The value that fires it: the property's, or one of a list's; null for none. */
+  readonly is: JsonValue;
+  /** The properties it sets, each to a value, whose text may hold template variables. */
+  readonly set: JsonObject;
+}
+
 export interface DatabaseSchema {
   readonly properties: readonly PropertyDefinition[];
   readonly views: readonly View[];
+  /** Its rules, when it has any. */
+  readonly triggers?: readonly Trigger[];
 }
+
+/** The types a trigger cannot watch or set: worked out from others, never written. */
+const workedOut: readonly PropertyType[] = ["formula", "rollup"];
 
 const dateTypes: readonly (PropertyType | "$created" | "$updated")[] = [
   "date",
@@ -229,8 +248,30 @@ function readView(
   };
 }
 
+/** A trigger, whose properties must be ones of the database that are written. */
+function readTrigger(
+  value: unknown,
+  path: string,
+  types: ReadonlyMap<string, PropertyType>,
+): Trigger {
+  const fields = readFields(value, path, ["when", "is", "set"]);
+  const written = (key: string, keyPath: string) => {
+    const type = types.get(key);
+    if (type === undefined) fail(keyPath, `names no property of the database: "${key}"`);
+    if (workedOut.includes(type))
+      fail(keyPath, `names a ${type}, which is never written: "${key}"`);
+  };
+  const when = readString(fields.when, `${path}.when`);
+  written(when, `${path}.when`);
+  const set = readJsonObject(fields.set, `${path}.set`);
+  const keys = Object.keys(set);
+  if (keys.length === 0) fail(`${path}.set`, "needs at least one property");
+  for (const key of keys) written(key, `${path}.set.${key}`);
+  return { when, is: readJson(fields.is, `${path}.is`), set };
+}
+
 export function readDatabaseSchema(value: unknown, path: string): DatabaseSchema {
-  const fields = readFields(value, path, ["properties", "views"]);
+  const fields = readFields(value, path, ["properties", "views"], ["triggers"]);
   const properties = readArray(fields.properties, `${path}.properties`).map((item, index) =>
     readPropertyDefinition(item, `${path}.properties[${String(index)}]`),
   );
@@ -272,7 +313,13 @@ export function readDatabaseSchema(value: unknown, path: string): DatabaseSchema
     }
     names.add(view.name);
   });
-  return { properties, views };
+  const triggers =
+    fields.triggers === undefined
+      ? []
+      : readArray(fields.triggers, `${path}.triggers`).map((item, index) =>
+          readTrigger(item, `${path}.triggers[${String(index)}]`, types),
+        );
+  return triggers.length === 0 ? { properties, views } : { properties, views, triggers };
 }
 
 /**

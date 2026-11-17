@@ -45,6 +45,7 @@ export {
   type BuiltInLayout,
   type PluginLayout,
   type Sort,
+  type Trigger,
   type View,
   type ViewLayout,
   builtInProperties,

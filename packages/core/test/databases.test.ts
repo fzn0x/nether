@@ -268,3 +268,55 @@ describe("rollups", () => {
     }).not.toThrow();
   });
 });
+
+describe("triggers", () => {
+  const properties = [
+    { key: "status", type: "select", options: [{ name: "Done" }] },
+    { key: "completed", type: "date" },
+    { key: "tags", type: "multiSelect", options: [] },
+    { key: "double", type: "formula", formula: "1 + 1" },
+  ];
+  const schema = (triggers: unknown) =>
+    readDatabaseSchema({ properties, views: [], triggers }, "schema");
+
+  it("read a rule that sets properties when one becomes a value", () => {
+    const read = schema([
+      { when: "status", is: "Done", set: { completed: "{{date}}", tags: ["done"] } },
+      { when: "status", is: null, set: { completed: null } },
+    ]);
+    expect(read.triggers).toEqual([
+      { when: "status", is: "Done", set: { completed: "{{date}}", tags: ["done"] } },
+      { when: "status", is: null, set: { completed: null } },
+    ]);
+  });
+
+  it("leave a schema with none as it was", () => {
+    expect("triggers" in schema([])).toBe(false);
+    expect("triggers" in readDatabaseSchema({ properties: [], views: [] }, "schema")).toBe(false);
+  });
+
+  it("refuse a rule of no property, a property worked out, or one that sets nothing", () => {
+    expect(() => schema({})).toThrow("schema.triggers must be an array");
+    expect(() => schema([{ when: "status", set: { completed: 1 } }])).toThrow(
+      "schema.triggers[0].is is missing",
+    );
+    expect(() => schema([{ when: "stage", is: "x", set: { completed: 1 } }])).toThrow(
+      'schema.triggers[0].when names no property of the database: "stage"',
+    );
+    expect(() => schema([{ when: "double", is: 2, set: { completed: 1 } }])).toThrow(
+      'schema.triggers[0].when names a formula, which is never written: "double"',
+    );
+    expect(() => schema([{ when: "status", is: "Done", set: {} }])).toThrow(
+      "schema.triggers[0].set needs at least one property",
+    );
+    expect(() => schema([{ when: "status", is: "Done", set: { finished: 1 } }])).toThrow(
+      'schema.triggers[0].set.finished names no property of the database: "finished"',
+    );
+    expect(() => schema([{ when: "status", is: "Done", set: [] }])).toThrow(
+      "schema.triggers[0].set must be a JSON object",
+    );
+    expect(() => schema([{ when: "status", is: "Done", set: { done: 1 }, also: 1 }])).toThrow(
+      "schema.triggers[0].also is not a known field",
+    );
+  });
+});
