@@ -14,18 +14,19 @@
 // No token reaches the browser's address bar or history, and a code taken
 // from the redirect is no use without the verifier the app kept.
 import { createHash, randomUUID, timingSafeEqual } from "node:crypto";
-import type { FastifyInstance, FastifyReply } from "fastify";
+import type { FastifyBaseLogger, FastifyInstance, FastifyReply } from "fastify";
 import * as client from "openid-client";
 import type { OidcConfig } from "./config.ts";
 import { type Database, type Queryable, readBoolean, readText, readTextOrNull } from "./db.ts";
 import { emailKey, fail, limitByAddress, tokenField } from "./http.ts";
 import { acceptInvitation, invites, openInvitation } from "./invitations.ts";
+import type { CheckedFetch } from "./outbound.ts";
 import { newToken, startSession, tokenHash } from "./sessions.ts";
 
 /** Minutes a flow may take at the provider. */
-const flowMinutes = 10;
+export const flowMinutes = 10;
 /** Seconds the app has to redeem the code the browser brings back. */
-const handoffSeconds = 60;
+export const handoffSeconds = 60;
 
 /** Why a sign-in failed, as the app reads it from the address it comes back to. */
 export type OidcError =
@@ -57,13 +58,13 @@ export function pkceChallenge(verifier: string): string {
   return createHash("sha256").update(verifier).digest("base64url");
 }
 
-interface Start {
+export interface Start {
   readonly redirect: string;
   readonly challenge: string;
   readonly invitation?: string;
 }
 
-const startBody = {
+export const startBody = {
   type: "object",
   required: ["redirect", "challenge"],
   additionalProperties: false,
@@ -81,12 +82,12 @@ interface Callback {
   readonly error?: string;
 }
 
-interface Redeem {
+export interface Redeem {
   readonly code: string;
   readonly verifier: string;
 }
 
-const redeemBody = {
+export const redeemBody = {
   type: "object",
   required: ["code", "verifier"],
   additionalProperties: false,
@@ -94,25 +95,136 @@ const redeemBody = {
   properties: { code: tokenField, verifier: { type: "string", minLength: 43, maxLength: 128 } },
 } as const;
 
-/** What the provider says of the person it signed in. */
-interface Person {
+/** What a provider says of the person it signed in. */
+export interface Person {
   readonly subject: string;
-  /** The address, only if the provider has verified it. */
+  /** The address it gives, verified or not. */
   readonly email: string | undefined;
+  /** Whether the provider says it has verified that address (`email_verified`). */
+  readonly emailVerified: boolean;
   readonly name: string;
 }
 
-function personOf(claims: client.IDToken): Person {
+/** The person an ID token names. */
+export function personOf(claims: client.IDToken): Person {
   const email = typeof claims.email === "string" ? claims.email.trim() : "";
-  const verified = claims.email_verified === true && email !== "";
   const name = [claims.name, claims.preferred_username]
     .find((value): value is string => typeof value === "string" && value.trim() !== "")
     ?.trim();
   const local = email.split("@")[0] ?? "";
   return {
     subject: claims.sub,
-    email: verified ? email : undefined,
+    email: email === "" ? undefined : email,
+    emailVerified: claims.email_verified === true && email !== "",
     name: name ?? (local === "" ? "Nether user" : local),
+  };
+}
+
+/** A provider the server is the client of: the environment's (ADR 0034), or one the console names (ADR 0080). */
+export interface OidcProvider {
+  readonly issuer: string;
+  readonly clientId: string;
+  /** None for a public client, which proves itself with PKCE alone. */
+  readonly clientSecret: string | null;
+  /** Where the provider sends the browser back to, as the admin registered it. */
+  readonly callbackUrl: string;
+  /** What reaches the provider: openid-client's own fetch unless given, as a checked one. */
+  readonly fetch?: CheckedFetch;
+}
+
+/** A flow's secrets, which the server keeps until the provider answers. */
+export interface FlowSecrets {
+  readonly state: string;
+  readonly nonce: string;
+  readonly verifier: string;
+}
+
+/** The server as a provider's client: where a flow sends the browser, and whom its answer names. */
+export interface OidcClient {
+  /** A flow's secrets, and the provider's address to send the browser to; it rejects when the provider cannot be reached. */
+  start(): Promise<FlowSecrets & { readonly url: URL }>;
+  /** The person the provider's answer names, given the callback's address as requested, checked against the flow's secrets. */
+  finish(requestUrl: string, flow: FlowSecrets): Promise<Person>;
+}
+
+/** A provider's client, its metadata found once and found again after a failure. */
+export function oidcClient(provider: OidcProvider, log: FastifyBaseLogger): OidcClient {
+  const plainHttp = provider.issuer.startsWith("http:");
+  if (plainHttp) {
+    log.warn(
+      { issuer: provider.issuer },
+      "The OpenID Connect provider answers over plain HTTP: use it only on a private network",
+    );
+  }
+  const { fetch } = provider;
+  const options: client.DiscoveryRequestOptions = {
+    // An admin may name a provider on the same private network, such as
+    // Keycloak beside the server, that answers over plain HTTP. The
+    // library marks the switch deprecated only so it stands out.
+    // eslint-disable-next-line @typescript-eslint/no-deprecated
+    ...(plainHttp ? { execute: [client.allowInsecureRequests] } : {}),
+    ...(fetch === undefined
+      ? {}
+      : {
+          [client.customFetch]: (url: string, init: client.CustomFetchOptions) => {
+            if (init.body instanceof ReadableStream) {
+              throw new Error("A streamed body is not sent to a provider.");
+            }
+            return fetch(url, {
+              method: init.method,
+              headers: init.headers,
+              body: init.body ?? null,
+              signal: init.signal ?? null,
+            });
+          },
+        }),
+  };
+  let discovered: Promise<client.Configuration> | undefined;
+  function configuration(): Promise<client.Configuration> {
+    discovered ??= client
+      .discovery(
+        new URL(provider.issuer),
+        provider.clientId,
+        provider.clientSecret ?? undefined,
+        provider.clientSecret === null ? client.None() : undefined,
+        options,
+      )
+      .catch((error: unknown) => {
+        discovered = undefined;
+        throw error;
+      });
+    return discovered;
+  }
+  return {
+    async start() {
+      const config = await configuration();
+      const state = client.randomState();
+      const nonce = client.randomNonce();
+      const verifier = client.randomPKCECodeVerifier();
+      const url = client.buildAuthorizationUrl(config, {
+        redirect_uri: provider.callbackUrl,
+        scope: "openid email profile",
+        state,
+        nonce,
+        code_challenge: await client.calculatePKCECodeChallenge(verifier),
+        code_challenge_method: "S256",
+      });
+      return { state, nonce, verifier, url };
+    },
+    async finish(requestUrl, flow) {
+      // The address the provider sent the browser to, as it was registered.
+      const current = new URL(provider.callbackUrl);
+      current.search = new URL(requestUrl, "http://callback").search;
+      const tokens = await client.authorizationCodeGrant(await configuration(), current, {
+        pkceCodeVerifier: flow.verifier,
+        expectedState: flow.state,
+        expectedNonce: flow.nonce,
+        idTokenExpected: true,
+      });
+      const claims = tokens.claims();
+      if (claims === undefined) throw new Error("The provider gave no ID token");
+      return personOf(claims);
+    },
   };
 }
 
@@ -125,36 +237,15 @@ export function registerOidc(
   oidc: OidcConfig,
   publicUrl: string,
 ): void {
-  const callbackUrl = `${publicUrl}/api/oidc/callback`;
-  const plainHttp = oidc.issuer.startsWith("http:");
-  if (plainHttp) {
-    app.log.warn(
-      { issuer: oidc.issuer },
-      "The OpenID Connect provider answers over plain HTTP: use it only on a private network",
-    );
-  }
-
-  // The provider's metadata, found once and found again after a failure.
-  let discovered: Promise<client.Configuration> | undefined;
-  function provider(): Promise<client.Configuration> {
-    discovered ??= client
-      .discovery(
-        new URL(oidc.issuer),
-        oidc.clientId,
-        oidc.clientSecret ?? undefined,
-        oidc.clientSecret === null ? client.None() : undefined,
-        // An admin may name a provider on the same private network, such as
-        // Keycloak beside the server, that answers over plain HTTP. The
-        // library marks the switch deprecated only so it stands out.
-        // eslint-disable-next-line @typescript-eslint/no-deprecated
-        plainHttp ? { execute: [client.allowInsecureRequests] } : undefined,
-      )
-      .catch((error: unknown) => {
-        discovered = undefined;
-        throw error;
-      });
-    return discovered;
-  }
+  const provider = oidcClient(
+    {
+      issuer: oidc.issuer,
+      clientId: oidc.clientId,
+      clientSecret: oidc.clientSecret,
+      callbackUrl: `${publicUrl}/api/oidc/callback`,
+    },
+    app.log,
+  );
 
   /** The account a person signs in to, made if they may have one, and the invitation they accept. */
   async function resolve(
@@ -173,7 +264,10 @@ export function registerOidc(
     let userId = known.rows.length > 0 ? readText(known.rows[0], "user_id") : undefined;
     let email: string | undefined;
     if (userId === undefined) {
-      if (person.email === undefined) return { error: "email_not_verified" };
+      // An address the provider has not verified links nothing: anyone could claim one.
+      if (person.email === undefined || !person.emailVerified) {
+        return { error: "email_not_verified" };
+      }
       email = person.email;
       const byEmail = await tx.query("SELECT id FROM users WHERE email_key = $1", [
         emailKey(email),
@@ -231,16 +325,14 @@ export function registerOidc(
           "The address to come back to must be the app's loopback address, by IP, or this server's.",
         );
       }
-      let config: client.Configuration;
+      let started: Awaited<ReturnType<OidcClient["start"]>>;
       try {
-        config = await provider();
+        started = await provider.start();
       } catch (error) {
         request.log.error({ err: error }, "Could not reach the OpenID Connect provider");
         return fail(reply, 503, `${oidc.name} cannot be reached; try again later.`);
       }
-      const state = client.randomState();
-      const nonce = client.randomNonce();
-      const verifier = client.randomPKCECodeVerifier();
+      const { state, nonce, verifier, url } = started;
       await db.query("DELETE FROM oidc_flows WHERE expires_at < now()");
       await db.query(
         `INSERT INTO oidc_flows
@@ -257,14 +349,6 @@ export function registerOidc(
           flowMinutes,
         ],
       );
-      const url = client.buildAuthorizationUrl(config, {
-        redirect_uri: callbackUrl,
-        scope: "openid email profile",
-        state,
-        nonce,
-        code_challenge: await client.calculatePKCECodeChallenge(verifier),
-        code_challenge_method: "S256",
-      });
       return reply.code(201).send({ url: url.href });
     },
   );
@@ -296,18 +380,11 @@ export function registerOidc(
 
       let person: Person;
       try {
-        // The address the provider sent the browser to, as it was registered.
-        const current = new URL(callbackUrl);
-        current.search = new URL(request.url, "http://callback").search;
-        const tokens = await client.authorizationCodeGrant(await provider(), current, {
-          pkceCodeVerifier: readText(flow, "verifier"),
-          expectedState: state,
-          expectedNonce: readText(flow, "nonce"),
-          idTokenExpected: true,
+        person = await provider.finish(request.url, {
+          state,
+          nonce: readText(flow, "nonce"),
+          verifier: readText(flow, "verifier"),
         });
-        const claims = tokens.claims();
-        if (claims === undefined) throw new Error("The provider gave no ID token");
-        person = personOf(claims);
       } catch (error) {
         request.log.error({ err: error }, "The OpenID Connect provider's answer was refused");
         return failed("provider_error");
