@@ -13,6 +13,7 @@
     "@nether/enterprise-admin": "workspace:*",
     "@nether/enterprise-audit": "workspace:*",
     "@nether/enterprise-policies": "workspace:*",
+    "@nether/enterprise-scim": "workspace:*",
     "@nether/enterprise-sso": "workspace:*",
     "@nether/server": "workspace:*"
   },
