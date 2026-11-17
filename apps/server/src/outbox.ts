@@ -8,7 +8,7 @@
 // note's ID, path and title, never its text.
 import { randomUUID } from "node:crypto";
 import { type Database, type Queryable, readText, readTime } from "./db.ts";
-import { pathsOf, titleOf } from "./search.ts";
+import { titleOf } from "./search.ts";
 import { type Level, accessible, general, unitOfDocument } from "./units.ts";
 
 export type ChangeKind = "created" | "updated" | "deleted";
@@ -90,11 +90,11 @@ export async function keepListChanges(
   tx: Queryable,
   workspaceId: string,
   unit: string,
-  state: Uint8Array,
-  before: Uint8Array | undefined,
+  listed: ReadonlyMap<string, string>,
+  listedBefore: ReadonlyMap<string, string>,
 ): Promise<void> {
-  const now = new Map([...pathsOf(state)].map(([id, path]) => [id.toLowerCase(), path]));
-  const was = new Map([...pathsOf(before)].map(([id, path]) => [id.toLowerCase(), path]));
+  const now = new Map([...listed].map(([id, path]) => [id.toLowerCase(), path]));
+  const was = new Map([...listedBefore].map(([id, path]) => [id.toLowerCase(), path]));
   const touched = [
     ...[...now].filter(([id, path]) => was.get(id) !== path).map(([id]) => id),
     ...[...was.keys()].filter((id) => !now.has(id)),
