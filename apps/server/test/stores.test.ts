@@ -193,7 +193,7 @@ describe("a lock every node shares", () => {
   async function twoWorks(
     first: Database,
     second: Database,
-    keys: readonly [string, string],
+    keys: readonly [string | readonly string[], string | readonly string[]],
   ): Promise<string[]> {
     const said: string[] = [];
     const work = (name: string) => async () => {
@@ -222,6 +222,43 @@ describe("a lock every node shares", () => {
       await db.close();
     }
   });
+
+  it("holds several keys together, apart from work under any of them", async () => {
+    const db = await testDatabase();
+    try {
+      expect(apart(await twoWorks(db, db, [["one", "two"], "two"]))).toBe(true);
+      expect(apart(await twoWorks(db, db, ["one", ["one", "two"]]))).toBe(true);
+      const both = await twoWorks(db, db, [["one", "two"], "three"]);
+      expect(both.slice(0, 2).every((each) => each.endsWith("in"))).toBe(true);
+    } finally {
+      await db.close();
+    }
+  });
+
+  it.skipIf(url === "")(
+    "holds several keys on one connection, so more works than the pool has hold two each",
+    async () => {
+      const db = connectPostgres(url);
+      const shared = `test.${randomUUID()}`;
+      try {
+        // Eight, each under a key of its own and a shared one: each held on
+        // its own connection while waiting for another, they would take the
+        // lock pool's four and wait for ever.
+        let done = 0;
+        await Promise.all(
+          Array.from({ length: 8 }, () =>
+            db.lock([`test.${randomUUID()}`, shared], async () => {
+              await new Promise((resolve) => setTimeout(resolve, 20));
+              done += 1;
+            }),
+          ),
+        );
+        expect(done).toBe(8);
+      } finally {
+        await db.close();
+      }
+    },
+  );
 
   it.skipIf(url === "")("holds across two nodes' connections to PostgreSQL", async () => {
     const first = connectPostgres(url);

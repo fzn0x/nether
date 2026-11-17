@@ -60,7 +60,7 @@ function traced(db: Database): Database {
           work({ query: (text, params) => track(text, () => tx.query(text, params)) }),
         ),
       ),
-    lock: (key, work) => track(`(lock ${key})`, () => db.lock(key, work)),
+    lock: (key, work) => track(`(lock ${[key].flat().join(" ")})`, () => db.lock(key, work)),
     close: () => db.close(),
   };
 }
