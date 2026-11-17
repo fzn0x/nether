@@ -34,7 +34,9 @@ on:
       - ".github/scripts/licenses.mjs"
 
 concurrency:
-  group: ios-${{ github.ref }}
+  # A pull request's newer push cancels its older run. On main each commit is
+  # a group of its own, so every run there finishes and none shows cancelled.
+  group: ios-${{ github.ref == 'refs/heads/main' && github.sha || github.ref }}
   cancel-in-progress: true
 
 permissions:
