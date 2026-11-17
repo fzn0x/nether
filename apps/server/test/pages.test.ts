@@ -5,9 +5,9 @@
 import { randomUUID } from "node:crypto";
 import { afterEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
-import { type Database, readBytes } from "../src/db.ts";
+import { readBytes } from "../src/db.ts";
 import { storeDocument } from "../src/sync.ts";
-import { type SetUp, type TestServer, bearer, setUp, startServer } from "./app.ts";
+import { type SetUp, type TestServer, bearer, holding, setUp, soon, startServer } from "./app.ts";
 
 let running: TestServer | undefined;
 
@@ -86,58 +86,6 @@ async function listed(test: Test, name: string) {
     notes: Object.fromEntries(document.getMap("notes").entries()),
     files: [...document.getMap("files").keys()].sort(),
   };
-}
-
-/**
- * A database that, once armed, holds the first transaction whose first
- * statement `holds` picks, until released: rolled back before it changes
- * anything, and run again after. The request it is in waits there.
- */
-function holding(holds: (text: string) => boolean) {
-  const stop = new Error("Held");
-  const held = Promise.withResolvers<undefined>();
-  const released = Promise.withResolvers<undefined>();
-  const gate = {
-    armed: false,
-    held: held.promise,
-    release: () => {
-      released.resolve(undefined);
-    },
-  };
-  const wrap = (database: Database): Database => ({
-    ...database,
-    transaction: async (work) => {
-      try {
-        return await database.transaction((tx) =>
-          work({
-            query: (text, params) => {
-              if (gate.armed && holds(text)) {
-                gate.armed = false;
-                throw stop;
-              }
-              return tx.query(text, params);
-            },
-          }),
-        );
-      } catch (error) {
-        if (error !== stop) throw error;
-        held.resolve(undefined);
-        await released.promise;
-        return database.transaction(work);
-      }
-    },
-  });
-  return { gate, wrap };
-}
-
-/** What a request has come to after a moment: its answer's status, or none yet. */
-async function soon(request: PromiseLike<{ statusCode: number }>): Promise<number | "waiting"> {
-  const moment = new Promise<"waiting">((resolve) => {
-    setTimeout(() => {
-      resolve("waiting");
-    }, 300);
-  });
-  return Promise.race([Promise.resolve(request).then((answer) => answer.statusCode), moment]);
 }
 
 describe("shared pages", () => {
