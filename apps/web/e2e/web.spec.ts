@@ -397,3 +397,82 @@ test("a PDF pasted into a note opens, and is highlighted, under the server's pol
   await page.context().setOffline(false);
   expect(problems).toEqual([]);
 });
+
+test("a share link opens its page to someone with no account, until it is revoked", async ({
+  page,
+  browser,
+}) => {
+  const problems = problemsOf(page);
+  const owner = await person("Owner");
+  await signIn(page, owner);
+  await openTeam(page);
+  await newNote(page, "Launch plan", "Read me by link.");
+  await expect.poll(() => fileText(page, "Launch plan.md")).toBe("Read me by link.\n");
+
+  await page.keyboard.press("Control+p");
+  await page.keyboard.type("Share this page");
+  await page.keyboard.press("Enter");
+  const share = page.getByRole("dialog", { name: "Share Launch plan" });
+  await share.getByRole("button", { name: "Share it on its own, with its subpages" }).click();
+  await expect(share.getByRole("status")).toHaveText("Launch plan is shared on its own.");
+  const links = share.getByRole("region", { name: "Anyone with the link" });
+  await links.getByRole("button", { name: "Make a link" }).click();
+  await expect(share.getByRole("status")).toHaveText("The link is made, and copied.");
+  const url = await links.getByRole("textbox", { name: "Link" }).inputValue();
+  expect(url).toMatch(/^http:\/\/127\.0\.0\.1:4175\/s#nether_link_/);
+  expect(await violations(page)).toEqual([]);
+
+  // Someone with no account, in a browser of their own.
+  const visitor = await browser.newContext();
+  try {
+    const reader = await visitor.newPage();
+    const readerProblems = problemsOf(reader);
+    await reader.goto(url);
+    await expect(reader.getByRole("heading", { name: "Launch plan" })).toBeVisible({
+      timeout: 20_000,
+    });
+    await expect(reader.getByText("Read me by link.")).toBeVisible();
+    await expect(reader.getByRole("textbox", { name: "Launch plan" })).toHaveAttribute(
+      "contenteditable",
+      "false",
+    );
+    // The token left the address once used.
+    expect(reader.url()).toBe("http://127.0.0.1:4175/s");
+    expect(await violations(reader)).toEqual([]);
+
+    // A link with a password asks for it.
+    await share.getByRole("textbox", { name: "Password (optional)" }).fill("a long password");
+    await links.getByRole("button", { name: "Make a link" }).click();
+    await expect(links.getByRole("textbox", { name: "Link" })).toHaveCount(2);
+    const locked = await links.getByRole("textbox", { name: "Link" }).nth(1).inputValue();
+    const guest = await browser.newContext();
+    try {
+      const asked = await guest.newPage();
+      await asked.goto(locked);
+      await asked.getByLabel("Password").fill("not it");
+      await asked.getByRole("button", { name: "Open" }).click();
+      await expect(asked.getByRole("alert")).toHaveText("That password is not this link's.");
+      await asked.getByLabel("Password").fill("a long password");
+      await asked.getByRole("button", { name: "Open" }).click();
+      await expect(asked.getByRole("heading", { name: "Launch plan" })).toBeVisible({
+        timeout: 20_000,
+      });
+    } finally {
+      await guest.close();
+    }
+
+    // Revoked, it opens nothing, and the visit it started is over.
+    await links.getByRole("button", { name: "Revoke" }).first().click();
+    await expect(share.getByRole("status")).toHaveText(
+      "The link is revoked: it opens nothing now.",
+    );
+    await reader.reload();
+    await expect(reader.getByRole("alert")).toHaveText(
+      "This link opens nothing: it was revoked, or it expired.",
+    );
+    expect(readerProblems).toEqual([]);
+  } finally {
+    await visitor.close();
+  }
+  expect(problems).toEqual([]);
+});
