@@ -45,8 +45,12 @@ COPY packages/editor/package.json packages/editor/
 COPY packages/markdown/package.json packages/markdown/
 COPY packages/search/package.json packages/search/
 COPY packages/storage/package.json packages/storage/
+# The image's entry, which starts the server with every enterprise
+# feature's module, each off until an admin switches it on (ADR 0079).
+COPY enterprise/server/package.json enterprise/server/
+COPY enterprise/admin/package.json enterprise/admin/
 RUN --mount=type=cache,id=pnpm-store,target=/root/.local/share/pnpm/store \
-    pnpm install --prod --frozen-lockfile --ignore-scripts --filter "@nether/server..."
+    pnpm install --prod --frozen-lockfile --ignore-scripts --filter "@nether/enterprise-server..."
 
 FROM node:24.22.3-alpine
 LABEL org.opencontainers.image.title="Nether server" \
@@ -67,6 +71,11 @@ COPY --from=build /src/packages/markdown/src/ packages/markdown/src/
 COPY --from=build /src/packages/search/src/ packages/search/src/
 COPY --from=build /src/packages/storage/src/ packages/storage/src/
 COPY --from=build /src/apps/server/dist/ apps/server/dist/
+# The entry imports the server's source, whose types Node strips, as it
+# does the workspace's packages'; dist/ stays for the admin's commands.
+COPY --from=build /src/apps/server/src/ apps/server/src/
+COPY --from=build /src/enterprise/server/src/ enterprise/server/src/
+COPY --from=build /src/enterprise/admin/src/ enterprise/admin/src/
 COPY --from=build /src/apps/web/dist/ apps/web/dist/
 COPY LICENSE ./
 # A new named volume starts with these folders, owned by the server's user.
@@ -77,4 +86,4 @@ EXPOSE 3000
 WORKDIR /app/apps/server
 HEALTHCHECK --interval=10s --timeout=5s --start-period=30s --retries=3 \
   CMD ["node", "-e", "fetch(`http://127.0.0.1:${process.env.NETHER_PORT}/health`).then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))"]
-CMD ["node", "dist/main.js"]
+CMD ["node", "../../enterprise/server/src/main.ts"]
