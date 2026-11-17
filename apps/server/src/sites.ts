@@ -216,6 +216,8 @@ export function registerSites(
       ]);
       return {
         publishing: switches[0]?.publishing === true,
+        // Whether the account turns publishing on and off: an owner's or admin's.
+        manages: place.admin,
         sites: mine.map((row) => shown(request, row)),
       };
     },

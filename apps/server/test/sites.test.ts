@@ -144,10 +144,15 @@ describe("publishing a site", () => {
       publishedBy: { id: test.userId, name: "Ada" },
     });
     const listed = await call(test, "GET", "/sites", test.token);
-    expect(listed.json()).toMatchObject({ publishing: true, sites: [{ id: site.id }] });
+    expect(listed.json()).toMatchObject({
+      publishing: true,
+      manages: true,
+      sites: [{ id: site.id }],
+    });
     // Another member sees the sites where they have full access, as here in General.
     const bea = await member(test, "Bea");
     expect((await call(test, "GET", "/sites", bea.session)).json()).toMatchObject({
+      manages: false,
       sites: [{ id: site.id }],
     });
   });
