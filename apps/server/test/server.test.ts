@@ -42,6 +42,7 @@ describe("readConfig", () => {
       webhookPrivate: false,
       ai: "on",
       aiPrivate: false,
+      ssoPrivate: false,
       secretKey: null,
       mail: null,
       publicUrl: null,

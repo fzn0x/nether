@@ -6,6 +6,7 @@
 // seconds the switches are kept. Nothing here imports the modules: a build
 // passes in those it has.
 import type { FastifyInstance, FastifyPluginAsync, FastifyReply, FastifyRequest } from "fastify";
+import type { Config } from "./config.ts";
 import type { Database } from "./db.ts";
 
 export const enterpriseFeatures = ["sso", "scim", "audit", "policies", "admin", "ha"] as const;
@@ -18,6 +19,8 @@ export type EnterprisePins = Readonly<Record<EnterpriseFeature, boolean | undefi
 /** What a module's plugin is given. */
 export interface EnterpriseContext {
   readonly db: Database;
+  /** The server's configuration, as its environment set it: its public address and secret key among them. */
+  readonly config: Config;
   /** Whether the module's feature is on now. */
   readonly isOn: () => Promise<boolean>;
   /** A route's check that answers 404 while the module's feature is off. */
@@ -162,6 +165,7 @@ function notFound(request: FastifyRequest, reply: FastifyReply): FastifyReply {
 export async function registerEnterprise(
   app: FastifyInstance,
   db: Database,
+  config: Config,
   switches: EnterpriseSwitches,
   modules: readonly EnterpriseModule[],
 ): Promise<void> {
@@ -177,6 +181,6 @@ export async function registerEnterprise(
     const isOn = () => switches.on(module.feature);
     const whenOn = async (request: FastifyRequest, reply: FastifyReply) =>
       (await isOn()) ? undefined : notFound(request, reply);
-    await app.register(module.plugin, { db, isOn, whenOn });
+    await app.register(module.plugin, { db, config, isOn, whenOn });
   }
 }
