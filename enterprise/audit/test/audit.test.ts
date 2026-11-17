@@ -451,6 +451,23 @@ describe("the audit log", () => {
         events: { action: string; workspace: { name: string } }[];
       }>().events,
     ).toMatchObject([{ action: "invitation.created", workspace: { name: admin.workspace } }]);
+    // The filter offers accounts by name or email, and the workspaces.
+    const offered = await test.server.inject({
+      method: "GET",
+      url: "/api/audit/actors?q=ad",
+      headers: bearer(test.token),
+    });
+    expect(offered.json()).toEqual({
+      actors: [{ id: test.userId, name: admin.name, email: admin.email }],
+    });
+    const places = await test.server.inject({
+      method: "GET",
+      url: "/api/audit/workspaces",
+      headers: bearer(test.token),
+    });
+    expect(places.json()).toEqual({
+      workspaces: [{ id: test.workspaceId, name: admin.workspace }],
+    });
     const later = new Date(Date.now() + 60_000).toISOString();
     expect((await events(test, `?from=${later}`)).json<{ events: unknown[] }>().events).toEqual([]);
     // Someone not an instance admin is refused.
