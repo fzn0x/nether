@@ -391,6 +391,113 @@ export async function open(
   });
 }
 
+/** What a checked fetch is asked, as `fetch` and openid-client's `customFetch` ask it. */
+export interface CheckedRequest {
+  readonly method?: string;
+  readonly headers?: Readonly<Record<string, string>>;
+  readonly body?: string | URLSearchParams | Uint8Array | ArrayBuffer | null;
+  readonly signal?: AbortSignal | null;
+}
+
+/** A fetch whose requests are checked and pinned as `post`'s are. */
+export type CheckedFetch = (address: string, request?: CheckedRequest) => Promise<Response>;
+
+/** The bytes of a body a checked fetch sends. */
+function bodyBytes(body: CheckedRequest["body"]): Buffer | undefined {
+  if (body === undefined || body === null) return undefined;
+  if (typeof body === "string") return Buffer.from(body);
+  if (body instanceof URLSearchParams) return Buffer.from(body.toString());
+  return Buffer.from(body instanceof ArrayBuffer ? new Uint8Array(body) : body);
+}
+
+/**
+ * A fetch for addresses an admin named, as a sign-on provider's metadata
+ * and endpoints are (ADR 0080): each request checked and pinned to the
+ * address its host resolved to, as `post` does, redirects given back
+ * rather than followed, and an answer read to `limit` bytes at most. A
+ * refusal rejects, saying why, as a failed fetch does.
+ */
+export function checkedFetch(options: SendOptions & { readonly limit?: number }): CheckedFetch {
+  const limit = options.limit ?? 1_000_000;
+  return async (address, init = {}) => {
+    const url = new URL(address);
+    if (url.protocol !== "https:" && url.protocol !== "http:") {
+      throw new Error("This address is not http:// or https://.");
+    }
+    const to = await target(url, options);
+    if (typeof to === "string") throw new Error(to);
+    const host = hostOf(url);
+    const timeout = options.timeout ?? 10_000;
+    const body = bodyBytes(init.body);
+    return new Promise<Response>((resolve, reject) => {
+      let settled = false;
+      const finish = (outcome: Response | Error) => {
+        clearTimeout(timer);
+        if (settled) return;
+        settled = true;
+        if (outcome instanceof Error) reject(outcome);
+        else resolve(outcome);
+      };
+      const send = url.protocol === "https:" ? httpsRequest : httpRequest;
+      const request = send(
+        {
+          protocol: url.protocol,
+          hostname: host,
+          port: url.port === "" ? undefined : Number(url.port),
+          path: `${url.pathname}${url.search}`,
+          method: init.method ?? "GET",
+          headers: {
+            ...init.headers,
+            ...(body === undefined ? {} : { "content-length": String(body.length) }),
+          },
+          lookup: pinned(to),
+          agent: false,
+          ...(isIP(host) === 0 ? { servername: host } : {}),
+        },
+        (answer: IncomingMessage) => {
+          const chunks: Buffer[] = [];
+          let size = 0;
+          answer.on("data", (chunk: Buffer) => {
+            size += chunk.length;
+            if (size > limit) {
+              request.destroy();
+              finish(new Error(`The answer is larger than ${String(limit)} bytes.`));
+              return;
+            }
+            chunks.push(chunk);
+          });
+          answer.on("end", () => {
+            const status = answer.statusCode ?? 502;
+            const headers = new Headers();
+            for (const [name, value] of Object.entries(answer.headers)) {
+              if (typeof value === "string") headers.set(name, value);
+              else if (Array.isArray(value)) for (const item of value) headers.append(name, item);
+            }
+            // A Response for these statuses takes no body.
+            const empty = [101, 204, 205, 304].includes(status);
+            finish(new Response(empty ? null : Buffer.concat(chunks), { status, headers }));
+          });
+          answer.on("error", (error) => {
+            finish(error);
+          });
+        },
+      );
+      const timer = setTimeout(() => {
+        request.destroy();
+        finish(new Error(`No answer within ${String(timeout / 1000)} seconds.`));
+      }, timeout);
+      init.signal?.addEventListener("abort", () => {
+        request.destroy();
+        finish(new Error("The request was stopped."));
+      });
+      request.on("error", (error) => {
+        finish(new Error(`Could not reach ${host}: ${error.message}`));
+      });
+      request.end(body);
+    });
+  };
+}
+
 /** A new webhook secret: `whsec_` and 32 random bytes in base64, as Standard Webhooks has it. */
 export function newSecret(): string {
   return `whsec_${randomBytes(32).toString("base64")}`;

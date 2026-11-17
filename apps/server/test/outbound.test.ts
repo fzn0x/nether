@@ -8,6 +8,7 @@ import {
   type Resolver,
   addressProblem,
   allowsPrivate,
+  checkedFetch,
   isPublicAddress,
   newSecret,
   post,
@@ -230,5 +231,54 @@ describe("post", () => {
       timeout: 200,
     });
     expect(outcome).toEqual({ ok: false, error: "No answer within 0.2 seconds." });
+  });
+});
+
+describe("checkedFetch", () => {
+  it("fetches through the address it checked, and gives the answer as fetch does", async () => {
+    const { port, received } = await receiver((response) =>
+      response.writeHead(200, { "content-type": "application/xml" }).end("<EntityDescriptor/>"),
+    );
+    const fetcher = checkedFetch({
+      policy: ["loopback"],
+      resolve: resolver({ "idp.example": ["127.0.0.1"] }),
+    });
+    const answer = await fetcher(`http://idp.example:${String(port)}/metadata?x=1`);
+    expect(answer.status).toBe(200);
+    expect(answer.headers.get("content-type")).toBe("application/xml");
+    expect(await answer.text()).toBe("<EntityDescriptor/>");
+    const posted = await fetcher(`http://idp.example:${String(port)}/token`, {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({ grant_type: "authorization_code" }),
+    });
+    expect(posted.ok).toBe(true);
+    expect(received.map(({ url, body }) => [url, body])).toEqual([
+      ["/metadata?x=1", ""],
+      ["/token", "grant_type=authorization_code"],
+    ]);
+  });
+
+  it("refuses an address that is not public, follows no redirect, and reads no more than its limit", async () => {
+    const { port, received } = await receiver((response) =>
+      response.writeHead(302, { location: "http://127.0.0.1:1/elsewhere" }).end(),
+    );
+    const refuse = checkedFetch({
+      policy: false,
+      resolve: resolver({ "idp.example": ["127.0.0.1"] }),
+      allowedBy: "NETHER_SSO_PRIVATE",
+    });
+    await expect(refuse(`http://idp.example:${String(port)}/`)).rejects.toThrow(
+      "127.0.0.1, which is not a public address: the server's admin can allow it with NETHER_SSO_PRIVATE.",
+    );
+    expect(received).toHaveLength(0);
+    const allow = { policy: true, resolve: resolver({ "idp.example": ["127.0.0.1"] }) };
+    const moved = await checkedFetch(allow)(`http://idp.example:${String(port)}/`);
+    expect(moved.status).toBe(302);
+    expect(received).toHaveLength(1);
+    const large = await receiver((response) => response.writeHead(200).end("x".repeat(2000)));
+    await expect(
+      checkedFetch({ ...allow, limit: 1000 })(`http://idp.example:${String(large.port)}/`),
+    ).rejects.toThrow("The answer is larger than 1000 bytes.");
   });
 });

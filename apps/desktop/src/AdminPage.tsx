@@ -6,6 +6,7 @@
 // a share link's page does.
 import { type ReactNode, useCallback, useEffect, useState } from "react";
 import { SecurityPage } from "./AdminSecurity.tsx";
+import { SsoPage } from "./AdminSso.tsx";
 import { WorkspacesPage } from "./AdminWorkspaces.tsx";
 import { t } from "./messages.ts";
 import { messageOf, webFetch, webServer } from "./web.ts";
@@ -146,6 +147,8 @@ export function AdminPage() {
 
   const consoleOn =
     step.kind === "open" && step.features.some((state) => state.feature === "admin" && state.on);
+  const ssoOn =
+    step.kind === "open" && step.features.some((state) => state.feature === "sso" && state.on);
 
   const count = useCallback(() => {
     setUsage(undefined);
@@ -255,6 +258,7 @@ export function AdminPage() {
           ) : (
             <p className="hint">{t("adminConsoleOff")}</p>
           )}
+          {ssoOn ? <SsoPage /> : null}
         </>
       ) : null}
       {status === undefined ? null : <p role="status">{status}</p>}

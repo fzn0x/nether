@@ -20,9 +20,10 @@ how you may sign in:
   works once, within 15 minutes. It appears when the server's admin has set
   up email.
 - **Sign in with …**: your organization's single sign-on, such as Keycloak,
-  Okta or Microsoft Entra ID. The app opens it in your browser; once you
-  have signed in there, the browser comes back to the app, and you can close
-  the page it shows.
+  Okta or Microsoft Entra ID, one button for each provider the server's
+  admin has set up. The app opens it in your browser; once you have signed
+  in there, the browser comes back to the app, and you can close the page
+  it shows.
 
 Accounts come by invitation from a workspace's owner or admin, so ask them
 for one if the server says it has none for you.

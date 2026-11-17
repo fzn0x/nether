@@ -6,6 +6,7 @@
 // seconds the switches are kept. Nothing here imports the modules: a build
 // passes in those it has.
 import type { FastifyInstance, FastifyPluginAsync, FastifyReply, FastifyRequest } from "fastify";
+import type { Config } from "./config.ts";
 import type { Database } from "./db.ts";
 import type { SecuritySettings } from "./settings.ts";
 
@@ -19,6 +20,8 @@ export type EnterprisePins = Readonly<Record<EnterpriseFeature, boolean | undefi
 /** What the server shares with every module, beside its switch. */
 export interface EnterpriseServices {
   readonly db: Database;
+  /** The server's configuration, as its environment set it: its public address and secret key among them. */
+  readonly config: Config;
   /**
    * Closes an account's open sync connections, so its apps connect again
    * and every document is checked anew, as a change of its role does.

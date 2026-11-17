@@ -23,6 +23,14 @@ export interface SignInMethods {
   readonly emailCode: boolean;
   /** The provider's name, when the server signs in with one. */
   readonly oidc: { readonly name: string } | null;
+  /** The single sign-on providers its console names (ADR 0080), by their short names; none while that is off. */
+  readonly sso: readonly SsoProvider[];
+}
+
+/** A single sign-on provider the server's console names. */
+export interface SsoProvider {
+  readonly id: string;
+  readonly name: string;
 }
 
 export interface Workspace {
@@ -202,7 +210,25 @@ export async function signInMethods(fetcher: Fetch, base: string): Promise<SignI
     password: answer.password,
     emailCode: answer.emailCode === true,
     oidc: typeof oidc.name === "string" ? { name: oidc.name } : null,
+    sso: await ssoProviders(fetcher, base),
   };
+}
+
+/** The single sign-on providers a server offers: none from one whose single sign-on is off, or older. */
+export async function ssoProviders(fetcher: Fetch, base: string): Promise<SsoProvider[]> {
+  let answer: unknown;
+  try {
+    answer = await request(fetcher, base, "/api/sso");
+  } catch {
+    return [];
+  }
+  const providers = record(answer).providers;
+  return (Array.isArray(providers) ? (providers as unknown[]) : []).flatMap((item) => {
+    const provider = record(item);
+    return typeof provider.id === "string" && typeof provider.name === "string"
+      ? [{ id: provider.id, name: provider.name }]
+      : [];
+  });
 }
 
 export async function signInWithPassword(
@@ -287,6 +313,7 @@ const providerErrors: Readonly<Record<string, MessageKey>> = {
   email_not_verified: "providerUnverified",
   invitation: "providerInvitation",
   other_address: "providerOtherAddress",
+  no_address: "providerNoAddress",
   provider_error: "providerFailed",
 };
 
@@ -294,17 +321,24 @@ const providerErrors: Readonly<Record<string, MessageKey>> = {
  * Signs in with the server's provider, as RFC 8252 has an app do: the
  * system's browser signs in at the provider, comes back to the app's
  * loopback address with a code, which the app redeems with its verifier.
+ * The provider is the server's own (ADR 0034), or one of its console's by
+ * its short name (ADR 0080).
  */
 export async function signInWithProvider(
   fetcher: Fetch,
   base: string,
   loopback: LoopbackWait,
   openUrl: (url: string) => Promise<void>,
+  sso?: string,
 ): Promise<SignedIn> {
+  const paths =
+    sso === undefined
+      ? { flows: "/api/oidc/flows", redeem: "/api/oidc/redeem" }
+      : { flows: `/api/sso/${encodeURIComponent(sso)}/flows`, redeem: "/api/sso/redeem" };
   try {
     const { verifier, challenge } = await pkce();
     const flow = record(
-      await request(fetcher, base, "/api/oidc/flows", {
+      await request(fetcher, base, paths.flows, {
         body: { redirect: loopback.redirect, challenge },
       }),
     );
@@ -316,7 +350,7 @@ export async function signInWithProvider(
       throw new ServerError(401, key === undefined ? t("providerUnknown", { error }) : t(key));
     }
     return signedIn(
-      await request(fetcher, base, "/api/oidc/redeem", {
+      await request(fetcher, base, paths.redeem, {
         body: { code: query.code ?? "", verifier },
       }),
       base,

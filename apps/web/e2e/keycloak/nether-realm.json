@@ -1,0 +1,94 @@
+{
+  "realm": "nether",
+  "enabled": true,
+  "sslRequired": "none",
+  "users": [
+    {
+      "username": "grace",
+      "enabled": true,
+      "email": "grace@corp.example",
+      "emailVerified": true,
+      "firstName": "Grace",
+      "lastName": "Hopper",
+      "credentials": [{ "type": "password", "value": "a long password", "temporary": false }]
+    },
+    {
+      "username": "hal",
+      "enabled": true,
+      "email": "hal@corp.test",
+      "emailVerified": true,
+      "firstName": "Hal",
+      "lastName": "Abelson",
+      "credentials": [{ "type": "password", "value": "a long password", "temporary": false }]
+    }
+  ],
+  "clients": [
+    {
+      "clientId": "http://127.0.0.1:4175/api/sso/keycloak/saml/metadata",
+      "name": "Nether",
+      "protocol": "saml",
+      "enabled": true,
+      "frontchannelLogout": false,
+      "redirectUris": ["http://127.0.0.1:4175/api/sso/keycloak/saml/acs"],
+      "attributes": {
+        "saml_assertion_consumer_url_post": "http://127.0.0.1:4175/api/sso/keycloak/saml/acs",
+        "saml.server.signature": "true",
+        "saml.assertion.signature": "true",
+        "saml.signature.algorithm": "RSA_SHA256",
+        "saml.client.signature": "false",
+        "saml.encrypt": "false",
+        "saml.authnstatement": "true",
+        "saml_force_name_id_format": "true",
+        "saml_name_id_format": "persistent"
+      },
+      "protocolMappers": [
+        {
+          "name": "email",
+          "protocol": "saml",
+          "protocolMapper": "saml-user-property-mapper",
+          "config": {
+            "user.attribute": "email",
+            "attribute.name": "email",
+            "attribute.nameformat": "Basic",
+            "friendly.name": "email"
+          }
+        },
+        {
+          "name": "given name",
+          "protocol": "saml",
+          "protocolMapper": "saml-user-property-mapper",
+          "config": {
+            "user.attribute": "firstName",
+            "attribute.name": "givenName",
+            "attribute.nameformat": "Basic",
+            "friendly.name": "givenName"
+          }
+        },
+        {
+          "name": "surname",
+          "protocol": "saml",
+          "protocolMapper": "saml-user-property-mapper",
+          "config": {
+            "user.attribute": "lastName",
+            "attribute.name": "surname",
+            "attribute.nameformat": "Basic",
+            "friendly.name": "surname"
+          }
+        }
+      ]
+    },
+    {
+      "clientId": "nether",
+      "name": "Nether",
+      "protocol": "openid-connect",
+      "enabled": true,
+      "publicClient": false,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "nether-client-secret",
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "redirectUris": ["http://127.0.0.1:4175/api/sso/keycloak-oidc/oidc/callback"],
+      "attributes": { "pkce.code.challenge.method": "S256" }
+    }
+  ]
+}

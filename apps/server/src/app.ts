@@ -287,7 +287,7 @@ export async function buildApp(config: Config, services: Services): Promise<Fast
   }));
   await registerEnterprise(
     app,
-    { db: services.db, disconnect: reconnect, security },
+    { db: services.db, config, disconnect: reconnect, security },
     switches,
     modules,
   );
