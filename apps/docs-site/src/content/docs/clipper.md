@@ -10,8 +10,12 @@ your own Nether server.
 
 ## Install it
 
-The clipper is not in the browsers' stores yet. Until it is, build it from
-the repository and load it yourself:
+The clipper is not in the browsers' stores yet. Until it is, each
+[release](https://github.com/fzn0x/nether/releases/latest) has its ZIPs,
+`nether-clipper-chrome-<version>.zip` and
+`nether-clipper-firefox-<version>.zip`: unzip one into a folder and load
+it as below, picking that folder, or its `manifest.json` in Firefox. Or
+build it from the repository:
 
 ```sh
 git clone https://github.com/fzn0x/nether.git

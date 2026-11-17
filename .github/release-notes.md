@@ -15,6 +15,7 @@ your devices, sharing with others, co-editing, comments and a web app.
 | Linux, any (x64) | [nether-{version}-x86_64.appimage]({url}/nether-{version}-x86_64.appimage), or the [Flatpak bundle]({url}/nether-{version}-x86_64.flatpak) |
 | The server (amd64 and arm64) | `ghcr.io/fzn0x/nether-server:{version}`, started with PostgreSQL and Valkey by the [`docker-compose.yml`](https://github.com/fzn0x/nether/blob/v{version}/deploy/docker/docker-compose.yml): see [Run a server](https://fzn0x.github.io/nether/self-hosting/) |
 | The server on Kubernetes | `helm install nether oci://ghcr.io/fzn0x/charts/nether --version {version}`: see [Kubernetes](https://fzn0x.github.io/nether/kubernetes/) |
+| The web clipper, until the browsers' stores list it | [nether-clipper-chrome-{version}.zip]({url}/nether-clipper-chrome-{version}.zip) and [nether-clipper-firefox-{version}.zip]({url}/nether-clipper-firefox-{version}.zip): see [Web clipper](https://fzn0x.github.io/nether/clipper/) |
 
 Nether installed from the Windows installer, the macOS disk image or the
 Linux install script updates itself, asking first; it can be turned off.
