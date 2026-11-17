@@ -1478,6 +1478,65 @@ button {
   color: var(--muted);
 }
 
+/* A button below its block (ADR 0072), in Meta Bind's four styles. */
+.note-button {
+  display: grid;
+  gap: 0.25rem;
+  justify-items: start;
+}
+
+.note-button > button {
+  padding: 0.375rem 0.875rem;
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  background: none;
+  cursor: pointer;
+}
+
+.note-button > button:hover:not(:disabled) {
+  background: var(--hover);
+}
+
+.note-button > button:active:not(:disabled) {
+  background: var(--pressed);
+}
+
+.note-button > button:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.note-button > .note-button-primary {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--bg);
+  font-weight: 600;
+}
+
+.note-button > .note-button-primary:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent) 88%, var(--text));
+}
+
+.note-button > .note-button-destructive {
+  border-color: var(--accent);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.note-button > .note-button-plain {
+  border-color: transparent;
+}
+
+.note-button-problem {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.875rem;
+}
+
+.note-button-problem[role="alert"] {
+  color: var(--accent);
+}
+
 .query-count {
   display: flex;
   flex-wrap: wrap;

@@ -1,0 +1,18 @@
+{
+  "id": "automations",
+  "name": "Buttons",
+  "version": "1.0.0",
+  "api": "^0.1",
+  "description": "Shows a meta-bind-button code block as a button, as Meta Bind writes one, which runs commands, makes notes from templates, sets properties and opens links.",
+  "author": "Nether contributors",
+  "contributes": {
+    "codeBlocks": [
+      {
+        "language": "meta-bind-button",
+        "name": "Button",
+        "keywords": "button meta bind action command automation",
+        "text": "label: Mark done\nstyle: primary\nactions:\n  - type: updateMetadata\n    bindTarget: status\n    evaluate: false\n    value: Done"
+      }
+    ]
+  }
+}
