@@ -6,10 +6,14 @@
 // `VaultFolder`, one call at a time on a queue of its own. It keeps the list
 // of the servers signed in to, without their tokens, which the page keeps in
 // the Keychain, and opens a provider's sign-in in the system's sheet, which
-// takes the app's scheme back itself.
+// takes the app's scheme back itself. It moves a capture's files in from the
+// App Group's inbox (NetherInboxPlugin), writes the vaults' names there for
+// the share extension to offer, and writes exports for the share sheet in
+// the app's caches, a ZIP from the vault's own files through `ZipExport`.
 import AuthenticationServices
 import Capacitor
 import Foundation
+import Shares
 import Vaults
 import os
 
@@ -36,7 +40,13 @@ public class NetherVaultsPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "servers", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "saveServer", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "forgetServer", returnType: CAPPluginReturnPromise),
-        CAPPluginMethod(name: "signIn", returnType: CAPPluginReturnPromise)
+        CAPPluginMethod(name: "signIn", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "adopt", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "exportStart", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "exportAdd", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "exportFinish", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "exportCancel", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "exportText", returnType: CAPPluginReturnPromise)
     ]
 
     /// The points the page reaches, for the smoke test and tools/perf.
@@ -99,6 +109,24 @@ public class NetherVaultsPlugin: CAPPlugin, CAPBridgedPlugin {
         if let last { kept["last"] = last }
         let data = try JSONSerialization.data(withJSONObject: kept, options: [.prettyPrinted, .sortedKeys])
         try VaultFolder.replaceFile(at: registryFile, with: data, disk: disk)
+        offer(vaults, last: last)
+    }
+
+    /// Writes the vaults' IDs and names to the App Group, for the share extension's sheet to offer.
+    private func offer(_ vaults: [[String: String]], last: String?) {
+        guard let group = SharedGroup.folder() else { return }
+        let offered = vaults.compactMap { entry -> OfferedVault? in
+            guard let id = entry["id"], let name = entry["name"] else { return nil }
+            return OfferedVault(id: id, name: name)
+        }
+        try? OfferedVaults(vaults: offered, last: last).write(to: group)
+    }
+
+    override public func load() {
+        // The list as it was before the share extension came, for it to offer.
+        queue.async { [self] in
+            if let registry = try? readRegistry() { offer(registry.vaults, last: registry.last) }
+        }
     }
 
     private func folderOf(_ id: String) throws -> VaultFolder {
@@ -396,6 +424,114 @@ public class NetherVaultsPlugin: CAPPlugin, CAPBridgedPlugin {
         let path = call.getString("path", "")
         onDisk(call) { [self] in
             try ["result": folderOf(id).removeFolder(path)]
+        }
+    }
+
+    /// Moves a file the App Group's inbox keeps for a capture into the vault at
+    /// a path, unless a file is there, so a shared photo never crosses the
+    /// bridge. Only the inbox's files move in.
+    @objc func adopt(_ call: CAPPluginCall) {
+        let id = call.getString("id", "")
+        let path = call.getString("path", "")
+        let from = call.getString("from", "")
+        onDisk(call) { [self] in
+            guard let inbox = CaptureInbox.shared(), inbox.holds(from),
+                FileManager.default.fileExists(atPath: from)
+            else { throw VaultError("\"\(from)\" is not a file the app keeps for a capture.") }
+            let data = try Data(contentsOf: URL(fileURLWithPath: from))
+            switch try folderOf(id).write(path, data, base: "") {
+            case .written(let file):
+                return ["result": "written", "file": NetherVaultsPlugin.infoOf(file)]
+            case .exists:
+                return ["result": "exists"]
+            case .changed:
+                return ["result": "changed"]
+            }
+        }
+    }
+
+    // Exports, in the app's caches, for the share sheet (mobileExports.ts).
+
+    private var exports: [String: ZipExport] = [:]
+    private var exportsSwept = false
+
+    /// A new folder in the exports' folder, which holds only this run's: older ones are gone.
+    private func exportFolder() throws -> URL {
+        let root = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("exports", isDirectory: true)
+        if !exportsSwept {
+            try? FileManager.default.removeItem(at: root)
+            exportsSwept = true
+        }
+        let folder = root.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        return folder
+    }
+
+    /// A file's name for the share sheet, without what a file system cannot hold.
+    private static func exportName(_ name: String) -> String {
+        let forbidden = CharacterSet(charactersIn: "/\\:*?\"<>|").union(.controlCharacters)
+        let clean = name.components(separatedBy: forbidden).joined(separator: "-")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return clean.isEmpty || clean.hasPrefix(".") ? "Nether" + clean : clean
+    }
+
+    @objc func exportStart(_ call: CAPPluginCall) {
+        let name = call.getString("name", "")
+        onDisk(call) { [self] in
+            let token = UUID().uuidString
+            let file = try exportFolder().appendingPathComponent(NetherVaultsPlugin.exportName(name) + ".zip")
+            exports[token] = try ZipExport(file: file)
+            return ["token": token]
+        }
+    }
+
+    @objc func exportAdd(_ call: CAPPluginCall) {
+        let token = call.getString("token", "")
+        let id = call.getString("id", "")
+        let entries = call.getArray("entries", JSObject.self) ?? []
+        onDisk(call) { [self] in
+            guard let zip = exports[token] else { throw VaultError("No export is open as \(token).") }
+            for entry in entries {
+                let path = entry["path"] as? String ?? ""
+                if let source = entry["source"] as? String {
+                    let file = try folderOf(id).resolve(source)
+                    try zip.addFile(path, from: URL(fileURLWithPath: file))
+                } else {
+                    try zip.addText(path, entry["text"] as? String ?? "")
+                }
+            }
+            return nil
+        }
+    }
+
+    @objc func exportFinish(_ call: CAPPluginCall) {
+        let token = call.getString("token", "")
+        onDisk(call) { [self] in
+            // Let go, the archive closes its file, complete.
+            guard let zip = exports.removeValue(forKey: token) else {
+                throw VaultError("No export is open as \(token).")
+            }
+            return ["path": zip.file.path]
+        }
+    }
+
+    @objc func exportCancel(_ call: CAPPluginCall) {
+        let token = call.getString("token", "")
+        onDisk(call) { [self] in
+            exports.removeValue(forKey: token)?.cancel()
+            return nil
+        }
+    }
+
+    /// Writes a text the page made, a database's CSV or a note's copy, as a file for the share sheet.
+    @objc func exportText(_ call: CAPPluginCall) {
+        let name = call.getString("name", "")
+        let text = call.getString("text", "")
+        onDisk(call) { [self] in
+            let file = try exportFolder().appendingPathComponent(NetherVaultsPlugin.exportName(name))
+            try Data(text.utf8).write(to: file, options: .atomic)
+            return ["path": file.path]
         }
     }
 
