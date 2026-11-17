@@ -218,3 +218,46 @@ The lock keeps Nether's apps to your endpoints. It cannot stop another
 program on someone's computer from reading their vault's files, or an app
 older than this one, which does not know the lock. Network rules on your
 organization's devices close that gap.
+
+## Data policies
+
+With **Data policies** on, the console also shows a **Data policies**
+section: how far your workspaces are shared in public, and whether their
+text leaves the server by export. Set a policy for **Every workspace**,
+then set any workspace apart with its own: pick it under **Set a
+workspace apart** and choose **Set apart**. It starts from every
+workspace's policy. **Use every workspace's** puts it back. Each form saves
+on its own.
+
+| Setting | What it does |
+| --- | --- |
+| Share links | **Open at any level**, **View only**, or **Off** |
+| Serve published sites | Off: no site of the workspace is served or published |
+| Allow export | Off: the public API gives none of the workspace's text |
+
+A workspace's owners keep their own switches, as publishing off; a policy
+only narrows them, and they cannot change it.
+
+- **Share links, View only.** A new link may only view, and a link made to
+  comment or edit opens to view. People visiting by a link are
+  disconnected when you save, and connect again only to view.
+- **Share links, Off.** No new link, and every link of the workspace tells
+  its visitor that the server's policy stops it. The links are kept, and
+  open again when you allow them.
+- **Published sites off.** The workspace's sites answer as not published,
+  on your server's address and on their own domains, and no one publishes.
+  The sites are kept, and come back when you allow them.
+- **Export off.** The [public API](../api/) refuses a note's Markdown, a
+  database's rows, and a search in the workspace, with 403. A search of
+  every workspace leaves it out. Lists of notes' names and paths, and
+  writes, go on.
+
+A change holds at once on the server you saved it on, and within five
+seconds on the others. Turning **Data policies** off narrows nothing, and
+keeps what you set for when it is on again.
+
+The apps' own export, and the Share dialog saying why a control is gone,
+come in a later version, as do how long history and the trash are kept
+and legal hold. A desktop vault's files are on its device, the person's
+own: no policy stops another program from reading them. Device management
+on your organization's computers is the tool for that.

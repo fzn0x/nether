@@ -62,6 +62,10 @@ Pages run no script: they are plain HTML, and load at once.
   nothing and no one publishes; turned on again, the sites come back.
 - **An encrypted workspace publishes nothing**: the server cannot read its
   notes.
+- **The server's admin may stop a workspace's sites** by a
+  [data policy](../admin/#data-policies), over its owners' switch. Its
+  sites then open nothing and no one publishes, until the policy allows
+  them again.
 
 A folder site follows the folder's path: renaming the folder takes its
 pages down until it is published again under the new name. A page site

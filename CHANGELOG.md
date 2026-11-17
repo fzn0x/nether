@@ -310,6 +310,14 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   and marks a provider elsewhere; the server refuses to keep or relay to
   one
   ([ADR 0086](docs/adr/0086-ai-is-locked-to-the-endpoints-an-instance-admin-approves-in-the-apps-and-the-relay.md)).
+- Data policies for public sharing and export, on the server: in the
+  console's Data policies section, an instance admin sets for every
+  workspace, or for one set apart, whether share links open at any level,
+  only view, or not at all, whether its published sites are served, and
+  whether the public API gives its notes' text, rows and search passages.
+  A change closes the visits it stops, and `/api/me` tells the apps each
+  workspace's `export`
+  ([ADR 0088](docs/adr/0088-data-policies-set-a-workspaces-retention-legal-hold-public-sharing-and-export-over-its-owners.md)).
 
 ### Changed
 
