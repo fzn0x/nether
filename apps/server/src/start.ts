@@ -11,7 +11,7 @@ import { readConfig } from "./config.ts";
 import { connectPostgres } from "./db.ts";
 import type { EnterpriseModule } from "./enterprise.ts";
 import { smtpMailer } from "./mail.ts";
-import { migrate } from "./migrations.ts";
+import { migrate, schemaVersion } from "./migrations.ts";
 import { connectRedis, watchRedis } from "./redis.ts";
 import { newSetupCode, setupNeeded } from "./setup.ts";
 
@@ -45,7 +45,12 @@ export async function startServer(options: StartOptions = {}): Promise<void> {
         ? {}
         : { enterpriseModules: options.enterpriseModules }),
     });
-    if (migrated.from !== migrated.to) {
+    if (migrated.from > schemaVersion) {
+      app.log.info(
+        { database: migrated.from, server: schemaVersion },
+        "The database's schema is newer than this server's, and no step since needs a newer server: running on it",
+      );
+    } else if (migrated.from !== migrated.to) {
       app.log.info(migrated, "Migrated the database to the server's schema");
     }
     if (redis !== undefined) watchRedis(redis, app.log);
