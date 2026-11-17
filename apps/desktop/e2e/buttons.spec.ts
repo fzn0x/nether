@@ -102,17 +102,68 @@ test("a button sets its note's property, then makes a note from a template and o
   expect(errors).toEqual([]);
 });
 
-test("a button runs a command by its ID, and says when Nether has none", async ({ page }) => {
+test("a button asks before it runs a command, then not again until the button changes", async ({
+  page,
+}) => {
   const errors = errorsOf(page);
-  const button = await openButton(
-    page,
-    "Today",
-    ["label: Open today", "action:", "  type: command", "  command: dayNote"],
-    "Open today",
-  );
-  await button.click();
-  await expect(page.locator("#note-title")).toHaveText("2026-11-06");
+  const lines = [
+    "label: Close the day",
+    "actions:",
+    "  - type: updateMetadata",
+    "    bindTarget: status",
+    "    value: closed",
+    "  - type: command",
+    "    command: dayNote",
+  ];
+  const button = await openButton(page, "Today", lines, "Close the day");
+  const title = page.locator("#note-title");
+  const ask = page.getByRole("alertdialog", { name: "Run this button?" });
 
+  // It names the command as the palette does; Cancel runs none of its actions.
+  await button.click();
+  await expect(ask).toHaveAccessibleDescription("This button runs: Open today's note. Run it?");
+  await expect(ask.getByRole("button", { name: "Cancel" })).toBeFocused();
+  expect(await violations(page)).toEqual([]);
+  await ask.getByRole("button", { name: "Cancel" }).click();
+  await expect(ask).toBeHidden();
+  await expect(title).toHaveText("Today");
+  expect(await fileText(page, "Today.md")).toContain("status: open");
+
+  // Run runs them all.
+  await button.click();
+  await ask.getByRole("button", { name: "Run" }).click();
+  await expect(title).toHaveText("2026-11-06");
+  await expect.poll(() => fileText(page, "Today.md")).toContain("status: closed");
+
+  // On this device, the button as it is runs at once.
+  const notes = page.getByRole("list", { name: "Notes" });
+  await notes.getByRole("button", { name: /^Today/ }).click();
+  await expect(title).toHaveText("Today");
+  await page.getByRole("button", { name: "Close the day", exact: true }).click();
+  await expect(title).toHaveText("2026-11-06");
+  await expect(ask).toHaveCount(0);
+
+  // Edited, it asks again.
+  await notes.getByRole("button", { name: /^Today/ }).click();
+  await expect(title).toHaveText("Today");
+  await editFile(
+    page,
+    "Today.md",
+    withButton(
+      "status: open",
+      lines.map((line) => (line === "label: Close the day" ? "label: End the day" : line)),
+    ),
+  );
+  await page.getByRole("button", { name: "End the day", exact: true }).click();
+  await expect(ask).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(ask).toBeHidden();
+  await expect(title).toHaveText("Today");
+  expect(errors).toEqual([]);
+});
+
+test("a button says when Nether has no command it names, and asks nothing", async ({ page }) => {
+  const errors = errorsOf(page);
   const missing = await openButton(
     page,
     "Bold",
@@ -131,6 +182,7 @@ test("a button runs a command by its ID, and says when Nether has none", async (
   await expect(page.getByRole("alert")).toHaveText(
     "The button stopped: Nether has no command editor:toggle-bold.",
   );
+  await expect(page.getByRole("alertdialog")).toHaveCount(0);
   // The actions after it do not run.
   expect(await fileText(page, "Bold.md")).toContain("status: open");
   expect(errors).toEqual([]);

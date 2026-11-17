@@ -217,7 +217,7 @@ describe("asking before a button runs commands", () => {
 
   it("asks until the button ran as it is, and each time for a vault plugin's command", async () => {
     const store = new MemoryStore();
-    const app = [{ id: "trashNote", ...titles.trashNote }] as const;
+    const app = [{ id: "trashNote", title: "Move to trash", fromVault: false }];
     const fromVault = [...app, { id: "echo:say", title: "Say it", fromVault: true }];
     expect(await mustAsk(store, here, "h", [])).toBe(false);
     expect(await mustAsk(store, here, "h", app)).toBe(true);
