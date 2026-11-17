@@ -44,7 +44,9 @@ export default defineConfig(
   {
     // Enterprise features plug in through extension points; nothing
     // outside enterprise/ may depend on them (docs/requirements.md#editions).
-    ignores: ["enterprise/**"],
+    // The web app's end-to-end server is the one exception: it runs the
+    // server with the modules, as the image does (ADR 0079).
+    ignores: ["enterprise/**", "apps/web/e2e/server.ts"],
     rules: {
       "no-restricted-imports": [
         "error",
