@@ -47,6 +47,12 @@ export interface Config {
    */
   readonly aiPrivate: boolean | readonly string[];
   /**
+   * Which addresses that are not public the single sign-on providers the
+   * console names may be at, as Keycloak beside the server (ADR 0080):
+   * none, all, or these addresses and ranges.
+   */
+  readonly ssoPrivate: boolean | readonly string[];
+  /**
    * The 32 bytes that seal what the server keeps secret for its accounts,
    * AI providers' keys among them, from NETHER_SECRET_KEY in base64; none,
    * and the server keeps no such secret.
@@ -532,6 +538,7 @@ export function readConfig(env: NodeJS.ProcessEnv): Config {
     webhookPrivate: readPrivate(env, "NETHER_WEBHOOK_PRIVATE", "webhooks"),
     ai: readAi(env),
     aiPrivate: readPrivate(env, "NETHER_AI_PRIVATE", "the admin's AI providers"),
+    ssoPrivate: readPrivate(env, "NETHER_SSO_PRIVATE", "single sign-on providers"),
     secretKey: readSecretKey(env),
     mail: readMail(env),
     publicUrl,

@@ -288,6 +288,19 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   apply to every session at once, and the page lists the ways the server
   signs people in now
   ([ADR 0084](docs/adr/0084-the-consoles-security-page-sets-session-lengths-sign-in-limits-and-email-codes-unless-the-environment-does.md)).
+- Single sign-on, first part: the admin console's Single sign-on page,
+  while the feature is on, adds SAML 2.0 providers, from their metadata's
+  address or pasted, and OpenID Connect providers, from their issuer and
+  client, each trusted for the email domains it is given, and shows what
+  to give each. The apps offer each by name. SAML answers are checked by
+  `@node-saml/node-saml`: only for a request the server made, once, the
+  assertion signed and meant for this provider's address, encrypted to
+  Nether's own certificate when the provider is told to. A first sign-in
+  at a provider's domains makes an account, or links one by its address;
+  elsewhere only an OpenID Connect provider's verified address links.
+  `NETHER_SSO_PRIVATE` lets providers be on the server's own network. CI
+  signs in through Keycloak, by SAML and by OpenID Connect
+  ([ADR 0080](docs/adr/0080-single-sign-on-binds-saml-and-oidc-providers-to-email-domains-and-enforcement-refuses-other-ways-in.md)).
 - AI locked to approved endpoints, the `policies` feature's first part: an
   instance admin lists the addresses AI may go to, in the console's AI
   endpoints section or with `NETHER_AI_ENDPOINTS`, and for every workspace

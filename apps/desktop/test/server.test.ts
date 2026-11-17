@@ -16,6 +16,7 @@ import {
   setupNeeded,
   signInMethods,
   signInWithProvider,
+  ssoProviders,
 } from "../src/server.ts";
 
 interface Sent {
@@ -294,6 +295,48 @@ describe("signing in with a provider", () => {
     await expect(signInWithProvider(fetcher, base, odd, () => Promise.resolve())).rejects.toThrow(
       "Signing in failed: teapot.",
     );
+  });
+
+  it("signs in through a console's provider by its short name", async () => {
+    const { fetcher, sent } = fakeFetch({
+      "POST /api/sso/corp/flows": () =>
+        json(201, { url: "https://idp.example.org/sso?SAMLRequest=x" }),
+      "POST /api/sso/redeem": () => json(201, { token: "session", expiresAt: "", user }),
+    });
+    const signedIn = await signInWithProvider(
+      fetcher,
+      base,
+      loopback({ code: "handoff" }),
+      () => Promise.resolve(),
+      "corp",
+    );
+    expect(signedIn).toEqual({ token: "session", user });
+    expect(sent.map((request) => new URL(request.url).pathname)).toEqual([
+      "/api/sso/corp/flows",
+      "/api/sso/redeem",
+    ]);
+    const odd = loopback({ error: "no_address" });
+    await expect(
+      signInWithProvider(fetcher, base, odd, () => Promise.resolve(), "corp"),
+    ).rejects.toThrow("The provider gave no email address");
+  });
+
+  it("lists a server's single sign-on providers, and none when it has none to give", async () => {
+    const methods = { password: true, emailCode: false, oidc: null };
+    const on = fakeFetch({
+      "GET /api/sign-in-methods": () => json(200, methods),
+      "GET /api/sso": () => json(200, { providers: [{ id: "corp", name: "Corp SSO" }, { id: 7 }] }),
+    });
+    expect(await signInMethods(on.fetcher, base)).toEqual({
+      ...methods,
+      sso: [{ id: "corp", name: "Corp SSO" }],
+    });
+    const off = fakeFetch({
+      "GET /api/sign-in-methods": () => json(200, methods),
+      "GET /api/sso": () => json(404, { message: "Route GET:/api/sso not found" }),
+    });
+    expect((await signInMethods(off.fetcher, base)).sso).toEqual([]);
+    expect(await ssoProviders(fakeFetch({}).fetcher, base)).toEqual([]);
   });
 
   it("makes a verifier of 43 characters, and a challenge from it", async () => {

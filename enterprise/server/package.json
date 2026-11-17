@@ -12,6 +12,7 @@
   "dependencies": {
     "@nether/enterprise-admin": "workspace:*",
     "@nether/enterprise-policies": "workspace:*",
+    "@nether/enterprise-sso": "workspace:*",
     "@nether/server": "workspace:*"
   },
   "devDependencies": {
