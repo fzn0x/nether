@@ -54,8 +54,9 @@ Notion exports. Self-hosting is available for enterprise.
 > [publishes](https://fzn0x.github.io/nether/publishing/) as a site the
 > server draws for anyone, on its own domain if you like, linking only
 > between its own pages. Phase 5, enterprise, mobile and scale, is under
-> way, 7 of 11 on the
-> [roadmap](docs/roadmap.md#phase-5-enterprise-mobile-and-scale): the
+> way, 8 of 11 on the
+> [roadmap](docs/roadmap.md#phase-5-enterprise-mobile-and-scale): a
+> 50,000-note vault opening to its last note about 450 ms sooner; the
 > [admin console](https://fzn0x.github.io/nether/admin/), where an
 > instance admin turns enterprise features on, sees every workspace, and
 > sets how long sessions last and how many sign-in tries there are; AI

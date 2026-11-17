@@ -229,7 +229,10 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   database row. It signs in with a write token, kept in the browser's own
   storage, and reaches the person's server alone
   ([ADR 0066](docs/adr/0066-the-web-clipper-is-a-manifest-v3-extension-that-sends-clips-to-the-users-own-server-alone.md)).
-  The build makes a ZIP of each for its store.
+  Each release attaches it, free and with no store: a ZIP for Chrome,
+  Edge and Brave, and for Firefox a ZIP and an `.xpi`; the guide installs
+  it from them. Firefox's manifest declares the page content and the API
+  token it sends.
 - Buttons in notes, as `meta-bind-button` code blocks in the syntax of
   Obsidian's Meta Bind plugin, drawn below their code by the built-in
   Buttons plugin, with a Button entry in the slash menu
@@ -500,6 +503,10 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- The desktop app opens a large vault sooner: on 50,000 notes its last
+  note shows at about 990 ms, against 1,440 before. The vault's files come
+  from its index as one JSON text, where each of their values crossed
+  MyGO's SQLite plugin as an object of its own.
 - The app's commands are in one registry with its plugins', from which
   the menus, the palette and the shortcuts are made.
 - Mermaid diagrams and query blocks are built-in plugins, drawn through

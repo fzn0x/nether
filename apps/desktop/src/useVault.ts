@@ -41,7 +41,9 @@ export function useVault(info: VaultInfo): VaultState {
           return;
         }
         const vault = new Vault(files, store);
-        await vault.open();
+        await vault.load();
+        backend.mark("files-loaded");
+        await vault.reconcile("");
         backend.mark("vault-listed");
         if (aborted()) return;
         indexer = new Indexer(

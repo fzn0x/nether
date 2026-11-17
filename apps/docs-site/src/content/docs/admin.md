@@ -145,6 +145,14 @@ send people back to, and `NETHER_SECRET_KEY`, which seals each provider's
 key and client secret on the server. A provider the server's settings set,
 `NETHER_OIDC_ISSUER`, shows there as set by them and signs in as before.
 
+The provider is yours: you bring your own Okta, Microsoft Entra ID,
+Keycloak or other tenant, and Nether has no account at any of them. CI
+signs in through a real Keycloak, by SAML and by OpenID Connect, and
+through answers shaped as Okta's and Entra ID's documents describe them.
+If you run one of those, or another provider, tell how it went with the
+[identity provider report](https://github.com/fzn0x/nether/issues/new?template=provider_report.yml),
+so the steps below hold for everyone.
+
 ### Adding a provider
 
 Choose **Add a provider**, then:

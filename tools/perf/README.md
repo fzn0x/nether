@@ -98,6 +98,7 @@ reached each point of its start (`Desktop.Mark`), and the time of day:
 | Mark | When |
 | --- | --- |
 | `store-open` | The vault's index is open |
+| `files-loaded` | The files the index kept are loaded, before the folder is listed |
 | `vault-listed`, `vault-open` | The vault's notes are listed, and the vault shows |
 | `note-shown` | The last note's text shows: the startup target |
 | `links-loaded` | The link index has loaded what it kept |
