@@ -218,12 +218,13 @@ try {
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ path: "Later from the server.md", markdown: "Made while away.\n" }),
   });
+  // The app opens the vault again at its last note; the drawer opens once
+  // the vault shows, not while it is still opening.
+  await page.getByRole("textbox", { name: "From the phone, note text" }).waitFor();
   await page.getByRole("button", { name: "Notes and menus", exact: true }).click();
-  await page
-    .getByRole("complementary", { name: "Team" })
-    .getByText("Later from the server", { exact: true })
-    .first()
-    .waitFor();
+  const teamAgain = page.getByRole("complementary", { name: "Team" });
+  await teamAgain.waitFor();
+  await teamAgain.getByText("Later from the server", { exact: true }).first().waitFor();
   console.log("Started again, the app was still signed in, and the server's new note arrived.");
 
   const marks = execFileSync(adb, ["logcat", "-d", "-s", "NetherMarks:I"], { encoding: "utf8" });
