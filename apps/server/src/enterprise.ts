@@ -15,9 +15,18 @@ export type EnterpriseFeature = (typeof enterpriseFeatures)[number];
 /** How the environment pins each feature: on, off, or not at all, when the console decides. */
 export type EnterprisePins = Readonly<Record<EnterpriseFeature, boolean | undefined>>;
 
-/** What a module's plugin is given. */
-export interface EnterpriseContext {
+/** What the server shares with every module, beside its switch. */
+export interface EnterpriseServices {
   readonly db: Database;
+  /**
+   * Closes an account's open sync connections, so its apps connect again
+   * and every document is checked anew, as a change of its role does.
+   */
+  readonly disconnect: (userId: string) => void;
+}
+
+/** What a module's plugin is given. */
+export interface EnterpriseContext extends EnterpriseServices {
   /** Whether the module's feature is on now. */
   readonly isOn: () => Promise<boolean>;
   /** A route's check that answers 404 while the module's feature is off. */
@@ -155,13 +164,13 @@ function notFound(request: FastifyRequest, reply: FastifyReply): FastifyReply {
 }
 
 /**
- * Registers every module this build has, each with the way to ask for its
- * switch. A feature the environment pins on with no module in the build
- * is an error at startup, not a silent no.
+ * Registers every module this build has, each with what the server shares
+ * and the way to ask for its switch. A feature the environment pins on with
+ * no module in the build is an error at startup, not a silent no.
  */
 export async function registerEnterprise(
   app: FastifyInstance,
-  db: Database,
+  services: EnterpriseServices,
   switches: EnterpriseSwitches,
   modules: readonly EnterpriseModule[],
 ): Promise<void> {
@@ -177,6 +186,6 @@ export async function registerEnterprise(
     const isOn = () => switches.on(module.feature);
     const whenOn = async (request: FastifyRequest, reply: FastifyReply) =>
       (await isOn()) ? undefined : notFound(request, reply);
-    await app.register(module.plugin, { db, isOn, whenOn });
+    await app.register(module.plugin, { ...services, isOn, whenOn });
   }
 }

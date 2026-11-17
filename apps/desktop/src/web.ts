@@ -39,6 +39,16 @@ export const webFetch: typeof fetch = (input, init) => {
   return fetch(input, { ...init, headers, credentials: "same-origin" });
 };
 
+/** Why the server refused: the message of its answer, or the answer's status text. */
+export async function messageOf(answer: Response): Promise<string> {
+  try {
+    const body = (await answer.json()) as { readonly message?: unknown };
+    return typeof body.message === "string" ? body.message : answer.statusText;
+  } catch {
+    return answer.statusText;
+  }
+}
+
 const accountKey = "nether.web.account";
 const workspacesKey = "nether.web.workspaces";
 /** Where the account's private key for encrypted workspaces is kept, by the account's ID. */
