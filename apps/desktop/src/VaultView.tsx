@@ -55,7 +55,12 @@ import { type VaultAccess, vaultAccess } from "./plugins/vault.ts";
 import { isFolderOn, isOn, readBuiltins, usePluginState } from "./plugins/state.ts";
 import { type Command, CommandRegistry } from "./plugins/registry.ts";
 import { ExportDialog } from "./ExportDialog.tsx";
-import { ExportPolicyContext, useExportPolicy } from "./exportPolicy.ts";
+import {
+  ExportPolicyContext,
+  useExportPolicy,
+  usePurgeAsPolicySays,
+  useTrashPolicy,
+} from "./workspacePolicy.ts";
 import { MergeNoteDialog } from "./MergeNoteDialog.tsx";
 import { MoveNoteDialog } from "./MoveNoteDialog.tsx";
 import { NewNoteDialog } from "./NewNoteDialog.tsx";
@@ -337,6 +342,8 @@ export function VaultView(props: {
   const ai = useAi(vault, sync.link);
   // Whether the workspace's data policy lets its notes be exported (ADR 0088).
   const exportPolicy = useExportPolicy(vault, sync.link);
+  // The trash and the vault's own history purged once it has settled, unless its workspace is on hold.
+  usePurgeAsPolicySays(vault, sync.link);
   // Search by meaning, when it is on for the vault (ADR 0074).
   const meaning = useMeaning(vault, ai, sync.link);
   // Asking your notes finds notes by meaning too, while search by meaning runs.
@@ -428,6 +435,8 @@ export function VaultView(props: {
   const mode = (asks[focusedKey] ?? noAsks).mode;
   // The sidebar's tab: the app's own, or a plugin's panel by its ID.
   const [panel, setPanel] = useState<string>("notes");
+  // What the trash panel shows of the workspace's policy, asked as it opens.
+  const trashPolicy = useTrashPolicy(panel === "trash" ? vault : undefined, sync.link);
   // Whether the dialog that asks for the name this device goes by is open.
   const [namingMe, setNamingMe] = useState(false);
   const [switcher, setSwitcher] = useState(false);
@@ -2021,7 +2030,7 @@ export function VaultView(props: {
                   }}
                 />
               ) : panel === "trash" ? (
-                <TrashPanel vault={state.vault} onRestored={openRestored} />
+                <TrashPanel vault={state.vault} policy={trashPolicy} onRestored={openRestored} />
               ) : panel === "ask" && ai.resolution.provider !== undefined ? (
                 <Suspense fallback={null}>
                   <AskPanel
