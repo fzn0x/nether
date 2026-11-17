@@ -227,6 +227,26 @@ describe("shared pages", () => {
     expect(rows).toEqual([]);
   });
 
+  it("take no note into a unit dropped while the move was asked", async () => {
+    // Its access was read with the teamspace there; it is gone when the move is written.
+    const { gate, wrap } = holding(
+      (text) => text.includes("FOR KEY SHARE") || text.startsWith("INSERT INTO note_units"),
+    );
+    const test = await start({ wrapDb: wrap });
+    const design = (await call(test, "POST", "/teamspaces", test.token, { name: "Design" })).json<{
+      id: string;
+    }>().id;
+    const note = randomUUID();
+    gate.armed = true;
+    const moving = call(test, "PUT", `/notes/${note}/unit`, test.token, { unit: design });
+    await gate.held;
+    expect((await call(test, "DELETE", `/teamspaces/${design}`, test.token)).statusCode).toBe(204);
+    gate.release();
+    expect((await moving).statusCode).toBe(403);
+    const { rows } = await test.db.query("SELECT note FROM note_units");
+    expect(rows).toEqual([]);
+  });
+
   it("list their notes where they sit before they stop being shared on their own", async () => {
     const test = await start();
     const launch = randomUUID();

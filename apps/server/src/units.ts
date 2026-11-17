@@ -803,13 +803,20 @@ export function registerUnits(
         if ((leaves && !writesAt(found.get(current))) || !writesAt(found.get(target))) {
           return fail(reply, 403, noMove);
         }
-        await db.transaction(async (tx) => {
+        const moved = await db.transaction(async (tx) => {
           if (target === general) {
             await tx.query("DELETE FROM note_units WHERE workspace_id = $1 AND note = $2", [
               workspace,
               note,
             ]);
           } else {
+            // Still there, and kept until this commits: a unit dropped since
+            // it was read takes no note.
+            const { rows: there } = await tx.query(
+              "SELECT 1 FROM units WHERE id = $1 AND workspace_id = $2 FOR KEY SHARE",
+              [target, workspace],
+            );
+            if (there.length === 0) return false;
             await tx.query(
               `INSERT INTO note_units (workspace_id, note, unit_id) VALUES ($1, $2, $3)
                ON CONFLICT (workspace_id, note) DO UPDATE SET unit_id = excluded.unit_id`,
@@ -817,7 +824,7 @@ export function registerUnits(
             );
           }
           // Who may open it changes with where it is.
-          if (current === target) return;
+          if (current === target) return true;
           await events.emit(
             tx,
             {
@@ -829,7 +836,9 @@ export function registerUnits(
             },
             originOf(request),
           );
+          return true;
         });
+        if (!moved) return fail(reply, 403, noMove);
         return { note, unit: target };
       };
       // A move into a page's unit waits while the page stops being shared on
