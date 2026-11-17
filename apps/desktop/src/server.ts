@@ -63,6 +63,12 @@ export type LinksPolicy = "on" | "view" | "off";
 /** Where the browser comes back to after a provider, and the wait for it. */
 export interface LoopbackWait {
   readonly redirect: string;
+  /**
+   * Opens the provider so that it comes back to this wait, as a phone's
+   * sign-in sheet or tab does (ADR 0087); absent where the system's browser
+   * opens it, as on the desktop.
+   */
+  readonly open?: (url: string) => Promise<void>;
   /** The query the browser comes back with, as its `code` or `error`. */
   wait(): Promise<Readonly<Record<string, string>>>;
   close(): Promise<void>;
@@ -388,7 +394,8 @@ const providerErrors: Readonly<Record<string, MessageKey>> = {
 /**
  * Signs in with the server's provider, as RFC 8252 has an app do: the
  * system's browser signs in at the provider, comes back to the app's
- * loopback address with a code, which the app redeems with its verifier.
+ * loopback address, or a phone's own scheme, with a code, which the app
+ * redeems with its verifier.
  * The provider is the server's own (ADR 0034), or one of its console's by
  * its short name (ADR 0080). With an invitation's token, the account it
  * signs in to accepts it.
@@ -416,7 +423,7 @@ export async function signInWithProvider(
         },
       }),
     );
-    await openUrl(text(flow.url, base));
+    await (loopback.open ?? openUrl)(text(flow.url, base));
     const query = await loopback.wait();
     const error = query.error;
     if (error !== undefined) {
