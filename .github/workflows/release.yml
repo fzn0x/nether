@@ -245,12 +245,17 @@ jobs:
           node-version-file: .nvmrc
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - name: Build its ZIPs for Chrome and Firefox
-        run: pnpm --filter @nether/clipper build
+      - name: Build its ZIPs for Chrome and Firefox, and Firefox's as an .xpi too
+        run: |
+          pnpm --filter @nether/clipper build
+          # An .xpi is the same archive, the name Firefox installs from a file.
+          for zip in apps/clipper/dist/nether-clipper-firefox-*.zip; do cp "$zip" "${zip%.zip}.xpi"; done
       - uses: actions/upload-artifact@v7
         with:
           name: release-clipper
-          path: apps/clipper/dist/*.zip
+          path: |
+            apps/clipper/dist/*.zip
+            apps/clipper/dist/*.xpi
 
   publish:
     name: Publish
