@@ -1,0 +1,11 @@
+# The kind cluster the chart's test runs on (.github/workflows/kind.yml):
+# one node, its NodePort 30080 reachable from the host.
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+nodes:
+  - role: control-plane
+    extraPortMappings:
+      - containerPort: 30080
+        hostPort: 30080
+        listenAddress: 127.0.0.1
+        protocol: TCP
