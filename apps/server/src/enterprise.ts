@@ -6,6 +6,7 @@
 // seconds the switches are kept. Nothing here imports the modules: a build
 // passes in those it has.
 import type { FastifyInstance, FastifyPluginAsync, FastifyReply, FastifyRequest } from "fastify";
+import type { AiEndpoints } from "./aiEndpoints.ts";
 import type { Database } from "./db.ts";
 import type { SecuritySettings } from "./settings.ts";
 
@@ -26,6 +27,8 @@ export interface EnterpriseServices {
   readonly disconnect: (userId: string) => void;
   /** The security settings (ADR 0084), which the console's Security page reads and sets. */
   readonly security: SecuritySettings;
+  /** The approved AI endpoints (ADR 0086), which the `policies` module's page reads and sets. */
+  readonly aiEndpoints: AiEndpoints;
 }
 
 /** What a module's plugin is given. */
