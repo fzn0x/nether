@@ -73,6 +73,23 @@ describe("noteDocuments", () => {
     expect((await memory.read("Ideas.md")).text).toBe("# Ideas\n\nFirst.\n\nSecond.\n");
   });
 
+  it("saves every open note at once as a phone's app leaves the screen, and keeps it open", async () => {
+    const { memory, vault, id, documents } = await setUp({ "Ideas.md": "# Ideas\n\nFirst.\n" });
+    const held = documents.open(id("Ideas.md"));
+    const { document } = await ready(held.note);
+    setDocumentBlocks(document, parseMarkdown("# Ideas\n\nFirst.\n\nKept.\n").content);
+    // At once: neither the pause before a save nor the index's quarter second goes by.
+    await documents.flush();
+    expect((await memory.read("Ideas.md")).text).toBe("# Ideas\n\nFirst.\n\nKept.\n");
+    const stored = await vault.documents.document(id("Ideas.md"));
+    const again = new Y.Doc();
+    for (const update of stored.updates) Y.applyUpdate(again, update.data);
+    expect(Y.encodeStateVector(again)).toEqual(Y.encodeStateVector(document));
+    // Still open, for the next edit.
+    expect(documents.open(id("Ideas.md")).note).toBe(held.note);
+    held.release();
+  });
+
   it("keeps a note let go and held again at once, as React does in development", async () => {
     const { id, documents } = await setUp({ "Ideas.md": "# Ideas\n" });
     const first = documents.open(id("Ideas.md"));
