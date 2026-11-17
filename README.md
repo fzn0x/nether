@@ -41,7 +41,9 @@ Notion exports. Self-hosting is available for enterprise.
 > Markdown that Obsidian reads, and drawn in the notes that embed them;
 > the desktop app's [writing assist](https://fzn0x.github.io/nether/ai/)
 > works with an AI provider you bring, OpenAI-compatible or Anthropic, its
-> key in the system's keychain; and the
+> key in the system's keychain; a page or a folder
+> [publishes](https://fzn0x.github.io/nether/publishing/) as a site the
+> server draws for anyone, linking only between its own pages; and the
 > [roadmap](docs/roadmap.md#phase-4-platform) ticks off the rest as it
 > lands.
 
