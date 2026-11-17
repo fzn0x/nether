@@ -1,44 +1,182 @@
-// The extension point for enterprise features. They are free and open
-// source, live in enterprise/, and stay off until an admin switches them on.
-// Nothing here imports them: a build passes in the modules it has.
-import type { FastifyInstance, FastifyPluginAsync } from "fastify";
+// The extension point for enterprise features (ADR 0079). They are free and
+// open source, live in enterprise/, and stay off until an admin switches
+// them on: in the console, unless NETHER_ENTERPRISE_<FEATURE> pins them on
+// or off. Every module a build has registers once, and asks for its switch
+// on each request, so a switch takes effect on every node within the few
+// seconds the switches are kept. Nothing here imports the modules: a build
+// passes in those it has.
+import type { FastifyInstance, FastifyPluginAsync, FastifyReply, FastifyRequest } from "fastify";
+import type { Database } from "./db.ts";
 
 export const enterpriseFeatures = ["sso", "scim", "audit", "policies", "admin", "ha"] as const;
 
 export type EnterpriseFeature = (typeof enterpriseFeatures)[number];
 
-/** Which enterprise features are on. */
-export type EnterpriseSwitches = Readonly<Record<EnterpriseFeature, boolean>>;
+/** How the environment pins each feature: on, off, or not at all, when the console decides. */
+export type EnterprisePins = Readonly<Record<EnterpriseFeature, boolean | undefined>>;
 
-/** An enterprise feature's code: a Fastify plugin the server registers only when the feature is on. */
-export interface EnterpriseModule {
-  readonly feature: EnterpriseFeature;
-  readonly plugin: FastifyPluginAsync;
+/** What a module's plugin is given. */
+export interface EnterpriseContext {
+  readonly db: Database;
+  /** Whether the module's feature is on now. */
+  readonly isOn: () => Promise<boolean>;
+  /** A route's check that answers 404 while the module's feature is off. */
+  readonly whenOn: (
+    request: FastifyRequest,
+    reply: FastifyReply,
+  ) => Promise<FastifyReply | undefined>;
 }
 
-/** The environment variable that switches a feature, such as NETHER_ENTERPRISE_SSO. */
+/** An enterprise feature's code: a Fastify plugin the server registers in every build that has it. */
+export interface EnterpriseModule {
+  readonly feature: EnterpriseFeature;
+  readonly plugin: FastifyPluginAsync<EnterpriseContext>;
+}
+
+/** The environment variable that pins a feature, such as NETHER_ENTERPRISE_SSO. */
 export function switchVariable(feature: EnterpriseFeature): string {
   return `NETHER_ENTERPRISE_${feature.toUpperCase()}`;
 }
 
+/** Whether a name is an enterprise feature's. */
+export function isEnterpriseFeature(name: string): name is EnterpriseFeature {
+  return (enterpriseFeatures as readonly string[]).includes(name);
+}
+
+/** How long a server keeps what the console chose before it reads it again. */
+const keptFor = 5_000;
+
+/** The key a feature's switch is kept under in `instance_settings`. */
+const settingKey = (feature: EnterpriseFeature) => `enterprise.${feature}`;
+
+/** A feature's switch as the console shows it. */
+export interface FeatureState {
+  readonly feature: EnterpriseFeature;
+  readonly on: boolean;
+  /** How the environment pins it, if it does. */
+  readonly pinned: "on" | "off" | null;
+  /** Whether this build has its module. */
+  readonly available: boolean;
+}
+
 /**
- * Registers the module of every feature that is on. A feature switched on
- * without a module in this build is an error at startup, not a silent no.
+ * Every feature's switch: its pin when the environment sets one, else what
+ * the console chose, kept in the database and read again every few
+ * seconds. A feature this build has no module for is off.
+ */
+export class EnterpriseSwitches {
+  readonly #db: Database;
+  readonly #pins: EnterprisePins;
+  readonly #available: ReadonlySet<EnterpriseFeature>;
+  #chosen:
+    { readonly at: number; readonly values: Promise<ReadonlyMap<string, boolean>> } | undefined;
+
+  constructor(db: Database, pins: EnterprisePins, available: Iterable<EnterpriseFeature>) {
+    this.#db = db;
+    this.#pins = pins;
+    this.#available = new Set(available);
+  }
+
+  /** How the environment pins a feature; undefined when it leaves it to the console. */
+  pinned(feature: EnterpriseFeature): boolean | undefined {
+    return this.#pins[feature];
+  }
+
+  /** Whether this build has a feature's module. */
+  available(feature: EnterpriseFeature): boolean {
+    return this.#available.has(feature);
+  }
+
+  #read(): Promise<ReadonlyMap<string, boolean>> {
+    const kept = this.#chosen;
+    if (kept !== undefined && Date.now() - kept.at < keptFor) return kept.values;
+    const values = this.#db
+      .query("SELECT key, value FROM instance_settings WHERE key LIKE 'enterprise.%'")
+      .then(({ rows }) => new Map(rows.map((row) => [String(row.key), row.value === true])));
+    this.#chosen = { at: Date.now(), values };
+    // A failed read is not kept: the next asks again.
+    values.catch(() => {
+      if (this.#chosen?.values === values) this.#chosen = undefined;
+    });
+    return values;
+  }
+
+  /** Whether a feature is on now. */
+  async on(feature: EnterpriseFeature): Promise<boolean> {
+    if (!this.#available.has(feature)) return false;
+    const pin = this.#pins[feature];
+    if (pin !== undefined) return pin;
+    return (await this.#read()).get(settingKey(feature)) ?? false;
+  }
+
+  /** Every feature's switch, as the console shows them. */
+  async states(): Promise<FeatureState[]> {
+    return Promise.all(
+      enterpriseFeatures.map(async (feature) => {
+        const pin = this.#pins[feature];
+        return {
+          feature,
+          on: await this.on(feature),
+          pinned: pin === undefined ? null : pin ? ("on" as const) : ("off" as const),
+          available: this.#available.has(feature),
+        };
+      }),
+    );
+  }
+
+  /** Whether each feature is on now, as the health check says. */
+  async all(): Promise<Record<EnterpriseFeature, boolean>> {
+    const states = await this.states();
+    return Object.fromEntries(states.map((state) => [state.feature, state.on])) as Record<
+      EnterpriseFeature,
+      boolean
+    >;
+  }
+
+  /** Keeps the console's choice for a feature the environment does not pin; this server sees it at once. */
+  async set(feature: EnterpriseFeature, on: boolean): Promise<void> {
+    await this.#db.query(
+      `INSERT INTO instance_settings (key, value) VALUES ($1, to_jsonb($2::boolean))
+        ON CONFLICT (key) DO UPDATE SET value = excluded.value, updated_at = now()`,
+      [settingKey(feature), on],
+    );
+    this.#chosen = undefined;
+  }
+}
+
+/** The 404 a feature that is off answers at its routes, as any route the server lacks. */
+function notFound(request: FastifyRequest, reply: FastifyReply): FastifyReply {
+  const path = request.url.split("?")[0] ?? request.url;
+  return reply.code(404).send({
+    statusCode: 404,
+    error: "Not Found",
+    message: `Route ${request.method}:${path} not found`,
+  });
+}
+
+/**
+ * Registers every module this build has, each with the way to ask for its
+ * switch. A feature the environment pins on with no module in the build
+ * is an error at startup, not a silent no.
  */
 export async function registerEnterprise(
   app: FastifyInstance,
+  db: Database,
   switches: EnterpriseSwitches,
   modules: readonly EnterpriseModule[],
 ): Promise<void> {
   for (const feature of enterpriseFeatures) {
-    if (!switches[feature]) continue;
-    const module = modules.find((item) => item.feature === feature);
-    if (module === undefined) {
+    if (switches.pinned(feature) === true && !switches.available(feature)) {
       throw new Error(
         `${switchVariable(feature)} is on, but this build of Nether has no ${feature} module. ` +
           "Turn it off, or run a build that includes it.",
       );
     }
-    await app.register(module.plugin);
+  }
+  for (const module of modules) {
+    const isOn = () => switches.on(module.feature);
+    const whenOn = async (request: FastifyRequest, reply: FastifyReply) =>
+      (await isOn()) ? undefined : notFound(request, reply);
+    await app.register(module.plugin, { db, isOn, whenOn });
   }
 }

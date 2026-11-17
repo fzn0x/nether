@@ -1,7 +1,7 @@
 // The server's configuration, read from environment variables.
 import { isIP } from "node:net";
 import { fileURLToPath } from "node:url";
-import { type EnterpriseSwitches, enterpriseFeatures, switchVariable } from "./enterprise.ts";
+import { type EnterprisePins, enterpriseFeatures, switchVariable } from "./enterprise.ts";
 
 export const logLevels = ["fatal", "error", "warn", "info", "debug", "trace", "silent"] as const;
 export type LogLevel = (typeof logLevels)[number];
@@ -69,7 +69,8 @@ export interface Config {
   readonly backup: BackupConfig | null;
   /** The web app's build to serve at `/` (ADR 0053), or none. */
   readonly webApp: WebAppConfig | null;
-  readonly enterprise: EnterpriseSwitches;
+  /** How the environment pins each enterprise feature; unset ones are the console's (ADR 0079). */
+  readonly enterprise: EnterprisePins;
 }
 
 export interface WebAppConfig {
@@ -125,6 +126,11 @@ function readSwitch(env: NodeJS.ProcessEnv, variable: string): boolean {
   if (on.includes(value)) return true;
   if (off.includes(value)) return false;
   throw new ConfigError(variable, `must be on or off, not "${env[variable] ?? ""}"`);
+}
+
+/** A switch the environment may pin on or off, or leave unset for the console. */
+function readPin(env: NodeJS.ProcessEnv, variable: string): boolean | undefined {
+  return (env[variable] ?? "").trim() === "" ? undefined : readSwitch(env, variable);
 }
 
 function readPort(env: NodeJS.ProcessEnv): number {
@@ -468,8 +474,8 @@ function readWebApp(env: NodeJS.ProcessEnv): WebAppConfig | null {
 /** Reads the configuration, throwing a ConfigError that names the variable at fault. */
 export function readConfig(env: NodeJS.ProcessEnv): Config {
   const enterprise = Object.fromEntries(
-    enterpriseFeatures.map((feature) => [feature, readSwitch(env, switchVariable(feature))]),
-  ) as Record<keyof EnterpriseSwitches, boolean>;
+    enterpriseFeatures.map((feature) => [feature, readPin(env, switchVariable(feature))]),
+  ) as Record<keyof EnterprisePins, boolean | undefined>;
   const host = env.NETHER_HOST?.trim() ?? "";
   const publicUrl = readHttpUrl(env, "NETHER_PUBLIC_URL");
   return {

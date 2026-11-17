@@ -573,6 +573,20 @@ export const migrations: readonly Migration[] = [
       ALTER TABLE sites ADD COLUMN indexed boolean NOT NULL DEFAULT true;
     `,
   },
+  {
+    version: 21,
+    name: "the console's settings for the whole server",
+    sql: `
+      -- What the admin console sets for the whole server (ADR 0079): each
+      -- enterprise feature's switch, under enterprise.<feature>, where the
+      -- environment does not pin it.
+      CREATE TABLE instance_settings (
+        key text PRIMARY KEY,
+        value jsonb NOT NULL,
+        updated_at timestamptz NOT NULL DEFAULT now()
+      );
+    `,
+  },
 ];
 
 /** The schema version this server writes and reads. */

@@ -1,4 +1,5 @@
 // A server for a test, on a database of its own, and its setup.
+import type { EnterpriseModule } from "../src/enterprise.ts";
 import { randomUUID } from "node:crypto";
 import type { FastifyInstance, LightMyRequestResponse } from "fastify";
 import type { Redis } from "ioredis";
@@ -77,6 +78,7 @@ export async function startServer(
     webhookWorker?: boolean;
     aiResolve?: Resolver;
     resolveTxt?: TxtResolver;
+    enterpriseModules?: readonly EnterpriseModule[];
   } = {},
 ): Promise<TestServer> {
   const db = await testDatabase();
@@ -93,6 +95,9 @@ export async function startServer(
     ...(options.webhookWorker === undefined ? {} : { webhookWorker: options.webhookWorker }),
     ...(options.aiResolve === undefined ? {} : { aiResolve: options.aiResolve }),
     ...(options.resolveTxt === undefined ? {} : { resolveTxt: options.resolveTxt }),
+    ...(options.enterpriseModules === undefined
+      ? {}
+      : { enterpriseModules: options.enterpriseModules }),
   });
   return {
     server,
