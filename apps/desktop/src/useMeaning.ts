@@ -8,6 +8,7 @@
 // whose AI goes through its server, has none yet.
 import type { Vault } from "@nether/storage";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { allowedBy } from "./ai.ts";
 import { backend } from "./backend.ts";
 import type { Embed, MeaningProgress, MeaningSearch } from "./meaning.ts";
 import { type MeaningChoice, meaningChoice, setMeaningChoice } from "./meaningChoice.ts";
@@ -16,8 +17,8 @@ import type { MeaningPanel } from "./SearchPanel.tsx";
 import type { VaultLink } from "./sync.ts";
 import type { VaultAi } from "./useAi.ts";
 
-/** Why search by meaning is chosen but does not run. */
-export type MeaningBlock = "vaultOff" | "workspaceOff" | "missing";
+/** Why search by meaning is chosen but does not run; `notApproved` where the server locks AI elsewhere. */
+export type MeaningBlock = "vaultOff" | "workspaceOff" | "missing" | "notApproved";
 
 export interface VaultMeaning {
   /** Whether this app offers it: the desktop app does, the web app not yet. */
@@ -77,10 +78,16 @@ export function useMeaning(
         ? reason
         : provider === undefined
           ? "missing"
-          : undefined;
+          : // The embedding model's provider is held to the server's lock too (ADR 0086).
+            !allowedBy(ai.workspace?.endpoints ?? null, provider)
+            ? "notApproved"
+            : undefined;
 
   const allowedNow = useRef(ai.allowedNow);
   allowedNow.current = ai.allowedNow;
+  // The provider embedding goes to, which the server's lock is asked of.
+  const embedder = useRef(provider);
+  embedder.current = provider;
   const workspaceId = link?.workspaceId;
 
   /** Sends texts to the chosen model, through this device's access to the provider. */
@@ -105,7 +112,7 @@ export function useMeaning(
     let asked = 0;
     return async (inputs, signal) => {
       if (Date.now() - asked > askEvery) {
-        if (!(await allowedNow.current())) throw new Error(t("aiWorkspaceOffNow"));
+        if (!(await allowedNow.current(embedder.current))) throw new Error(t("aiWorkspaceOffNow"));
         asked = Date.now();
       }
       return embedWith(inputs, signal);
@@ -154,7 +161,7 @@ export function useMeaning(
     if (search === undefined || embedWith === undefined) return undefined;
     return {
       async search(text) {
-        if (!(await allowedNow.current())) throw new Error(t("aiWorkspaceOffNow"));
+        if (!(await allowedNow.current(embedder.current))) throw new Error(t("aiWorkspaceOffNow"));
         const [vector] = await embedWith([text], new AbortController().signal);
         return vector === undefined ? [] : search.search(vector);
       },

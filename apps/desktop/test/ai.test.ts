@@ -32,7 +32,7 @@ const claude: AIProvider = {
 };
 const two: AISettings = { providers: [ollama, claude], default: "c" };
 
-const plain = { encrypted: false, workspaceAllows: true };
+const plain = { encrypted: false, workspaceAllows: true, endpoints: null };
 
 describe("the provider a vault uses", () => {
   it("is none when this device has none, whatever was chosen", () => {
@@ -73,7 +73,7 @@ describe("the provider a vault uses", () => {
   });
 
   it("is none for an encrypted workspace until one is chosen for it", () => {
-    const encrypted = { encrypted: true, workspaceAllows: true };
+    const encrypted = { encrypted: true, workspaceAllows: true, endpoints: null };
     expect(resolveAi({ settings: two, choice: { kind: "default" }, ...encrypted })).toEqual({
       provider: undefined,
       reason: "encrypted",
@@ -90,7 +90,13 @@ describe("the provider a vault uses", () => {
     } as const;
     for (const choice of [{ kind: "default" }, { kind: "provider", id: "o" }] as const) {
       expect(
-        resolveAi({ settings: relayed, choice, encrypted: true, workspaceAllows: true }),
+        resolveAi({
+          settings: relayed,
+          choice,
+          encrypted: true,
+          workspaceAllows: true,
+          endpoints: null,
+        }),
       ).toEqual({ provider: undefined, reason: "encryptedRelay" });
     }
     expect(resolveAi({ settings: relayed, choice: { kind: "default" }, ...plain }).provider).toBe(
@@ -99,11 +105,38 @@ describe("the provider a vault uses", () => {
   });
 
   it("is none where the workspace's owners turned AI off, even one chosen", () => {
-    const off = { encrypted: false, workspaceAllows: false };
+    const off = { encrypted: false, workspaceAllows: false, endpoints: null };
     expect(resolveAi({ settings: two, choice: { kind: "provider", id: "o" }, ...off })).toEqual({
       provider: undefined,
       reason: "workspaceOff",
     });
+  });
+
+  it("is only one at an approved endpoint where the server locks AI to them (ADR 0086)", () => {
+    const locked = (endpoints: readonly string[]) => ({
+      encrypted: false,
+      workspaceAllows: true,
+      endpoints,
+    });
+    // The default is elsewhere: the first approved stands in.
+    expect(
+      resolveAi({
+        settings: two,
+        choice: { kind: "default" },
+        ...locked(["http://localhost:11434/v1"]),
+      }).provider,
+    ).toBe(ollama);
+    // One chosen elsewhere is not used, and says why.
+    expect(
+      resolveAi({
+        settings: two,
+        choice: { kind: "provider", id: "c" },
+        ...locked(["http://localhost:11434/v1"]),
+      }),
+    ).toEqual({ provider: undefined, reason: "notApproved" });
+    expect(
+      resolveAi({ settings: two, choice: { kind: "default" }, ...locked(["https://llm.corp"]) }),
+    ).toEqual({ provider: undefined, reason: "notApproved" });
   });
 });
 
@@ -121,12 +154,21 @@ describe("what a vault keeps of AI on this device", () => {
     expect(await vaultAiChoice(vault)).toEqual({ kind: "default" });
 
     expect(await knownWorkspaceAi(vault, "w1")).toBeUndefined();
-    await keepWorkspaceAi(vault, "w1", false);
-    expect(await knownWorkspaceAi(vault, "w1")).toBe(false);
+    await keepWorkspaceAi(vault, "w1", { on: false, endpoints: null });
+    expect(await knownWorkspaceAi(vault, "w1")).toEqual({ on: false, endpoints: null });
     // Linked to another workspace since, what the first said does not hold.
     expect(await knownWorkspaceAi(vault, "w2")).toBeUndefined();
-    await keepWorkspaceAi(vault, "w1", true);
-    expect(await knownWorkspaceAi(vault, "w1")).toBe(true);
+    await keepWorkspaceAi(vault, "w1", { on: true, endpoints: ["https://llm.corp.example/v1"] });
+    expect(await knownWorkspaceAi(vault, "w1")).toEqual({
+      on: true,
+      endpoints: ["https://llm.corp.example/v1"],
+    });
+    // What a device kept before servers locked AI holds, locking nothing.
+    await vault.settings.setSetting(
+      "ai.workspace",
+      new TextEncoder().encode(JSON.stringify({ workspace: "w1", ai: true })),
+    );
+    expect(await knownWorkspaceAi(vault, "w1")).toEqual({ on: true, endpoints: null });
 
     // Nothing of it is in the vault's folder.
     const listed: string[] = [];

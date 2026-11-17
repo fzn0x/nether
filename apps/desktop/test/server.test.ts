@@ -144,13 +144,22 @@ describe("request", () => {
           ],
         }),
     });
-    // A server from before AI's switch says nothing of it: AI is on there.
+    // A server from before AI's switch says nothing of it: AI is on there,
+    // and one from before the lock locks nothing (ADR 0086).
     await expect(account(fetcher, base, "t0k")).resolves.toEqual({
       user,
       workspaces: [
         { id: "w1", name: "Team", role: "owner", encrypted: false, ai: true },
         { id: "w2", name: "Secret", role: "member", encrypted: true, ai: false },
       ],
+      aiEndpoints: null,
+    });
+    const locked = fakeFetch({
+      "GET /api/me": () =>
+        json(200, { user, workspaces: [], aiEndpoints: ["https://llm.corp.example/v1"] }),
+    });
+    await expect(account(locked.fetcher, base, "t0k")).resolves.toMatchObject({
+      aiEndpoints: ["https://llm.corp.example/v1"],
     });
     const odd = fakeFetch({ "GET /api/me": () => json(200, { user: { id: 7 } }) });
     await expect(account(odd.fetcher, base, "t0k")).rejects.toThrow(

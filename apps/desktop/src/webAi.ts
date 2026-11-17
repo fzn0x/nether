@@ -36,6 +36,12 @@ function serverOf(answer: Readonly<Record<string, unknown>>): ServerAi {
     mode: answer.mode === "admin" || answer.mode === "off" ? answer.mode : "on",
     keepsKeys: answer.keepsKeys === true,
     manage: { own: manage.own === true, instance: manage.instance === true },
+    // The endpoints its admin locks AI to (ADR 0086); a server from before locks nothing.
+    endpoints: Array.isArray(answer.endpoints)
+      ? (answer.endpoints as unknown[]).filter(
+          (endpoint): endpoint is string => typeof endpoint === "string",
+        )
+      : null,
   };
 }
 
