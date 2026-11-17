@@ -157,6 +157,15 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   goes into the note as one edit that one undo takes out
   ([ADR 0068](docs/adr/0068-ai-comes-from-the-users-own-provider-reached-from-their-device.md),
   [ADR 0069](docs/adr/0069-writing-assist-streams-into-a-preview-and-goes-in-as-one-edit.md)).
+- The web clipper, `apps/clipper`, a Manifest V3 extension for Chrome and
+  Firefox: its button saves the selection, or the whole page as a reader
+  view shows it, as Markdown the importer would write, to edit before it
+  goes; as a new note with its `source`, `clipped` and `author`, added to
+  a note found by search, read again if it changed meanwhile, or as a
+  database row. It signs in with a write token, kept in the browser's own
+  storage, and reaches the person's server alone
+  ([ADR 0066](docs/adr/0066-the-web-clipper-is-a-manifest-v3-extension-that-sends-clips-to-the-users-own-server-alone.md)).
+  The build makes a ZIP of each for its store.
 
 ### Changed
 
