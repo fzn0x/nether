@@ -119,7 +119,11 @@ export function ButtonView(props: CodeBlockViewProps) {
       createNote: note.createNote,
       findNote: (name) =>
         graph.resolve(name, from()) ?? vault.noteAt(/\.md$/i.test(name) ? name : `${name}.md`)?.id,
-      setProperty: (id, key, value) => setNoteValue(vault, id, key, value),
+      setProperty: async (id, key, value) => {
+        const before = await setNoteValue(vault, id, key, value);
+        // A change the app made, which the row's database's triggers follow.
+        await note.propertyChanged(id, key, before, value);
+      },
       openLink: note.openLink,
       openUrl: (url) => {
         void backend.openUrl(url);

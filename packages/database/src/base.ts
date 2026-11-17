@@ -378,5 +378,6 @@ export function readBase(text: string, schema: DatabaseSchema): DatabaseSchema {
       if (current !== undefined) views.push(current);
     }
   }
-  return { properties: schema.properties, views };
+  // Its properties and triggers, which the base does not hold, as they were.
+  return { ...schema, views };
 }

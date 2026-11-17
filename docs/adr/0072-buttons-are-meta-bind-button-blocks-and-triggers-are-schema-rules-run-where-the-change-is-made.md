@@ -207,3 +207,56 @@ Turned off, no trigger runs.
   command palette lists them. A button that runs one asks once on each
   device, and again after each edit; one that runs a vault plugin's
   command asks each time.
+
+## Amended 2026-11-17: triggers, as part 2 builds them
+
+- **What a rule may name.** `when` and every key of `set` name properties
+  of the database that are written, not a formula or a rollup, which are
+  worked out. `set` names one property at least. A schema without rules
+  writes no `triggers`.
+- **A stale rule never hides its database.** A rule is an add-on to a
+  database. One that names a property the database no longer has, or one
+  worked out, after a hand edit or another app's, or one that cannot be
+  read, is left out and does not run, and the schema reads as before. The
+  rule is kept in the file as it was written, after the rules that run, so
+  nothing is lost. The Triggers panel lists it as not running, says why, as
+  `set.Completed names no property of the database`, and offers Remove.
+  This is for rules only: a view that names a missing property still makes
+  the schema unreadable, as before.
+- **Rules follow a property renamed or deleted.** Renaming a property
+  renames it in every rule that names it, kept ones too. Deleting one drops
+  the `set` entries that name it, a rule whose `when` names it, and a rule
+  left with nothing to set. The app has no command yet that renames or
+  deletes a database's property, only a hand edit does; the schema's own
+  helpers, `renameInTriggers` and `deleteFromTriggers`, do this for the
+  item that adds them, and a hand edit leaves a stale rule, as above.
+- **What "becomes" means.** A property holds a rule's value when it is the
+  same, or a list that has it, as a multi-select with `Done` among its
+  tags; `is: null` holds for no value, an empty one or an empty list. A
+  rule fires when its property holds the value after the change and did
+  not before. A row made with a value, in a board's column or on a
+  calendar's day, changes from none into it.
+- **Several rules.** Every rule a change fires sets its values, in the
+  order of the schema; for a property two set, the later one's value wins.
+- **What fills a value.** Text, and text in a list, is filled as a
+  template is, with `{{title}}` the row's name and the date and time of the
+  change. Without a format, `{{date}}` is `YYYY-MM-DD`, as a date property
+  stores it, and `{{time}}` is `HH:mm`, whatever the vault's template
+  settings say.
+- **Where the app tells of a change**, once it is written: a database's
+  cells, a board's moves and a calendar's or timeline's, a row made in a
+  column or on a day, the properties above a note, and a button's
+  `updateMetadata`. The host keeps a registry of what watches them, which
+  only built-in plugins can join, by saying so beside their manifest; the
+  `automations` plugin starts at the first change. A trigger reads its
+  database's schema from the database note's document, as the editor has
+  it, and writes the row through its document, all its values at once.
+- **Its plugin's name** is now Buttons and triggers.
+- **The editor** is the database's Triggers panel, beside Filter and
+  Properties. Each rule shows as a sentence, "When status becomes Done, set
+  completed to {{date}}", with Remove. Its form adds a rule; one with the
+  property and value of a rule there sets its property beside the others.
+  A value is read by its property's type: `true` or `false` for a
+  checkbox, a number for a number, and nothing as none; a date property's
+  value starts as `{{date}}`. With the plugin off, the panel says the rules
+  do not run.

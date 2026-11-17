@@ -252,6 +252,19 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   does not have, numbered as imports number them, lets the name change
   and rows and notes be left out, and writes nothing until Make it
   ([ADR 0078](docs/adr/0078-building-with-ai-reads-a-checked-json-reply-into-an-import-plan-the-user-previews.md)).
+- Database triggers: rules in a database's schema, under `triggers`, that
+  set a row's properties when one of them becomes a value, as "when
+  Status becomes Done, set Completed to `{{date}}`", added and removed in
+  the database's Triggers panel. A rule runs when the app changes the
+  property into its value on this device: in a cell, by a card moved on a
+  board, in a row made in a column or on a day, in the row's properties,
+  or by a button. It does not run for changes that arrive by sync, from
+  another app or through the REST API, and what it sets runs no rule. A
+  rule that names a property the database no longer has does not run, and
+  never hides the database; the panel shows it as not running, with why,
+  and it stays in the file until removed. The
+  Buttons plugin is now Buttons and triggers, and runs them
+  ([ADR 0072](docs/adr/0072-buttons-are-meta-bind-button-blocks-and-triggers-are-schema-rules-run-where-the-change-is-made.md)).
 
 ### Changed
 

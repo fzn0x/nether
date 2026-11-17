@@ -169,4 +169,37 @@ describe("writeDatabase", () => {
       views: [],
     });
   });
+
+  it("reads and writes a database's triggers after its views, and none when it has none", () => {
+    const value = {
+      properties: [
+        { key: "status", type: "select", options: [{ name: "Done" }] },
+        { key: "completed", type: "date" },
+      ],
+      views: [],
+      triggers: [{ when: "status", is: "Done", set: { completed: "{{date}}" } }],
+    };
+    const schema = readDatabase(value, resolve);
+    expect(schema.triggers).toEqual(value.triggers);
+    expect(writeDatabase(schema, linkTo)).toEqual(value);
+    expect(Object.keys(writeDatabase(schema, linkTo) as object)).toEqual([
+      "properties",
+      "views",
+      "triggers",
+    ]);
+    expect(writeDatabase({ ...schema, triggers: [] }, linkTo)).toEqual({
+      properties: value.properties,
+      views: [],
+    });
+    // A rule on a property the database has not is kept, and does not run.
+    expect(
+      readDatabase({ ...value, triggers: [{ when: "x", is: 1, set: { completed: 1 } }] }, resolve)
+        .skippedTriggers,
+    ).toEqual([
+      {
+        value: { when: "x", is: 1, set: { completed: 1 } },
+        problem: 'when names no property of the database: "x"',
+      },
+    ]);
+  });
 });

@@ -55,6 +55,8 @@ import {
   usePropertyTypes,
 } from "./plugins/propertyTypes.ts";
 import { type LayoutRegistry, useLayouts } from "./plugins/layouts.ts";
+import { type PropertyChangeRegistry, useWatched } from "./plugins/propertyChanges.ts";
+import { DatabaseTriggers } from "./DatabaseTriggers.tsx";
 import { useDocumentProperties } from "./DatabaseSlot.tsx";
 import { ListEditor } from "./PropertiesPanel.tsx";
 import type { Exporter, VaultMedia } from "./backend.ts";
@@ -692,6 +694,8 @@ export interface DatabaseProps {
   readonly layouts: LayoutRegistry;
   /** The property types plugins add (ADR 0057). */
   readonly propertyTypes: PropertyTypeRegistry;
+  /** What watches the properties the app changes, as triggers do (ADR 0072). */
+  readonly propertyChanges: PropertyChangeRegistry;
 }
 
 /**
@@ -706,6 +710,7 @@ export function DatabaseView(props: DatabaseProps) {
 
 function Database(props: DatabaseProps & { readonly entries: readonly PropertyEntry[] }) {
   const { vault, media, exporter, graph, document, path, onOpenNote, layouts, entries } = props;
+  const { propertyChanges } = props;
   const available = useLayouts(layouts);
   const pluginTypes = usePropertyTypes(props.propertyTypes);
   /** The view of a property of a plugin's type, when its plugin is here. */
@@ -718,7 +723,9 @@ function Database(props: DatabaseProps & { readonly entries: readonly PropertyEn
   const notes = useNotes(vault);
   const [chosen, setChosen] = useState<string | undefined>();
   const [error, setError] = useState<string | undefined>();
-  const [panel, setPanel] = useState<"filter" | "properties" | undefined>();
+  const [panel, setPanel] = useState<"filter" | "properties" | "triggers" | undefined>();
+  // Whether the Buttons and triggers plugin runs the triggers.
+  const running = useWatched(propertyChanges);
   const [exported, setExported] = useState<
     { readonly path: string } | { readonly failed: string } | undefined
   >();
@@ -761,6 +768,8 @@ function Database(props: DatabaseProps & { readonly entries: readonly PropertyEn
   const schema = read.schema;
   if (schema === undefined) return null;
   const view = schema.views.find((item) => item.name === chosen) ?? schema.views[0];
+  // Its rules, those that run and those kept that do not.
+  const ruleCount = (schema.triggers?.length ?? 0) + (schema.skippedTriggers?.length ?? 0);
 
   const saveSchema = (next: DatabaseSchema) => {
     const value = writeDatabase(next, linkToNote(graph));
@@ -812,12 +821,13 @@ function Database(props: DatabaseProps & { readonly entries: readonly PropertyEn
     if (relation.database === self?.id) {
       const taken = back !== undefined && schema.properties.some((item) => item.key === back.key);
       saveSchema({
+        ...schema,
         properties: [...schema.properties, own, ...(back === undefined || taken ? [] : [back])],
         views: show(schema.views),
       });
       return;
     }
-    saveSchema({ properties: [...schema.properties, own], views: show(schema.views) });
+    saveSchema({ ...schema, properties: [...schema.properties, own], views: show(schema.views) });
     const other = graph.note(relation.database);
     if (back === undefined || other === undefined) return;
     const theirs = databaseOf(other.index.properties, resolveLink(graph, other.path));
@@ -851,29 +861,34 @@ function Database(props: DatabaseProps & { readonly entries: readonly PropertyEn
       });
     }
     const before = rows.find((item) => item.id === row);
+    const was = before?.properties.find((entry) => entry.key === key)?.value;
     const backlink = property?.relation?.backlink;
+    let written = value;
     // A list's edit goes to the list as the file has it now, which may be newer than the cell.
     (base !== undefined && Array.isArray(value)
-      ? updateNoteProperty(vault, row, key, (current) => mergeList(current, base, value))
+      ? updateNoteProperty(vault, row, key, (current) => {
+          written = mergeList(current, base, value);
+          return written;
+        })
       : setNoteProperty(vault, row, key, value)
     )
       .then(() =>
         // The other end of a two-way relation, in the rows it now names or no longer does.
         backlink === undefined || before === undefined
           ? undefined
-          : syncBacklinks(
-              vault,
-              graph,
-              before,
-              before.properties.find((entry) => entry.key === key)?.value,
-              value,
-              backlink,
-            ),
+          : syncBacklinks(vault, graph, before, was, value, backlink),
+      )
+      // A change the app made, which the database's triggers follow.
+      .then(() =>
+        propertyChanges.changed({ vault, graph, note: row, key, before: was, after: written }),
       )
       .catch((problem: unknown) => {
         setError(problem instanceof Error ? problem.message : String(problem));
       });
   };
+  /** Tells the database's triggers of a new row made with a value, as in a board's column. */
+  const made = (row: NoteId, key: string, value: JsonValue) =>
+    propertyChanges.changed({ vault, graph, note: row, key, before: undefined, after: value });
 
   const nameOf = (key: string) =>
     key.startsWith("$") ? t(`builtIn_${key.slice(1)}` as MessageKey) : key;
@@ -944,11 +959,11 @@ function Database(props: DatabaseProps & { readonly entries: readonly PropertyEn
     const key = view?.date;
     setError(undefined);
     createRow(vault, path, t("untitled"))
-      .then((created) =>
-        key === undefined || key.startsWith("$")
-          ? undefined
-          : setNoteProperty(vault, created.id, key, day),
-      )
+      .then(async (created) => {
+        if (key === undefined || key.startsWith("$")) return;
+        await setNoteProperty(vault, created.id, key, day);
+        await made(created.id, key, day);
+      })
       .catch(fail);
   };
   /** Moves a card to another column: the value it is grouped by becomes the column's. */
@@ -976,16 +991,12 @@ function Database(props: DatabaseProps & { readonly entries: readonly PropertyEn
     const key = view?.groupBy;
     setError(undefined);
     createRow(vault, path, t("untitled"))
-      .then((created) =>
-        key === undefined || value === null
-          ? undefined
-          : setNoteProperty(
-              vault,
-              created.id,
-              key,
-              typeOf(key) === "multiSelect" ? [value] : value,
-            ),
-      )
+      .then(async (created) => {
+        if (key === undefined || value === null) return;
+        const stored = typeOf(key) === "multiSelect" ? [value] : value;
+        await setNoteProperty(vault, created.id, key, stored);
+        await made(created.id, key, stored);
+      })
       .catch(fail);
   };
   /** A gallery card's cover: the file or address its cover property names. */
@@ -1294,6 +1305,16 @@ function Database(props: DatabaseProps & { readonly entries: readonly PropertyEn
             <button
               type="button"
               className="quiet"
+              aria-expanded={panel === "triggers"}
+              onClick={() => {
+                setPanel(panel === "triggers" ? undefined : "triggers");
+              }}
+            >
+              {ruleCount === 0 ? t("triggers") : t("triggersCount", { count: ruleCount })}
+            </button>
+            <button
+              type="button"
+              className="quiet"
               onClick={() => {
                 exportCsv(view);
               }}
@@ -1393,6 +1414,7 @@ function Database(props: DatabaseProps & { readonly entries: readonly PropertyEn
                 onAdd={(key, type, more) => {
                   if (more?.plugin !== undefined) {
                     saveSchema({
+                      ...schema,
                       properties: [...schema.properties, { key, type, plugin: more.plugin }],
                       views: schema.views.map((item) =>
                         item.id === view.id ? { ...item, visible: [...item.visible, key] } : item,
@@ -1406,6 +1428,7 @@ function Database(props: DatabaseProps & { readonly entries: readonly PropertyEn
                   }
                   if (more?.formula !== undefined) {
                     saveSchema({
+                      ...schema,
                       properties: [
                         ...schema.properties,
                         { key, type: "formula", formula: more.formula },
@@ -1418,6 +1441,7 @@ function Database(props: DatabaseProps & { readonly entries: readonly PropertyEn
                   }
                   if (more?.rollup !== undefined) {
                     saveSchema({
+                      ...schema,
                       properties: [
                         ...schema.properties,
                         { key, type: "rollup", rollup: more.rollup },
@@ -1433,6 +1457,7 @@ function Database(props: DatabaseProps & { readonly entries: readonly PropertyEn
                       ? { key, type, options: [] }
                       : { key, type };
                   saveSchema({
+                    ...schema,
                     properties: [...schema.properties, property],
                     views: schema.views.map((item) =>
                       item.id === view.id ? { ...item, visible: [...item.visible, key] } : item,
@@ -1441,6 +1466,17 @@ function Database(props: DatabaseProps & { readonly entries: readonly PropertyEn
                 }}
               />
             </div>
+          ) : null}
+          {panel === "triggers" ? (
+            <DatabaseTriggers
+              properties={schema.properties}
+              triggers={schema.triggers ?? []}
+              skipped={schema.skippedTriggers ?? []}
+              running={running}
+              onChange={(triggers, skippedTriggers) => {
+                saveSchema({ ...schema, triggers, skippedTriggers });
+              }}
+            />
           ) : null}
           {error === undefined ? null : <p role="alert">{t("cellFailed", { error })}</p>}
           {view.layout !== "table" && shownLayout !== undefined ? (

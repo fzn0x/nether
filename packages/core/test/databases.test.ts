@@ -268,3 +268,76 @@ describe("rollups", () => {
     }).not.toThrow();
   });
 });
+
+describe("triggers", () => {
+  const properties = [
+    { key: "status", type: "select", options: [{ name: "Done" }] },
+    { key: "completed", type: "date" },
+    { key: "tags", type: "multiSelect", options: [] },
+    { key: "double", type: "formula", formula: "1 + 1" },
+  ];
+  const schema = (triggers: unknown) =>
+    readDatabaseSchema({ properties, views: [], triggers }, "schema");
+
+  it("read a rule that sets properties when one becomes a value", () => {
+    const read = schema([
+      { when: "status", is: "Done", set: { completed: "{{date}}", tags: ["done"] } },
+      { when: "status", is: null, set: { completed: null } },
+    ]);
+    expect(read.triggers).toEqual([
+      { when: "status", is: "Done", set: { completed: "{{date}}", tags: ["done"] } },
+      { when: "status", is: null, set: { completed: null } },
+    ]);
+  });
+
+  it("leave a schema with none as it was", () => {
+    expect("triggers" in schema([])).toBe(false);
+    expect("triggers" in readDatabaseSchema({ properties: [], views: [] }, "schema")).toBe(false);
+  });
+
+  it("keep a stale or broken rule as written, not running, and read the schema as before", () => {
+    const good = { when: "status", is: "Done", set: { completed: "{{date}}" } };
+    const skipped = (rule: unknown) => {
+      const read = schema([rule, good]);
+      // The schema reads: the rule that is right runs, the other is kept with why.
+      expect(read.properties).toHaveLength(4);
+      expect(read.triggers).toEqual([good]);
+      return read.skippedTriggers?.map((each) => [each.value, each.problem]);
+    };
+    expect(skipped({ when: "stage", is: "x", set: { completed: 1 } })).toEqual([
+      [
+        { when: "stage", is: "x", set: { completed: 1 } },
+        'when names no property of the database: "stage"',
+      ],
+    ]);
+    expect(skipped({ when: "double", is: 2, set: { completed: 1 } })?.[0]?.[1]).toBe(
+      'when names a formula, which is never written: "double"',
+    );
+    expect(skipped({ when: "status", is: "Done", set: { finished: 1 } })?.[0]?.[1]).toBe(
+      'set.finished names no property of the database: "finished"',
+    );
+    expect(skipped({ when: "status", is: "Done", set: {} })?.[0]?.[1]).toBe(
+      "set needs at least one property",
+    );
+    expect(skipped({ when: "status", set: { completed: 1 } })?.[0]?.[1]).toBe("is is missing");
+    expect(skipped({ when: "status", is: "Done", set: [] })?.[0]?.[1]).toBe(
+      "set must be a JSON object",
+    );
+    expect(skipped({ when: "status", is: "Done", set: { done: 1 }, also: 1 })?.[0]?.[1]).toBe(
+      "also is not a known field",
+    );
+    expect(skipped("just text")).toEqual([["just text", "must be an object"]]);
+    expect(skipped({ when: "x", is: Infinity, set: { completed: 1 } })).toEqual([
+      [
+        { when: "x", is: null, set: { completed: 1 } },
+        'when names no property of the database: "x"',
+      ],
+    ]);
+    // Not a list at all: kept as one rule, and none runs.
+    const notList = schema({ when: "status" });
+    expect(notList.triggers).toBeUndefined();
+    expect(notList.skippedTriggers).toEqual([
+      { value: { when: "status" }, problem: "must be a list of rules" },
+    ]);
+  });
+});

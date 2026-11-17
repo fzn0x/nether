@@ -164,5 +164,7 @@ actions. Code in a note never runs outside the
 
 ## Turning buttons off
 
-Buttons are the built-in Buttons plugin's. With it off, in the settings'
-Plugins tab, a button shows as its code.
+Buttons are the built-in Buttons and triggers plugin's. With it off, in
+the settings' Plugins tab, a button shows as its code. A property a
+button sets runs its database's [triggers](../databases/#triggers), as one
+set in a cell does.

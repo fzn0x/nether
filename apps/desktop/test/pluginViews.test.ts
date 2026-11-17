@@ -19,6 +19,7 @@ import { PluginHost } from "../src/plugins/host.ts";
 import { LayoutRegistry } from "../src/plugins/layouts.ts";
 import { PanelRegistry } from "../src/plugins/panels.ts";
 import { PropertyTypeRegistry } from "../src/plugins/propertyTypes.ts";
+import { PropertyChangeRegistry } from "../src/plugins/propertyChanges.ts";
 import { CommandRegistry } from "../src/plugins/registry.ts";
 import { cssAllowed, nodeLimit, renderView } from "../src/plugins/render.ts";
 import { ViewRegistry } from "../src/plugins/views.ts";
@@ -311,6 +312,7 @@ describe("a vault plugin's views, through the host", () => {
         views: new ViewRegistry(),
         layouts: new LayoutRegistry(),
         propertyTypes: new PropertyTypeRegistry(),
+        propertyChanges: new PropertyChangeRegistry(),
       },
       {
         language: "en",

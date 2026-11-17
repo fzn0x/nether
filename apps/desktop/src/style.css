@@ -3130,7 +3130,9 @@ kbd {
 .database-filters,
 .database-condition,
 .database-properties,
-.database-add-property {
+.database-add-property,
+.database-add-trigger,
+.database-triggers li {
   display: flex;
   flex-wrap: wrap;
   gap: 0.5rem;
@@ -3138,18 +3140,33 @@ kbd {
 }
 
 .database-filters,
-.database-properties {
+.database-properties,
+.database-triggers {
   padding: 0.5rem;
   border: 1px solid var(--rule);
   border-radius: 6px;
 }
 
 .database-toolbar label,
-.database-properties label {
+.database-properties label,
+.database-triggers label {
   display: inline-flex;
   gap: 0.35rem;
   align-items: center;
   color: var(--muted);
+}
+
+.database-triggers {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.database-triggers ul {
+  display: grid;
+  gap: 0.25rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
 }
 
 .database [role="tabpanel"] {

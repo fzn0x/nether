@@ -136,6 +136,56 @@ and change it under **Properties**. Like a rollup, its value is worked out
 each time the database shows, and never written to a row's file. The
 [formula language](../formulas/) has every operator, function and method.
 
+## Triggers
+
+A trigger sets a row's properties when one of them becomes a value: when
+Status becomes Done, set Completed to today. Open **Triggers** in a view's
+toolbar. Choose the property to watch, type the value, choose the property
+to set and its value, and click **Add the trigger**. Each trigger shows as
+a sentence, with **Remove**.
+
+| You type | It is |
+| --- | --- |
+| `{{date}}` | The day the trigger runs, as `2026-11-06`; a date property starts with it |
+| `{{time}}` | The time, as `14:30` |
+| `{{date:dddd}}`, `{{title}}` | The day in that format; the row's name |
+| Nothing | No value: the property is cleared |
+| `true`, `false` | A checkbox's value |
+
+Template variables are filled as a new note's are (see
+[Templates](../templates/)). A trigger with the property and value of one
+that is there already sets its new property as well.
+
+- **It runs when the value changes.** Setting Status to Done in a cell,
+  moving a card to Done on a board, making a row in the Done column, or
+  choosing Done in the row's own properties runs it. Saving Done again over
+  Done does not. For a multi-select, it runs when the value is added.
+- **It runs where the change is made, once.** Nether runs it on the device
+  you change the row on. A change that arrives by sync ran its triggers on
+  the device it was made on, and brings what they set with it. A change
+  made in another app, as Obsidian, or through the [REST API](../api/),
+  runs none.
+- **What a trigger sets runs no trigger**, so one rule never sets off
+  another, nor itself.
+- **A rule that names a property the database no longer has does not
+  run**, after the property is deleted in another app or by hand. The
+  database shows as before, and **Triggers** lists the rule as not
+  running, with why, and with **Remove**. It stays in the file until it is
+  removed.
+
+Triggers are Nether's own: no other app runs them. The built-in **Buttons
+and triggers** plugin runs them, and with it off, in the settings' Plugins
+tab, they are kept and do not run. They are written in the database's
+schema, after its views:
+
+```yaml
+  triggers:
+    - when: Status
+      is: Done
+      set:
+        Completed: "{{date}}"
+```
+
 ## Exporting a view as CSV
 
 **Export CSV** in a view's toolbar saves the view as a CSV file, for a
@@ -156,7 +206,7 @@ shows them all.
 ## How a database is written
 
 A database is a note with a `database` property in its frontmatter, which
-holds its properties and its views, and its rows are the notes in the
+holds its properties, its views and its triggers, and its rows are the notes in the
 folder beside it with its name. A database named _Projects_ is:
 
 ```text

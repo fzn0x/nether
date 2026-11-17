@@ -16,6 +16,7 @@ import { PluginHost } from "../src/plugins/host.ts";
 import { LayoutRegistry } from "../src/plugins/layouts.ts";
 import { PanelRegistry } from "../src/plugins/panels.ts";
 import { PropertyTypeRegistry } from "../src/plugins/propertyTypes.ts";
+import { PropertyChangeRegistry } from "../src/plugins/propertyChanges.ts";
 import { CommandRegistry } from "../src/plugins/registry.ts";
 import { pluginPath, reachable, toBase64, vaultAccess } from "../src/plugins/vault.ts";
 import { ViewRegistry } from "../src/plugins/views.ts";
@@ -180,6 +181,7 @@ describe("a plugin reaching the vault, through the host", () => {
         views: new ViewRegistry(),
         layouts: new LayoutRegistry(),
         propertyTypes: new PropertyTypeRegistry(),
+        propertyChanges: new PropertyChangeRegistry(),
       },
       { language: "en", direction: "ltr", openFrame: open, vault: () => access },
     );
