@@ -1,6 +1,7 @@
 // A database's schema as its note's frontmatter holds it, under `database`
 // (ADR 0018): core's schema, but with no view IDs, as a view's name names
-// it, and with links where core has note IDs, as Obsidian writes them.
+// it, and with links where core has note IDs, as Obsidian writes them. Its
+// triggers (ADR 0072) are written after its views.
 import {
   type DatabaseSchema,
   type JsonValue,
@@ -152,5 +153,15 @@ export function writeDatabase(schema: DatabaseSchema, linkTo: LinkTo): JsonValue
       (view) =>
         Object.fromEntries(Object.entries(view).filter(([key]) => key !== "id")) as JsonValue,
     ),
+    // Its rules (ADR 0072), only when it has some.
+    ...(schema.triggers === undefined || schema.triggers.length === 0
+      ? {}
+      : {
+          triggers: schema.triggers.map((trigger) => ({
+            when: trigger.when,
+            is: trigger.is,
+            set: trigger.set,
+          })),
+        }),
   };
 }

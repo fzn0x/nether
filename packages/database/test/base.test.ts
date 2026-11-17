@@ -255,4 +255,11 @@ describe("readBase", () => {
       expect(readBase(text, schema)).toBe(schema);
     }
   });
+
+  it("keeps the database's triggers, which the base does not hold", () => {
+    const triggers = [{ when: "status", is: "Done", set: { due: "{{date}}" } }];
+    const read = readBase(written, { ...schema, triggers });
+    expect(read.triggers).toEqual(triggers);
+    expect(writeBase({ ...schema, triggers }, "Work/Projects.md")).toBe(written);
+  });
 });
