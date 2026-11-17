@@ -1,6 +1,8 @@
 // A database's triggers (ADR 0072): a rule added in its settings sets a
 // row's properties when the app changes one into its value, in a table's
 // cell or by a card moved on a board, and not when another app edits it.
+// A rule left naming a deleted property says it does not run, and the
+// database still shows.
 import { type Page, expect, test } from "@playwright/test";
 import { errorsOf, openSample, violations } from "./helpers.ts";
 
@@ -55,6 +57,31 @@ database:
       layout: board
       groupBy: Status
       visible: [Completed]
+---
+`;
+
+/** The database with Completed deleted by hand, the rule that sets it kept. */
+const withoutCompleted = `---
+database:
+  properties:
+    - key: Status
+      type: select
+      options:
+        - name: Doing
+        - name: Done
+  views:
+    - name: Table
+      layout: table
+      visible: [Status]
+    - name: Board
+      layout: board
+      groupBy: Status
+      visible: []
+  triggers:
+    - when: Status
+      is: Done
+      set:
+        Completed: "{{date}}"
 ---
 `;
 
@@ -123,12 +150,28 @@ test("a trigger sets Completed when Status becomes Done in a cell or on a board,
   await page.waitForTimeout(1000);
   expect(await fileText(page, "Tasks/Read.md")).toBe("---\nStatus: Done\n---\n");
 
-  // The settings stay open on the board, where the rule is removed.
+  // Completed deleted by hand, as another app might: the rule that sets it
+  // does not run, and says why, and the database still shows.
+  await editFile(page, "Tasks.md", withoutCompleted);
+  await database.getByRole("tab", { name: "Table" }).click();
+  await expect(database.getByRole("table").getByRole("columnheader")).toHaveText([
+    "Name",
+    "Status",
+  ]);
+  await expect(database.getByRole("table").getByRole("rowheader")).toHaveCount(3);
   await expect(database.getByRole("button", { name: "Triggers (1)" })).toHaveAttribute(
     "aria-expanded",
     "true",
   );
-  await triggers
+  const rule = triggers.getByRole("listitem");
+  await expect(rule).toContainText("When Status becomes Done, set Completed to {{date}}");
+  await expect(rule).toContainText(
+    'Not running: set.Completed names no property of the database: "Completed"',
+  );
+  expect(await violations(page)).toEqual([]);
+  // Kept in the file until it is removed.
+  expect(await fileText(page, "Tasks.md")).toContain("triggers:");
+  await rule
     .getByRole("button", {
       name: "Remove the trigger: When Status becomes Done, set Completed to {{date}}",
     })
