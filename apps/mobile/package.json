@@ -11,7 +11,8 @@
     "sync": "cap sync",
     "typecheck": "tsc -p tsconfig.json",
     "icons": "node scripts/render-icons.mjs",
-    "smoke": "node scripts/smoke.mjs"
+    "smoke": "node scripts/smoke.mjs",
+    "smoke:ios": "node scripts/smoke-ios.mjs"
   },
   "dependencies": {
     "@capacitor-community/sqlite": "8.1.1",
