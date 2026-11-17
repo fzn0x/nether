@@ -95,3 +95,6 @@ feature works air-gapped.
   as that is the default.
 - An admin who pins a switch by the environment changes it by the
   environment only.
+- High availability, `ha`, is the exception: it describes the deployment,
+  so the environment alone sets it, read at startup
+  ([ADR 0082](0082-several-nodes-share-sync-through-valkey-take-their-order-from-postgresql-and-roll-out-one-at-a-time.md)).
