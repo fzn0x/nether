@@ -2,6 +2,7 @@
 import { isIP } from "node:net";
 import { fileURLToPath } from "node:url";
 import { type EnterprisePins, enterpriseFeatures, switchVariable } from "./enterprise.ts";
+import { type SecurityPins, securityNames, securitySettings } from "./settings.ts";
 
 export const logLevels = ["fatal", "error", "warn", "info", "debug", "trace", "silent"] as const;
 export type LogLevel = (typeof logLevels)[number];
@@ -71,6 +72,8 @@ export interface Config {
   readonly webApp: WebAppConfig | null;
   /** How the environment pins each enterprise feature; unset ones are the console's (ADR 0079). */
   readonly enterprise: EnterprisePins;
+  /** The security settings the environment pins; unset ones are the console's (ADR 0084). */
+  readonly security: SecurityPins;
 }
 
 export interface WebAppConfig {
@@ -131,6 +134,30 @@ function readSwitch(env: NodeJS.ProcessEnv, variable: string): boolean {
 /** A switch the environment may pin on or off, or leave unset for the console. */
 function readPin(env: NodeJS.ProcessEnv, variable: string): boolean | undefined {
   return (env[variable] ?? "").trim() === "" ? undefined : readSwitch(env, variable);
+}
+
+/** The security settings the environment pins, each in its range (ADR 0084). */
+function readSecurityPins(env: NodeJS.ProcessEnv): SecurityPins {
+  const pins: Partial<Record<keyof SecurityPins, number | boolean>> = {};
+  for (const name of securityNames) {
+    const setting: (typeof securitySettings)[keyof typeof securitySettings] =
+      securitySettings[name];
+    const text = (env[setting.variable] ?? "").trim();
+    if (text === "") continue;
+    if (setting.kind === "switch") {
+      pins[name] = readSwitch(env, setting.variable);
+      continue;
+    }
+    const value = Number(text);
+    if (!/^\d+$/.test(text) || value < setting.min || value > setting.max) {
+      throw new ConfigError(
+        setting.variable,
+        `must be a whole number from ${String(setting.min)} to ${String(setting.max)}, not "${text}"`,
+      );
+    }
+    pins[name] = value;
+  }
+  return pins as SecurityPins;
 }
 
 function readPort(env: NodeJS.ProcessEnv): number {
@@ -498,5 +525,6 @@ export function readConfig(env: NodeJS.ProcessEnv): Config {
     backup: readBackup(env),
     webApp: readWebApp(env),
     enterprise,
+    security: readSecurityPins(env),
   };
 }

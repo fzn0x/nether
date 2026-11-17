@@ -76,4 +76,38 @@ gets a new one.
 - The console does not add or remove members, and does not make you one.
   A workspace's owners invite and remove people, as before.
 
-The console's security page comes in a later version.
+## Security
+
+**Security** sets how people sign in to your server and how long they
+stay signed in. Change any of these, then choose **Save**; they apply on
+every node within a few seconds, with no restart.
+
+**Sessions**
+
+- **Days a session lasts unused**: 30 unless you change it, from 1 to 365.
+- **Days a session lasts, however much it is used**: 90 unless you change
+  it, from 1 to 3650.
+
+A change applies to every session at once. Make either shorter, and
+sessions past the new length end at their next request: their apps ask
+people to sign in again. Make it longer, and sessions keep going.
+
+**Signing in**
+
+- **Sign-in tries per account, in 15 minutes**: 10 unless you change it,
+  from 3 to 100. After that many, signing in to that account waits.
+- **Sign-in tries per address, in 5 minutes**: 30 unless you change it,
+  from 5 to 1000. It counts tries from one network address, with
+  passwords and email codes alike.
+- **Sign in with a code by email**: on unless you turn it off. Codes go
+  out only when the server can send email. Turn it off to have people
+  sign in with a password or your OpenID Connect provider alone.
+
+**Ways to sign in now** lists what the server offers: a password, a code
+by email, and your OpenID Connect provider, by name.
+
+Your server's settings can set any of these instead, as
+`NETHER_SESSION_IDLE_DAYS=7`. The console then shows **Set by** its
+variable, and no control. The
+[server's settings](https://github.com/fzn0x/nether/tree/main/apps/server#configuration)
+list each variable and its range.

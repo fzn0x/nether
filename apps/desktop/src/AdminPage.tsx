@@ -1,9 +1,11 @@
 // The admin console, in the web app at /admin (ADR 0079), for the server's
 // instance admins. Its Features page is in every build: each enterprise
 // feature's switch, with why it is set as it is. The `admin` feature adds
-// the server's usage, counted when the page asks, and its workspaces
-// (ADR 0083). Only its own code loads, as a share link's page does.
+// the server's usage, counted when the page asks, its workspaces (ADR
+// 0083) and its security settings (ADR 0084). Only its own code loads, as
+// a share link's page does.
 import { type ReactNode, useCallback, useEffect, useState } from "react";
+import { SecurityPage } from "./AdminSecurity.tsx";
 import { WorkspacesPage } from "./AdminWorkspaces.tsx";
 import { t } from "./messages.ts";
 import { messageOf, webFetch, webServer } from "./web.ts";
@@ -248,6 +250,7 @@ export function AdminPage() {
             <>
               <UsagePage usage={usage} onCount={count} />
               <WorkspacesPage />
+              <SecurityPage />
             </>
           ) : (
             <p className="hint">{t("adminConsoleOff")}</p>

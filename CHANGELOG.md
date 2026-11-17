@@ -281,6 +281,13 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   role there, so a workspace whose owners are gone gets a new one; it keeps
   at least one owner, and the member's apps connect again at the new role
   ([ADR 0083](docs/adr/0083-the-console-lists-every-workspace-and-an-instance-admin-may-set-its-members-roles.md)).
+- The admin console's Security page: how many days a session lasts
+  unused and at most, how many sign-in tries an account and an address
+  get, and whether a code by email signs in, each set in the console or
+  pinned by its variable, such as `NETHER_SESSION_IDLE_DAYS`. The lengths
+  apply to every session at once, and the page lists the ways the server
+  signs people in now
+  ([ADR 0084](docs/adr/0084-the-consoles-security-page-sets-session-lengths-sign-in-limits-and-email-codes-unless-the-environment-does.md)).
 
 ### Changed
 

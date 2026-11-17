@@ -76,11 +76,17 @@ function storeFailed(request: FastifyRequest, reply: FastifyReply, error: unknow
   return fail(reply.header("retry-after", "60"), 503, cannotCount);
 }
 
+/**
+ * How many requests a limit allows in its window: a number, or a function
+ * asked on each request, for a limit the security settings give (ADR 0084).
+ */
+export type LimitMax = number | (() => Promise<number>);
+
 /** A hook that limits a route's requests from one client address, counted under `name`. */
 export function limitByAddress(
   app: FastifyInstance,
   name: string,
-  max: number,
+  max: LimitMax,
   timeWindow: string,
 ) {
   const limit = app.rateLimit({
@@ -108,7 +114,7 @@ export function limitByAddress(
 export function limitBy(
   app: FastifyInstance,
   name: string,
-  max: number,
+  max: LimitMax,
   timeWindow: string,
   key: (request: FastifyRequest) => string,
 ) {

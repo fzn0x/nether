@@ -88,3 +88,4 @@ record supersedes it and says so. Start a new one from
 | [0079](0079-enterprise-features-are-in-every-image-off-and-switched-in-the-console-or-pinned-by-the-environment.md) | Enterprise features are in every image, off, and switched in the console or pinned by the environment | Accepted |
 | [0082](0082-several-nodes-share-sync-through-valkey-take-their-order-from-postgresql-and-roll-out-one-at-a-time.md) | Several nodes share sync through Valkey, take their order from PostgreSQL, and roll out one at a time | Accepted |
 | [0083](0083-the-console-lists-every-workspace-and-an-instance-admin-may-set-its-members-roles.md) | The console lists every workspace, and an instance admin may set its members' roles | Accepted |
+| [0084](0084-the-consoles-security-page-sets-session-lengths-sign-in-limits-and-email-codes-unless-the-environment-does.md) | The console's Security page sets session lengths, sign-in limits and email codes, unless the environment does | Accepted |

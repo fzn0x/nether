@@ -1002,3 +1002,50 @@ test("the admin console finds a workspace by a member and sets that member's rol
   }
   expect(problems).toEqual([]);
 });
+
+test("the admin console's security page sets how long sessions last, and email codes", async ({
+  page,
+}) => {
+  const problems = problemsOf(page);
+  await signIn(page, { email: "ada@example.org", password: "a long password" });
+  await page.goto("/admin");
+  const pages = page.getByRole("checkbox", {
+    name: "The console's usage, workspaces and security pages",
+  });
+  await pages.check();
+  const security = page.getByRole("region", { name: "Security" });
+  const unused = security.getByRole("spinbutton", { name: "Days a session lasts unused" });
+  const codes = security.getByRole("checkbox", { name: "Sign in with a code by email" });
+  const save = security.getByRole("button", { name: "Save" });
+  try {
+    await expect(unused).toHaveValue("30");
+    await expect(security.getByRole("list", { name: "Ways to sign in now" })).toContainText(
+      "A code by email",
+    );
+    expect(await violations(page)).toEqual([]);
+
+    await unused.fill("0");
+    await save.click();
+    await expect(security.getByRole("alert")).toHaveText(
+      "Days a session lasts unused: a whole number from 1 to 365.",
+    );
+
+    await unused.fill("7");
+    await codes.uncheck();
+    await save.click();
+    await expect(security.getByRole("status")).toHaveText("Saved.");
+    await expect(unused).toHaveValue("7");
+    await expect(security.getByRole("list", { name: "Ways to sign in now" })).not.toContainText(
+      "A code by email",
+    );
+    expect(await violations(page)).toEqual([]);
+  } finally {
+    // Back as the other tests expect them, however far the test got.
+    await unused.fill("30");
+    await codes.check();
+    await save.click();
+    await expect(security.getByRole("status")).toHaveText(/^(Saved|Nothing changed)\.$/);
+    await pages.uncheck();
+  }
+  expect(problems).toEqual([]);
+});
