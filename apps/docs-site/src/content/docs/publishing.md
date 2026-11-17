@@ -43,8 +43,10 @@ a list of its pages.
 - **Links between its own pages only.** A link to a note on the same site
   leads to its page. A link to any other note is plain text, and the site
   gives nothing of that note away. Web addresses stay links.
-- **Images and files** the pages show, served by the server. A file
-  shows only on a site whose page links to it.
+- **Images and files** the pages show. Those kept in the vault are served
+  by your server, and only on a site whose page links to them. An image
+  from another site loads from that site, which then sees the addresses of
+  the people who visit the page.
 - **Text, headings, lists, tables, callouts, code with its colors and
   math.** Properties are not shown. A diagram or a plugin's block shows its
   code, and an embedded note shows as a link to its page.
