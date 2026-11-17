@@ -5,7 +5,9 @@
 // so the chain always has a head, and it records itself, with the hash of
 // the last row it took, which the oldest row kept links to. A checkpoint
 // each hour writes the chain's head to the log and to the server's log, so
-// rows cut off the end show against either.
+// rows cut off the end show against either. A purge does not wait for a
+// SIEM: events a destination never took go with the rest, and the purge
+// records which as `audit.export_gap`, moving the destination past them.
 import { type Database, type Queryable, readCount, readText } from "@nether/server/src/db.ts";
 import type { ChainKey } from "./chain.ts";
 import { record } from "./log.ts";
@@ -78,6 +80,40 @@ export async function purge(db: Database, days: number, key: ChainKey): Promise<
       "DELETE FROM audit_events WHERE seq <= $1 RETURNING seq",
       [seq],
     );
+    // Each destination that had not taken them: the gap, then past it.
+    const { rows: behind } = await tx.query(
+      `SELECT id, kind, name, cursor FROM audit_destinations WHERE cursor < $1 ORDER BY id FOR UPDATE`,
+      [seq],
+    );
+    for (const destination of behind) {
+      const cursor = readCount(destination, "cursor");
+      await record(
+        tx,
+        {
+          action: "audit.export_gap",
+          outcome: "failure",
+          reason: "purged before it was sent",
+          actor: { kind: "system" },
+          target: {
+            type: "audit_destination",
+            id: readText(destination, "id"),
+            name: readText(destination, "name"),
+          },
+          details: {
+            kind: readText(destination, "kind"),
+            fromSeq: cursor + 1,
+            throughSeq: seq,
+            count: seq - cursor,
+          },
+          origin: { address: null, userAgent: null },
+        },
+        key,
+      );
+      await tx.query("UPDATE audit_destinations SET cursor = $2 WHERE id = $1", [
+        readText(destination, "id"),
+        seq,
+      ]);
+    }
     await record(
       tx,
       {
