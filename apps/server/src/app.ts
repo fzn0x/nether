@@ -27,6 +27,7 @@ import { registerSessions } from "./sessions.ts";
 import { SecuritySettings } from "./settings.ts";
 import { AiEndpoints } from "./aiEndpoints.ts";
 import { registerSetup } from "./setup.ts";
+import { signInGuards } from "./signIns.ts";
 import { registerRelay } from "./relay.ts";
 import { type ClusterBus, ProcessBus } from "./cluster.ts";
 import { registerSync } from "./sync.ts";
@@ -293,7 +294,14 @@ export async function buildApp(config: Config, services: Services): Promise<Fast
   }));
   await registerEnterprise(
     app,
-    { db: services.db, config, disconnect: reconnect, security, aiEndpoints },
+    {
+      db: services.db,
+      config,
+      disconnect: reconnect,
+      security,
+      aiEndpoints,
+      guards: signInGuards(services.db),
+    },
     switches,
     modules,
   );

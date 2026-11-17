@@ -10,6 +10,7 @@ import type { AiEndpoints } from "./aiEndpoints.ts";
 import type { Config } from "./config.ts";
 import type { Database } from "./db.ts";
 import type { SecuritySettings } from "./settings.ts";
+import type { SignInGuards } from "./signIns.ts";
 
 export const enterpriseFeatures = ["sso", "scim", "audit", "policies", "admin", "ha"] as const;
 
@@ -32,6 +33,12 @@ export interface EnterpriseServices {
   readonly security: SecuritySettings;
   /** The approved AI endpoints (ADR 0086), which the `policies` module's page reads and sets. */
   readonly aiEndpoints: AiEndpoints;
+  /**
+   * The guards the server asks before it looks an account up by its
+   * address, when a session starts and each time one is used (ADR 0080):
+   * a module adds its own, as single sign-on does to require a provider.
+   */
+  readonly guards: SignInGuards;
 }
 
 /** What a module's plugin is given. */
