@@ -1040,11 +1040,11 @@ test("the admin console's security page sets how long sessions last, and email c
     );
     expect(await violations(page)).toEqual([]);
   } finally {
-    // Back as the other tests expect them.
+    // Back as the other tests expect them, however far the test got.
     await unused.fill("30");
     await codes.check();
     await save.click();
-    await expect(security.getByRole("status")).toHaveText("Saved.");
+    await expect(security.getByRole("status")).toHaveText(/^(Saved|Nothing changed)\.$/);
     await pages.uncheck();
   }
   expect(problems).toEqual([]);
