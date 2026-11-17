@@ -44,12 +44,19 @@ const syncCommands: ReadonlySet<CommandId> = new Set([
 
 /**
  * What the web app leaves out: linking a vault to a workspace, as each of
- * its vaults is one, and updates, which come with its server.
+ * its vaults is one, updates, which come with its server, and connections,
+ * which its server will keep in a later part of ADR 0090.
  */
-const notOnTheWeb: ReadonlySet<CommandId> = new Set(["sync", "checkUpdates", "updateChecks"]);
+const notOnTheWeb: ReadonlySet<CommandId> = new Set([
+  "sync",
+  "checkUpdates",
+  "updateChecks",
+  "connections",
+]);
 
 /** What the mobile apps leave out until the parts that bring them (ADR 0087). */
 const notOnPhonesYet: ReadonlySet<CommandId> = new Set([
+  "connections",
   "export",
   "openGraph",
   "newCanvas",

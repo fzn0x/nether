@@ -4,6 +4,7 @@
 // in the dev server's preview and the end-to-end tests.
 import { fetch as goFetch } from "@mygo-plugins/fetch";
 import { open } from "@mygo-plugins/sqlite";
+import { type KeptConnection, readKeptConnections } from "@nether/integrations";
 import {
   ChangedOnDisk,
   type FileEvent,
@@ -20,6 +21,7 @@ import {
   AI,
   type AIProvider,
   type AISettings,
+  Connections,
   Desktop,
   type ExportEntry,
   Exports,
@@ -121,6 +123,26 @@ function base64(data: Uint8Array): string {
   return btoa(binary);
 }
 
+/**
+ * Where the person's connections are kept on this device (ADR 0090): their
+ * fields in the open, their secrets in the keychain, through Go in the
+ * desktop app; in memory in the preview.
+ */
+export interface ConnectionStore {
+  list(): Promise<readonly KeptConnection[]>;
+  /** Adds a connection, with an empty ID, or changes one; gives it as kept. */
+  save(connection: KeptConnection): Promise<KeptConnection>;
+  /** Keeps its secret, as JSON; an empty one removes it. */
+  setSecret(id: string, secret: string): Promise<void>;
+  /** Its secret; empty when none is kept. */
+  secret(id: string): Promise<string>;
+  remove(id: string): Promise<void>;
+  /** Sends a request with `redirect: "manual"` and no CORS: Go's in the desktop app. */
+  readonly fetch: typeof fetch;
+  /** Whether `http:` addresses may be reached, as one on the person's own network. */
+  readonly http: boolean;
+}
+
 /** Where a provider's requests go, how, and with which key; none where the way there adds it. */
 export interface AiAccess {
   readonly url: string;
@@ -184,6 +206,12 @@ export interface Backend {
    * browser.
    */
   aiAccess(provider: AIProvider, workspaceId: string | undefined): Promise<AiAccess>;
+  /**
+   * The person's connections kept on this device, for Nether's own plugins
+   * (ADR 0090); none where the app keeps none yet: the web app, whose come
+   * from its server in a later part, and the mobile apps.
+   */
+  readonly connections?: ConnectionStore;
   /**
    * The WebSocket class sync opens its connection with: Go's in the desktop
    * app, outside the page's mixed-content rules, and the browser's in the
@@ -329,6 +357,25 @@ const desktop: Backend = {
   },
   removeAiProvider: (id) => AI.remove(id),
   setDefaultAiProvider: (id) => AI.setDefault(id),
+  connections: {
+    list: async () => readKeptConnections(await Connections.list()),
+    async save(connection) {
+      const [kept] = readKeptConnections([
+        await Connections.save({
+          ...connection,
+          origins: [...connection.origins],
+          hasSecret: false,
+        }),
+      ]);
+      if (kept === undefined) throw new Error("The connection was not kept.");
+      return kept;
+    },
+    setSecret: (id, secret) => Connections.setSecret(id, secret),
+    secret: (id) => Connections.secret(id),
+    remove: (id) => Connections.remove(id),
+    fetch: goFetch,
+    http: true,
+  },
   updateSettings: () => Updates.settings(),
   mark(name) {
     void Desktop.mark(name);
@@ -600,6 +647,50 @@ function memoryAi(): Pick<
   };
 }
 
+/**
+ * Connections kept in memory, as the preview keeps them, with their
+ * secrets; forgotten when the page closes. The end-to-end tests stand in
+ * for feeds with routes of the page.
+ */
+function memoryConnections(): ConnectionStore {
+  let kept: KeptConnection[] = [];
+  const secrets = new Map<string, string>();
+  const find = (id: string) => {
+    if (!kept.some((each) => each.id === id)) throw new Error(`No connection ${id} is kept here.`);
+  };
+  return {
+    list: () => Promise.resolve(kept.map((each) => ({ ...each }))),
+    save(given) {
+      const connection = { ...given, name: given.name.trim() };
+      if (connection.name === "" || connection.address === "" || connection.origins.length === 0) {
+        return Promise.reject(new Error("That is not a connection."));
+      }
+      if (connection.id === "") {
+        const made = { ...connection, id: crypto.randomUUID() };
+        kept = [...kept, made];
+        return Promise.resolve({ ...made });
+      }
+      find(connection.id);
+      kept = kept.map((each) => (each.id === connection.id ? connection : each));
+      return Promise.resolve({ ...connection });
+    },
+    setSecret(id, secret) {
+      find(id);
+      if (secret === "") secrets.delete(id);
+      else secrets.set(id, secret);
+      return Promise.resolve();
+    },
+    secret: (id) => Promise.resolve(secrets.get(id) ?? ""),
+    remove(id) {
+      secrets.delete(id);
+      kept = kept.filter((each) => each.id !== id);
+      return Promise.resolve();
+    },
+    fetch: (input, init) => fetch(input, init),
+    http: true,
+  };
+}
+
 /** The servers signed in to in the preview, which forgets them when the page closes. */
 const previewServers = new Map<string, { account: ServerAccount; token: string }>();
 /** The private keys of the preview's accounts, as the keychain keeps them in the app. */
@@ -643,6 +734,7 @@ const preview: Backend = {
       : Promise.resolve(loopback);
   },
   ...memoryAi(),
+  connections: memoryConnections(),
   // A page in a browser updates with its server.
   updateSettings: () => Promise.resolve({ available: false, automatic: false }),
   setAutomaticUpdates: () => Promise.resolve(),

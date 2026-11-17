@@ -4,6 +4,7 @@
 import {
   Bell,
   Bookmark,
+  Cable,
   Calendar1,
   CalendarDays,
   CalendarRange,
@@ -99,6 +100,7 @@ export const commandIcons: Readonly<Record<CommandId, LucideIcon>> = {
   templateSettings: ScrollText,
   appearance: Palette,
   plugins: Puzzle,
+  connections: Cable,
   servers: Server,
   sync: RefreshCw,
   members: Users,
