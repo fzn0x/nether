@@ -58,12 +58,20 @@ async function patch(
 }
 
 describe("Entra ID", () => {
-  it("passes the test connection's lookup of a random user, and finds users by externalId", async () => {
+  it("passes the test connection's lookup of a random user and group, and finds users by externalId", async () => {
     const test = await start();
     const directory = await entra(test);
     const lookup = await scim(test, directory, "GET", filtered(`userName eq "${randomUUID()}"`));
     expect(lookup.statusCode).toBe(200);
     expect(lookup.json()).toMatchObject({ totalResults: 0, Resources: [] });
+    const group = await scim(
+      test,
+      directory,
+      "GET",
+      `/Groups?excludedAttributes=members&filter=${encodeURIComponent(`displayName eq "${randomUUID()}"`)}`,
+    );
+    expect(group.statusCode).toBe(200);
+    expect(group.json()).toMatchObject({ totalResults: 0, Resources: [] });
 
     const externalId = randomUUID();
     const made = await scim(
@@ -284,5 +292,52 @@ describe("Entra ID", () => {
       if (removed !== 204) await new Promise((resolve) => setTimeout(resolve, 500));
     }
     expect(removed).toBe(204);
+  });
+});
+
+describe("a directory's groups, read", () => {
+  it("are found by displayName without regard to case, their members left out when asked", async () => {
+    const test = await start();
+    const directory = await entra(test);
+    const made = await scim(test, directory, "POST", "/Users", entraUser("ada@contoso.example"));
+    const { id: ada } = made.json<{ id: string }>();
+    // A group of the directory's, as the next part's /Groups will make one.
+    const group = randomUUID();
+    await test.db.query(
+      "INSERT INTO groups (id, directory_id, name, external_id) VALUES ($1, 'entra', 'Engines', 'grp-1')",
+      [group],
+    );
+    await test.db.query("INSERT INTO group_members (group_id, user_id) VALUES ($1, $2)", [
+      group,
+      ada,
+    ]);
+    const found = await scim(
+      test,
+      directory,
+      "GET",
+      `/Groups?filter=${encodeURIComponent('displayName eq "ENGINES"')}&excludedAttributes=members`,
+    );
+    expect(found.json<{ Resources: unknown[] }>().Resources).toEqual([
+      {
+        schemas: ["urn:ietf:params:scim:schemas:core:2.0:Group"],
+        id: group,
+        externalId: "grp-1",
+        displayName: "Engines",
+        meta: expect.objectContaining({ resourceType: "Group" }) as unknown,
+      },
+    ]);
+    const one = await scim(test, directory, "GET", `/Groups/${group}`);
+    expect(one.json()).toMatchObject({ members: [{ value: ada, display: "Ada Lovelace" }] });
+    const byMember = await scim(
+      test,
+      directory,
+      "GET",
+      `/Groups?filter=${encodeURIComponent(`members.value eq "${ada}"`)}`,
+    );
+    expect(byMember.json()).toMatchObject({ totalResults: 1 });
+    // A user's groups are read only, from the groups.
+    const user = await scim(test, directory, "GET", `/Users/${ada}`);
+    expect(user.json()).toMatchObject({ groups: [{ value: group, display: "Engines" }] });
+    expect((await scim(test, directory, "GET", `/Groups/${randomUUID()}`)).statusCode).toBe(404);
   });
 });
