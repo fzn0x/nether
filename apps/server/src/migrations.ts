@@ -628,6 +628,8 @@ export const migrations: readonly Migration[] = [
         -- OpenID Connect's nonce and the server's PKCE verifier; none for SAML.
         nonce text,
         verifier text,
+        -- SAML's AuthnRequest ID, which the answer must name; none for OpenID Connect.
+        request_id text,
         redirect text NOT NULL,
         challenge text NOT NULL,
         invitation_hash text,
