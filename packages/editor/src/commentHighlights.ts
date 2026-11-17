@@ -101,32 +101,41 @@ export function blockAnchor(state: EditorState, pos: number): CommentAnchor | un
   return commentAnchor(state, pos + 1, pos + node.nodeSize - 1);
 }
 
+/** Where an anchor's text is in the editor's document now; undefined when it is gone. */
+export function anchorRange(
+  state: EditorState,
+  anchor: Pick<CommentAnchor, "start" | "end">,
+): { from: number; to: number } | undefined {
+  const sync = ySyncPluginKey.getState(state);
+  if (sync === undefined) return undefined;
+  const position = (bytes: Uint8Array) => {
+    try {
+      return relativePositionToAbsolutePosition(
+        sync.doc,
+        sync.type,
+        Y.decodeRelativePosition(bytes),
+        sync.binding.mapping,
+      );
+    } catch {
+      return null;
+    }
+  };
+  const from = position(anchor.start);
+  const to = position(anchor.end);
+  return from !== null && to !== null && to > from && to <= state.doc.content.size
+    ? { from, to }
+    : undefined;
+}
+
 /** Where a thread is in the editor's document now: its range, or its block's, or nowhere. */
 export function threadRange(
   state: EditorState,
   anchor: CommentAnchor,
 ): { from: number; to: number } | undefined {
-  const sync = ySyncPluginKey.getState(state);
-  if (sync !== undefined) {
-    const position = (bytes: Uint8Array) => {
-      try {
-        return relativePositionToAbsolutePosition(
-          sync.doc,
-          sync.type,
-          Y.decodeRelativePosition(bytes),
-          sync.binding.mapping,
-        );
-      } catch {
-        return null;
-      }
-    };
-    const from = position(anchor.start);
-    const to = position(anchor.end);
-    if (from !== null && to !== null && to > from && to <= state.doc.content.size) {
-      return { from, to };
-    }
-  }
-  return anchor.block === undefined ? undefined : blockRange(state.doc, anchor.block);
+  return (
+    anchorRange(state, anchor) ??
+    (anchor.block === undefined ? undefined : blockRange(state.doc, anchor.block))
+  );
 }
 
 function decorate(state: EditorState, shown: CommentHighlightState): DecorationSet {

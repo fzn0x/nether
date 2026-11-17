@@ -9,6 +9,13 @@ export {
   turnBlockInto,
 } from "./actions.ts";
 export {
+  type AssistPlacement,
+  type AssistSelection,
+  type NoteAssistView,
+  applyAssist,
+  assistSelection,
+} from "./assist.ts";
+export {
   type BlockCommand,
   type BlockEntry,
   blockCommands,
@@ -32,6 +39,7 @@ export {
 } from "./comments.ts";
 export {
   CommentHighlights,
+  anchorRange,
   blockAnchor,
   commentAnchor,
   commentHighlightsKey,
