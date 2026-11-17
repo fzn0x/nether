@@ -1,8 +1,18 @@
-Nether's first public release: the local-first note taking app that you
-truly own, and now the server that syncs it, on a machine you control.
-Your notes stay plain Markdown files in a folder you choose, and the app
-works fully offline with no account; a Nether server adds sync between
-your devices, sharing with others, co-editing, comments and a web app.
+Nether is the local-first note taking app that you truly own, with a
+server that syncs it on a machine you control. Your notes stay plain
+Markdown files in a folder you choose, and the app works fully offline
+with no account.
+
+This release adds plugins, which run sandboxed and install from the
+directory; AI from your own provider; share links and published sites; a
+REST API, webhooks and a web clipper; and PDF highlights. A server can
+now run on several nodes and on Kubernetes, with single sign-on, SCIM,
+audit logs, data policies and an admin console, all free and off until an
+admin turns them on.
+
+It also fixes a bug that could move a page's notes to the trash on every
+device when the page stopped being shared on its own. Update every device
+and the server.
 
 ## Get it
 
