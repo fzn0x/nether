@@ -42,7 +42,7 @@ import {
 } from "./commands.ts";
 import { builtinPlugins } from "./plugins/builtins.ts";
 import { BlockRegistry } from "./plugins/blocks.ts";
-import { CodeBlockRegistry } from "./plugins/codeBlocks.ts";
+import { CodeBlockRegistry, type NoteRequest } from "./plugins/codeBlocks.ts";
 import { PanelRegistry, usePanels } from "./plugins/panels.ts";
 import { ViewRegistry, extensionOf, useViews } from "./plugins/views.ts";
 import { LayoutRegistry } from "./plugins/layouts.ts";
@@ -57,7 +57,7 @@ import { ExportDialog } from "./ExportDialog.tsx";
 import { MergeNoteDialog } from "./MergeNoteDialog.tsx";
 import { MoveNoteDialog } from "./MoveNoteDialog.tsx";
 import { NewNoteDialog } from "./NewNoteDialog.tsx";
-import { copyNote, fullPath, vaultFolders } from "./noteActions.ts";
+import { buttonNotePath, copyNote, freeNotePath, fullPath, vaultFolders } from "./noteActions.ts";
 import { NoteTagsDialog } from "./NoteTagsDialog.tsx";
 import { NoteList } from "./NoteList.tsx";
 import { type Dragged, NoteTree } from "./NoteTree.tsx";
@@ -635,9 +635,12 @@ export function VaultView(props: {
     setPanel("notes");
   }, []);
 
-  /** Makes a note at `path`, blank or from a template, and opens it with the cursor where the template puts it. */
+  /**
+   * Makes a note at `path`, blank or from a template, and opens it with the
+   * cursor where the template puts it, unless asked not to.
+   */
   const makeNote = useCallback(
-    async (path: string, template: NoteEntry | undefined, date: Date) => {
+    async (path: string, template: NoteEntry | undefined, date: Date, open = true) => {
       if (vault === undefined) return;
       const [{ createNote }, file] = await Promise.all([
         loadCreateNote(),
@@ -657,11 +660,40 @@ export function VaultView(props: {
         path,
         text === undefined ? undefined : { text, values },
       );
+      if (!open) return;
       setTag(undefined);
       setPanel("notes");
       openNote(created.id, created.cursor);
     },
     [vault, settings, openNote],
+  );
+
+  /**
+   * Makes the note a button asks for (ADR 0072), from its template when it
+   * names one, beside a note of its name unless that one should open.
+   */
+  const buttonNote = useCallback(
+    async (request: NoteRequest) => {
+      if (vault === undefined) return;
+      const name = request.name ?? t("untitled");
+      const path = buttonNotePath(request.folder, name);
+      if (path === undefined) {
+        throw new Error(t("buttonBadPlace", { path: `${request.folder}/${name}` }));
+      }
+      const existing = vault.noteAt(path);
+      if (existing !== undefined && request.openIfExists) {
+        openNote(existing.id);
+        return;
+      }
+      const named = request.template;
+      const template =
+        named === undefined ? undefined : findTemplate(vault.notes(), settings, named);
+      if (named !== undefined && template === undefined) {
+        throw new Error(t("buttonNoTemplate", { template: named }));
+      }
+      await makeNote(freeNotePath(vault, path), template, new Date(), request.open);
+    },
+    [vault, settings, openNote, makeNote],
   );
 
   /** Opens the note for the day, week or month it is, made from its template the first time. */
@@ -2521,6 +2553,7 @@ export function VaultView(props: {
                           onOpenNote={openNote}
                           onOpenFile={openLinkedFile}
                           onOpenTag={showTag}
+                          onCreateNote={buttonNote}
                           mode={paneAsks.mode}
                           onMode={(next) => {
                             ask(pane.key, (current) => ({ ...current, mode: next }));

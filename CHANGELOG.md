@@ -8,6 +8,16 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Publishing: a page with its subpages, or the folder it is in, published
+  from its Share dialog as a site anyone opens at the server's
+  `/p/<name>/`, with no account. The server draws each page from its note
+  as it is now, as HTML with no script, under a policy that runs nothing;
+  a site shows the notes its publisher has full access to, leaves out
+  those with `publish: false`, links only between its own pages and
+  serves the images they show by hash. Unpublishing takes it down at once;
+  a workspace's owners and admins turn publishing off, and an encrypted
+  workspace publishes nothing
+  ([ADR 0076](docs/adr/0076-a-published-site-is-a-note-or-a-folder-drawn-by-the-server-as-it-is-now-linking-only-to-its-own-pages.md)).
 - The plugin API's first part, `@nether/plugin-api`, under the MIT
   license: a plugin's manifest, `definePlugin`, and the messages between a
   plugin and the app, within the page or through a port. Commands a
@@ -180,6 +190,17 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   storage, and reaches the person's server alone
   ([ADR 0066](docs/adr/0066-the-web-clipper-is-a-manifest-v3-extension-that-sends-clips-to-the-users-own-server-alone.md)).
   The build makes a ZIP of each for its store.
+- Buttons in notes, as `meta-bind-button` code blocks in the syntax of
+  Obsidian's Meta Bind plugin, drawn below their code by the built-in
+  Buttons plugin, with a Button entry in the slash menu
+  ([ADR 0072](docs/adr/0072-buttons-are-meta-bind-button-blocks-and-triggers-are-schema-rules-run-where-the-change-is-made.md)).
+  A button's actions run in order: a command of the app or a plugin by
+  its ID, a new note from a template or blank, a property of its note or
+  another, a link opened, a wait. One that fails stops the rest and says
+  why, and a button that would run JavaScript, ask for input or change
+  the note's text says so and runs nothing. A button that runs commands
+  asks first, naming them: once on each device for the button as it is,
+  and each time for a command a vault's plugin adds.
 - AI in the web app, through its server: the server keeps providers, each
   account's own and those its admins set for everyone, with each key
   sealed by the admin's `NETHER_SECRET_KEY` and never given back. The web

@@ -11,6 +11,7 @@ import type { VaultMedia } from "./backend.ts";
 import { t } from "./messages.ts";
 import type {
   CodeBlockDrawing,
+  CodeBlockNote,
   CodeBlockProcessor,
   CodeBlockRegistry,
 } from "./plugins/codeBlocks.ts";
@@ -30,6 +31,8 @@ interface Props {
   readonly media: VaultMedia;
   readonly graph: LinkGraph;
   readonly onOpen: (id: NoteId) => void;
+  /** What a live view may do from the block's note, as a button does. */
+  readonly note?: CodeBlockNote | undefined;
 }
 
 export function errorText(error: unknown): string {
@@ -97,6 +100,7 @@ function Drawn(props: Props & { readonly processor: CodeBlockProcessor }) {
             media={props.media}
             graph={props.graph}
             openNote={props.onOpen}
+            note={props.note}
           />
         </Suspense>
       </div>

@@ -11,6 +11,7 @@ export default {
       [
         "adr",
         "ai",
+        "automations",
         "canvas",
         "ci",
         "core",

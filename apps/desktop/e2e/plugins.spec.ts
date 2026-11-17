@@ -49,6 +49,7 @@ test("the settings turn a built-in plugin off and on again, and the vault keeps 
     .toEqual({
       mermaid: true,
       query: true,
+      automations: true,
       tags: false,
       assigned: true,
       outline: true,

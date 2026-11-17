@@ -37,8 +37,8 @@ const manifest = {
  * The service worker: it keeps every file of this build, named by the
  * build's files so a new build is a new worker; pages come from the
  * network while it answers, so a new version shows, and from what it kept
- * offline; the API is never kept. A new version waits for the old one's
- * pages to close, so they never miss their files.
+ * offline; the API and published sites are never kept. A new version
+ * waits for the old one's pages to close, so they never miss their files.
  */
 function serviceWorker(version: string, files: readonly string[]): string {
   return `// Made by the web app's build (apps/web/vite.config.ts).
@@ -68,7 +68,8 @@ self.addEventListener("fetch", (event) => {
   const { request } = event;
   const url = new URL(request.url);
   if (request.method !== "GET" || url.origin !== self.location.origin) return;
-  if (url.pathname.startsWith("/api/") || url.pathname === "/health") return;
+  // The API, and published sites (ADR 0076), which are pages of their own.
+  if (url.pathname.startsWith("/api/") || url.pathname.startsWith("/p/") || url.pathname === "/health") return;
   if (request.mode === "navigate") {
     event.respondWith(
       fetch(request).catch(() =>

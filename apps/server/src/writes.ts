@@ -52,7 +52,7 @@ const unsafe = /[\\:*?"<>|]/;
 /** Names Windows keeps for devices, with any extension. */
 const reserved = /^(con|prn|aux|nul|com[0-9]|lpt[0-9])(\.|$)/i;
 
-function hasControl(text: string): boolean {
+export function hasControl(text: string): boolean {
   for (let at = 0; at < text.length; at++) {
     if (text.charCodeAt(at) < 0x20 || text.charCodeAt(at) === 0x7f) return true;
   }
@@ -60,7 +60,7 @@ function hasControl(text: string): boolean {
 }
 
 /** Whether a name can be a folder's or a file's on every system, and is not hidden. */
-function isName(part: string): boolean {
+export function isName(part: string): boolean {
   return (
     part !== "" &&
     part.trim() === part &&
@@ -103,7 +103,7 @@ function depthOf(area: string): number {
  * folder beside it; General's when none does. Undefined when the path is in
  * `Private` and the account has no private space there.
  */
-async function unitForPath(
+export async function unitForPath(
   db: Queryable,
   reached: Reached,
   userId: string,
