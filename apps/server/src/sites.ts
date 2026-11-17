@@ -8,6 +8,7 @@
 // (ADR 0077), and ask search engines not to index it.
 import { randomUUID } from "node:crypto";
 import type { FastifyInstance, FastifyRequest } from "fastify";
+import { type DataPolicy, sitesOff } from "./dataPolicies.ts";
 import { type Database, type Queryable, type Row, readText, readTime } from "./db.ts";
 import {
   type TxtResolver,
@@ -30,6 +31,11 @@ export const siteName = /^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$/;
 
 /** The most sites a workspace has. */
 export const maxSites = 100;
+
+/** What sites read of a workspace's data policy (ADR 0088). */
+export interface SitePolicies {
+  of(workspace: string): Promise<DataPolicy>;
+}
 
 export interface Site {
   readonly id: string;
@@ -187,6 +193,8 @@ export function registerSites(
     readonly changed: (site: string) => void;
     /** What looks up a domain's TXT records, the system's resolver by default. */
     readonly resolveTxt?: TxtResolver | undefined;
+    /** The workspaces' data policies, which may stop their publishing. */
+    readonly policies: SitePolicies;
   },
 ): void {
   const account = signedIn(db);
@@ -280,6 +288,8 @@ export function registerSites(
       ]);
       return {
         publishing: switches[0]?.publishing === true,
+        // Whether the server's data policy lets the workspace publish, over its switch.
+        policy: (await options.policies.of(place.workspace)).sites ? "on" : "off",
         // Whether the account turns publishing on and off: an owner's or admin's.
         manages: place.admin,
         sites: mine.map((row) => shown(request, row)),
@@ -314,6 +324,7 @@ export function registerSites(
       if (!(await fullAt(place, me, { note, folder: folder ?? null }))) {
         return fail(reply, 403, noFull);
       }
+      if (!(await options.policies.of(place.workspace)).sites) return fail(reply, 403, sitesOff);
       const id = randomUUID();
       const made = await db
         .transaction(async (tx) => {
