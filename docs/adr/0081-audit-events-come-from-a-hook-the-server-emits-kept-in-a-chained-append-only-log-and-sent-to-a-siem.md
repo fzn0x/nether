@@ -409,3 +409,34 @@ of each, shown in the console with no control, as a feature's switch is.
   named here, and data policies decide what happens to its events.
 - `EnterpriseContext` grows `events`, which ADR 0079's other modules may
   listen to as well.
+
+## What building part 1 settled
+
+- **The hook's names.** `SessionMethod` is exported from
+  `apps/server/src/events.ts`, beside the events, for the sessions' own
+  `method` to use. `EnterpriseServices` holds `events` whole, not only its
+  `listen`: a module that changes what a route would tells of it too, as
+  the console's Workspaces page does when an instance admin sets a role,
+  through the members' one `setRole`, recorded with `as: instance-admin`.
+- **A module reads its switch through the event's transaction**, so a
+  listener never waits on a query outside the change it records.
+- **Names are read when the event is recorded**, in its transaction: an
+  account's name and email, a workspace's name, and a target's name when
+  the route gave none, for an account or a note the server can read.
+- **Failures and their reasons.** A sign-in by password fails as no such
+  account, a wrong password, or an account with no password; by code, as
+  a wrong code or none asked for; by OpenID Connect, as the provider's
+  error; at setup, as a wrong code. A share link that asks for its
+  password first is not refused yet: only a wrong one is.
+- **A webhook's address is recorded by its origin alone**, since its path
+  or query may hold a secret of the service it sends to.
+- **A new key is noticed at the first event after the server starts with
+  it**, which `audit.key_changed` comes before.
+- **Search in the console.** The email field offers the accounts whose
+  name or email matches, and finds failed sign-ins by the email typed;
+  **Only theirs** beside an event shows its actor's alone, by ID.
+- **Upkeep** runs an hour after the server starts, then every hour.
+- **The routes**, for instance admins while the feature is on:
+  `GET /api/audit/events`, `/api/audit/actors` and `/api/audit/workspaces`
+  for the filters, `GET` and `PUT /api/audit/settings`, and
+  `POST /api/audit/check`.
