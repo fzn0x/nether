@@ -303,13 +303,18 @@ export async function signIn(url: string): Promise<string> {
   return ((await response.json()) as { token: string }).token;
 }
 
-/** A device syncing a vault, with what it keeps; for an encrypted workspace, with its keys. */
+/**
+ * A device syncing a vault, with what it keeps; for an encrypted workspace,
+ * with its keys; and through the WebSocket class given, the global one
+ * otherwise.
+ */
 export async function device(
   served: { url: string; workspaceId: string },
   token: string,
   vault = new MemoryVault(),
   store = new MemoryStore(),
   encryption?: SyncOptions["encryption"],
+  sockets?: unknown,
 ) {
   const engine = await VaultSync.start({
     server: served.url,
@@ -318,9 +323,81 @@ export async function device(
     vault,
     store,
     ...(encryption === undefined ? {} : { encryption }),
+    ...(sockets === undefined ? {} : { WebSocket: sockets }),
   });
   engines.push(engine);
   return { engine, vault, store };
+}
+
+/**
+ * A device's link to the server, slow when its delay is set: each socket
+ * hands on what it hears, messages and its closing, that many milliseconds
+ * late and in order; what it sends goes at once.
+ */
+export function slowLink() {
+  const link = { delay: 0 };
+  class SlowSocket {
+    /** The provider's number for it. */
+    identifier = 0;
+    readonly #socket: WebSocket;
+    /** Each listener given, and what it hears through. */
+    readonly #listeners = new Map<(event: Event) => void, (event: Event) => void>();
+    /** Events heard and not yet handed on, and when the last of them is due. */
+    #waiting = 0;
+    #due = 0;
+
+    constructor(url: string) {
+      this.#socket = new WebSocket(url);
+    }
+
+    get readyState(): number {
+      return this.#socket.readyState;
+    }
+
+    get binaryType(): BinaryType {
+      return this.#socket.binaryType;
+    }
+
+    set binaryType(type: BinaryType) {
+      this.#socket.binaryType = type;
+    }
+
+    send(data: Uint8Array<ArrayBuffer>): void {
+      this.#socket.send(data);
+    }
+
+    close(): void {
+      this.#socket.close();
+    }
+
+    addEventListener(type: string, listener: (event: Event) => void): void {
+      if (type !== "message" && type !== "close") {
+        this.#socket.addEventListener(type, listener);
+        return;
+      }
+      const late = (event: Event) => {
+        if (link.delay === 0 && this.#waiting === 0) {
+          listener(event);
+          return;
+        }
+        this.#due = Math.max(Date.now() + link.delay, this.#due);
+        this.#waiting += 1;
+        setTimeout(() => {
+          this.#waiting -= 1;
+          // Not to a listener taken off meanwhile, as the provider's once it closed the socket.
+          if (this.#listeners.get(listener) === late) listener(event);
+        }, this.#due - Date.now());
+      };
+      this.#listeners.set(listener, late);
+      this.#socket.addEventListener(type, late);
+    }
+
+    removeEventListener(type: string, listener: (event: Event) => void): void {
+      this.#socket.removeEventListener(type, this.#listeners.get(listener) ?? listener);
+      this.#listeners.delete(listener);
+    }
+  }
+  return { link, WebSocket: SlowSocket };
 }
 
 /** Waits until `check` holds, letting the server store and tell, 20 seconds at most. */
