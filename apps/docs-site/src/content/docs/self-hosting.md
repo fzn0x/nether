@@ -161,6 +161,11 @@ from the same file, such as:
   as Ollama beside the server; accounts' own providers reach public
   addresses only. `NETHER_AI=admin` leaves only your providers, and
   `NETHER_AI=off` turns AI through the server off. See [AI](../ai/).
+- **Enterprise features**, each off until you turn it on in the
+  [admin console](../admin/): `NETHER_ENTERPRISE_AUDIT=on`, or `off`, sets
+  that feature here instead, and the console shows it as set by its
+  variable. The others are `NETHER_ENTERPRISE_SSO`, `_SCIM`, `_POLICIES`,
+  `_ADMIN` and `_HA`.
 
 ## Update it
 

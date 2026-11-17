@@ -68,6 +68,9 @@ token as `Authorization: Bearer <token>`. Every error is
 | Route | Signed in | |
 | --- | --- | --- |
 | `GET /health` | | The server's version, and which enterprise features are on |
+| `GET /api/instance/features` | instance admin | Each enterprise feature: `on`, `pinned` (`on` or `off` when its variable sets it, else `null`) and `available` (this build has its module) (ADR 0079) |
+| `PUT /api/instance/features/:feature` | instance admin | Turns a feature `on` or off, at once; 409 when its variable pins it, or the build has no module for it |
+| `GET /api/admin/usage` | instance admin | With the `admin` feature on: accounts, those signed in in the last 30 days, workspaces and the encrypted ones, notes the server can read, attachments and their bytes, and the version |
 | `GET /api/setup`, `POST /api/setup` | | First-run setup, above |
 | `GET /api/sign-in-methods` | | Which ways to sign in this server offers: `password`, `emailCode` when it can send email, and `oidc` with the provider's name |
 | `POST /api/sessions` | | Signs in with `email` and `password`; gives `token` and `expiresAt` |
@@ -470,16 +473,20 @@ machine.
 | `NETHER_AI` | `on` | AI for the web app through this server (ADR 0070): `on` with each account's providers and the admin's, `admin` with the admin's alone, or `off` |
 | `NETHER_AI_PRIVATE` | `off` | Addresses that are not public which the admin's AI providers may reach, as a model on your own network: `on` for any, or addresses and ranges such as `192.168.1.20, 10.0.0.0/8`; those may use `http://`. An account's own providers reach public addresses only |
 | `NETHER_SECRET_KEY` | none | 32 random bytes in base64, as `openssl rand -base64 32` makes them, which seal AI providers' keys at rest; without it the server keeps no keys. Keep it with your backups' secrets: a restore needs the same key to open them |
-| `NETHER_ENTERPRISE_SSO` | `off` | Single sign-on |
-| `NETHER_ENTERPRISE_SCIM` | `off` | Provisioning through SCIM and LDAP |
-| `NETHER_ENTERPRISE_AUDIT` | `off` | Audit logs |
-| `NETHER_ENTERPRISE_POLICIES` | `off` | Data policies and advanced permissions |
-| `NETHER_ENTERPRISE_ADMIN` | `off` | The admin console |
-| `NETHER_ENTERPRISE_HA` | `off` | High availability |
+| `NETHER_ENTERPRISE_SSO` | unset | Single sign-on |
+| `NETHER_ENTERPRISE_SCIM` | unset | Provisioning through SCIM and LDAP |
+| `NETHER_ENTERPRISE_AUDIT` | unset | Audit logs |
+| `NETHER_ENTERPRISE_POLICIES` | unset | Data policies and advanced permissions |
+| `NETHER_ENTERPRISE_ADMIN` | unset | The admin console's usage, workspaces and security pages |
+| `NETHER_ENTERPRISE_HA` | unset | High availability |
 
-A switch takes `on` or `off` (or `true`, `false`, `yes`, `no`, `1`, `0`). A
-feature switched on in a build without its module stops the server at
-startup with a message that names the variable.
+An enterprise feature is off until an instance admin turns it on in the
+admin console (ADR 0079). Its variable, set to `on` or `off` (or `true`,
+`false`, `yes`, `no`, `1`, `0`), pins it instead, and the console shows
+it as set by the variable. A feature pinned on in a build without its
+module stops the server at startup with a message that names the
+variable. The image starts the server from `enterprise/server`, which
+gives it every module; `node dist/main.js` starts it with none.
 
 Set `NETHER_TRUST_PROXY` whenever the server is behind a proxy, or every
 client shares the proxy's address and its limits on signing in. Use `on`
