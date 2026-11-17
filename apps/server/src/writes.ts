@@ -234,7 +234,7 @@ export function registerWrites(
   /** The workspace a write is to, if the caller may write and reaches it; else why not. */
   async function writable(caller: ApiCaller, workspace: string) {
     if (caller.access !== "write") return [403, readOnly] as const;
-    return reach(db, caller, workspace);
+    return reach(db, checks.permissions, caller, workspace);
   }
 
   /**

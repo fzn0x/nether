@@ -10,6 +10,7 @@ import { type Database, readCount, readText } from "./db.ts";
 import type { Mailer } from "./mail.ts";
 import { type Outcome, type SendOptions, post, signature } from "./outbound.ts";
 import { fanOut } from "./outbox.ts";
+import type { Permissions } from "./places.ts";
 
 /** Seconds before each try again, after the first try and each after it. */
 export const retryDelays: readonly number[] = [60, 300, 1800, 7200, 21_600, 43_200, 86_400];
@@ -232,14 +233,17 @@ export async function purgeDeliveries(db: Database): Promise<void> {
  */
 export function startWebhooks(
   db: Database,
-  options: DeliveryOptions,
+  options: DeliveryOptions & {
+    /** Whether advanced permissions hold (ADR 0089), which bound what a webhook's maker opens. */
+    readonly permissions: Permissions;
+  },
   every = 5000,
 ): { readonly round: () => Promise<void>; stop(): Promise<void> } {
   let running: Promise<void> | undefined;
   const round = (): Promise<void> => {
     running ??= (async () => {
       try {
-        await fanOut(db);
+        await fanOut(db, options.permissions);
         await sendDue(db, options);
       } catch (error) {
         options.log?.warn({ err: error }, "Could not send webhooks' events");

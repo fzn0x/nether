@@ -8,6 +8,7 @@ import { type Database, readBytes, readCount, readTime } from "./db.ts";
 import { fail, uuidField } from "./http.ts";
 import { accountOf, signedIn } from "./sessions.ts";
 import { accessible, unitOfDocument } from "./units.ts";
+import type { Permissions } from "./places.ts";
 
 /** The most versions one answer lists, the latest. */
 const listed = 200;
@@ -37,13 +38,17 @@ const versionParams = {
   },
 } as const;
 
-export function registerVersions(app: FastifyInstance, db: Database): void {
+export function registerVersions(
+  app: FastifyInstance,
+  db: Database,
+  permissions: Permissions,
+): void {
   const account = signedIn(db);
 
   /** Whether the account may open the note, in its unit (ADR 0042). */
   async function opens(userId: string, workspace: string, note: string): Promise<boolean> {
     const unit = await unitOfDocument(db, workspace, note.toLowerCase());
-    return (await accessible(db, userId, workspace)).levels.has(unit);
+    return (await accessible(db, permissions, userId, workspace)).levels.has(unit);
   }
 
   app.get<{ Params: NoteParams }>(

@@ -10,6 +10,7 @@ import { type Database, type Queryable, type Row, readBytes, readText } from "./
 import { fail, limitBy } from "./http.ts";
 import { accountOf, signedIn } from "./sessions.ts";
 import { accessible, general } from "./units.ts";
+import type { Permissions } from "./places.ts";
 
 /** The most results one search gives. */
 export const maxResults = 50;
@@ -263,6 +264,7 @@ export interface SearchResult {
  */
 export async function search(
   db: Queryable,
+  permissions: Permissions,
   userId: string,
   text: string,
   limit = maxResults,
@@ -286,7 +288,7 @@ export async function search(
       continue;
     }
     if (searched !== undefined && !(await searched(id))) continue;
-    for (const unit of (await accessible(db, userId, id)).levels.keys()) {
+    for (const unit of (await accessible(db, permissions, userId, id)).levels.keys()) {
       pairs.push({ workspace: id, unit });
     }
   }
@@ -333,7 +335,7 @@ export async function search(
   return { results, encrypted };
 }
 
-export function registerSearch(app: FastifyInstance, db: Database): void {
+export function registerSearch(app: FastifyInstance, db: Database, permissions: Permissions): void {
   const account = signedIn(db);
   app.get<{ Querystring: { q: string; limit?: number } }>(
     "/api/search",
@@ -356,7 +358,7 @@ export function registerSearch(app: FastifyInstance, db: Database): void {
     },
     async (request, reply) => {
       if (request.query.q.trim() === "") return fail(reply, 400, "Type something to search for.");
-      return search(db, accountOf(request).id, request.query.q, request.query.limit);
+      return search(db, permissions, accountOf(request).id, request.query.q, request.query.limit);
     },
   );
 }

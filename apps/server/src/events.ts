@@ -83,6 +83,10 @@ export const serverActions = [
   "group.member_removed",
   "group.workspace_set",
   "group.workspace_removed",
+  // A workspace's custom roles, made, changed and deleted by its owners (ADR 0089).
+  "role.created",
+  "role.changed",
+  "role.deleted",
   // Shares.
   "share_link.created",
   "share_link.revoked",

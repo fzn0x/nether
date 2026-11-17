@@ -38,7 +38,7 @@ import { deactivatedRefusal } from "./accounts.ts";
 import { hashPassword, verifyPassword } from "./passwords.ts";
 import type { AiEndpoints } from "./aiEndpoints.ts";
 import { type DataPolicies, appsPolicy } from "./dataPolicies.ts";
-import { settingsOf } from "./places.ts";
+import { type Permissions, placeOf, settingsOf } from "./places.ts";
 import { type SecuritySettings, settingSql } from "./settings.ts";
 import {
   type RequiredProvider,
@@ -377,6 +377,7 @@ export function registerSessions(
   aiEndpoints: AiEndpoints,
   events: ServerEvents,
   policies: DataPolicies,
+  permissions: Permissions,
 ): void {
   const account = signedIn(db);
   const guards = signInGuards(db);
@@ -560,6 +561,7 @@ export function registerSessions(
     const workspaces = await Promise.all(
       rows.map(async (row) => {
         const id = readText(row, "id");
+        const place = await placeOf(db, permissions, me.id, id);
         return {
           id,
           name: readText(row, "name"),
@@ -570,7 +572,9 @@ export function registerSessions(
           // What its members' apps keep to of its data policy, or null (ADR 0088).
           policies: policed ? appsPolicy(await policies.of(id)) : null,
           // What the account's role may do there, for its apps to offer only that (ADR 0089).
-          may: settingsOf(readText(row, "role")),
+          may: place?.settings ?? settingsOf(readText(row, "role")),
+          // The custom roles that give it, its own and its groups', while advanced permissions hold.
+          customRoles: place?.customRoles ?? [],
         };
       }),
     );
@@ -579,6 +583,8 @@ export function registerSessions(
       workspaces,
       // The only addresses every app may send AI requests to, or null (ADR 0086).
       aiEndpoints: await aiEndpoints.locked(),
+      // Whether advanced permissions hold, so the apps offer custom roles (ADR 0089).
+      permissions: await permissions.on(),
     };
   });
 

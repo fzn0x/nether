@@ -16,6 +16,7 @@ import { limitByAddress } from "./http.ts";
 import type { Drawn, SiteIndex, Where } from "./pages.ts";
 import { siteStyle } from "./siteStyle.ts";
 import { type Site, type SitePolicies, siteAtDomain, siteName, siteNamed } from "./sites.ts";
+import type { Permissions } from "./places.ts";
 
 /**
  * A published page's policy: nothing runs, nothing is framed or sent, and
@@ -102,6 +103,8 @@ export interface PublishedOptions {
   readonly policies: SitePolicies;
   /** The server's own address, for sites' canonical addresses without a domain. */
   readonly publicUrl?: string | null;
+  /** Whether advanced permissions hold (ADR 0089), which bound what a site's publisher opens. */
+  readonly permissions: Permissions;
 }
 
 /**
@@ -134,7 +137,7 @@ export function registerPublished(
     if (found !== undefined && now - found.at < keptFor) {
       return found.index.then((index) => ({ ...index, site }));
     }
-    const index = pages().then(({ siteIndex }) => siteIndex(db, site));
+    const index = pages().then(({ siteIndex }) => siteIndex(db, options.permissions, site));
     kept.delete(site.id);
     kept.set(site.id, { at: now, index });
     // The oldest first: a map keeps its keys in the order they were set.

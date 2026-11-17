@@ -15,7 +15,7 @@ import { type Database, readText } from "./db.ts";
 import { fail, uuidField } from "./http.ts";
 import { type LinkPolicies, visitOf, visitToken } from "./links.ts";
 import { accountOf, requestToken, sessionAccount, signedIn } from "./sessions.ts";
-import { placeOf } from "./places.ts";
+import { type Permissions, placeOf } from "./places.ts";
 import { accessible, writesAt } from "./units.ts";
 import { membership } from "./workspaces.ts";
 
@@ -39,6 +39,7 @@ export function registerAttachments(
   blobs: BlobStore,
   limit: number,
   policies: LinkPolicies,
+  permissions: Permissions,
 ): void {
   const account = signedIn(db);
   /** The workspace each reading request may read: a member's, or a visit's. */
@@ -72,7 +73,7 @@ export function registerAttachments(
   );
 
   async function place(userId: string, workspace: string) {
-    return placeOf(db, userId, workspace);
+    return placeOf(db, permissions, userId, workspace);
   }
 
   app.head<{ Params: Params }>(
@@ -95,7 +96,12 @@ export function registerAttachments(
     { schema: { params }, preHandler: account },
     async (request, reply) => {
       const workspace = request.params.workspace.toLowerCase();
-      const { levels, place: found } = await accessible(db, accountOf(request).id, workspace);
+      const { levels, place: found } = await accessible(
+        db,
+        permissions,
+        accountOf(request).id,
+        workspace,
+      );
       if (found === undefined) return fail(reply, 404, "This account is in no such workspace.");
       if (![...levels.values()].some(writesAt)) {
         return fail(

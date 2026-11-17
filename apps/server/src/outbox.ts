@@ -10,6 +10,7 @@ import { randomUUID } from "node:crypto";
 import { type Database, type Queryable, readText, readTime } from "./db.ts";
 import { titleOf } from "./search.ts";
 import { type Level, accessible, general, unitOfDocument } from "./units.ts";
+import type { Permissions } from "./places.ts";
 
 export type ChangeKind = "created" | "updated" | "deleted";
 
@@ -154,7 +155,7 @@ interface Hook {
  * with the note's path and title as they are now. Every node may run it:
  * each claims its changes with SKIP LOCKED, and sends none twice.
  */
-export async function fanOut(db: Database, limit = 200): Promise<number> {
+export async function fanOut(db: Database, permissions: Permissions, limit = 200): Promise<number> {
   return db.transaction(async (tx) => {
     const { rows: due } = await tx.query(
       `DELETE FROM webhook_changes WHERE (workspace_id, note) IN (
@@ -206,7 +207,7 @@ export async function fanOut(db: Database, limit = 200): Promise<number> {
         const key = `${workspace}/${hook.maker}`;
         let opens = levels.get(key);
         if (opens === undefined) {
-          opens = (await accessible(tx, hook.maker, workspace)).levels;
+          opens = (await accessible(tx, permissions, hook.maker, workspace)).levels;
           levels.set(key, opens);
         }
         if (!opens.has(unit)) continue;

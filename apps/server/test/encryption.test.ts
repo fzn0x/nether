@@ -398,7 +398,7 @@ describe("the relay", () => {
     reader.send({ type: "push", id: "g", name: note, data: "AAAA" });
     expect(await reader.next((message) => message.id === "g")).toMatchObject({
       type: "error",
-      message: "A guest may read this workspace, not change it.",
+      message: "Your role reads this workspace, and does not change it.",
     });
 
     // Not a member, a workspace not encrypted, and a socket not signed in.

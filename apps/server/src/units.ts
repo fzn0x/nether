@@ -9,7 +9,7 @@ import { type Database, type Queryable, readText, readTextOrNull, readTime } fro
 import { fail, uuidField } from "./http.ts";
 import { accountOf, signedIn } from "./sessions.ts";
 import { membership } from "./workspaces.ts";
-import { type Place, cut, generalLevel, placeOf } from "./places.ts";
+import { type Permissions, type Place, cut, generalLevel, placeOf } from "./places.ts";
 import { type ServerEvents, accountActor, originOf } from "./events.ts";
 
 export type Level = "view" | "comment" | "edit" | "full";
@@ -78,6 +78,7 @@ function unitOf(row: Record<string, unknown>): Unit {
  */
 export async function accessible(
   db: Queryable,
+  permissions: Permissions,
   userId: string,
   workspaceId: string,
 ): Promise<{
@@ -86,7 +87,7 @@ export async function accessible(
   readonly place: Place | undefined;
 }> {
   const found = new Map<string, Level>();
-  const place = await placeOf(db, userId, workspaceId);
+  const place = await placeOf(db, permissions, userId, workspaceId);
   if (place === undefined) return { levels: found, units: new Map(), place };
   const { settings } = place;
   const { rows } = await db.query(
@@ -271,6 +272,7 @@ export function registerUnits(
   changed: (userId: string) => void,
   vaults: VaultEditor,
   events: ServerEvents,
+  permissions: Permissions,
 ): void {
   const account = signedIn(db);
 
@@ -282,7 +284,12 @@ export function registerUnits(
       if ((await membership(db, accountOf(request).id, workspace)) === undefined) {
         return fail(reply, 404, noWorkspace);
       }
-      const { levels: found, units } = await accessible(db, accountOf(request).id, workspace);
+      const { levels: found, units } = await accessible(
+        db,
+        permissions,
+        accountOf(request).id,
+        workspace,
+      );
       return {
         units: [...found].map(([id, level]) => shown(id, units.get(id), level)),
       };
@@ -295,10 +302,10 @@ export function registerUnits(
     async (request, reply) => {
       const workspace = request.params.workspace.toLowerCase();
       const me = accountOf(request).id;
-      const place = await placeOf(db, me, workspace);
+      const place = await placeOf(db, permissions, me, workspace);
       if (place === undefined) return fail(reply, 404, noWorkspace);
       if (place.settings.teamspaces !== "make") {
-        return fail(reply, 403, "Guests make no teamspaces.");
+        return fail(reply, 403, "Your role in this workspace makes no teamspaces.");
       }
       if (place.encryption !== "none") {
         return fail(reply, 409, "An encrypted workspace has no teamspaces yet.");
@@ -347,7 +354,7 @@ export function registerUnits(
 
   /** A unit the account has full access to, or the reply's refusal. */
   async function managed(userId: string, workspace: string, unit: string) {
-    const { levels: found, units } = await accessible(db, userId, workspace);
+    const { levels: found, units } = await accessible(db, permissions, userId, workspace);
     const level = found.get(unit);
     const kept = units.get(unit);
     if (level === undefined || kept === undefined) return [404, noUnit] as const;
@@ -461,10 +468,10 @@ export function registerUnits(
       if (!("id" in unit)) return fail(reply, unit[0], unit[1]);
       if (unit.kind === "private")
         return fail(reply, 400, "A private space is its member's alone.");
-      const them = await placeOf(db, user, workspace);
+      const them = await placeOf(db, permissions, user, workspace);
       if (them === undefined) return fail(reply, 404, "This workspace has no such member.");
       if (unit.kind === "team" && them.settings.teamspaces === "none") {
-        return fail(reply, 400, "Guests join pages, not teamspaces.");
+        return fail(reply, 400, "Their role in this workspace joins no teamspaces.");
       }
       await db.transaction(async (tx) => {
         const before = await tx.query(
@@ -551,7 +558,12 @@ export function registerUnits(
     async (request, reply) => {
       const workspace = request.params.workspace.toLowerCase();
       const id = request.params.unit.toLowerCase();
-      const { levels: found, units } = await accessible(db, accountOf(request).id, workspace);
+      const { levels: found, units } = await accessible(
+        db,
+        permissions,
+        accountOf(request).id,
+        workspace,
+      );
       const unit = units.get(id);
       const level = found.get(id);
       if (unit === undefined || level === undefined) return fail(reply, 404, noUnit);
@@ -611,7 +623,7 @@ export function registerUnits(
       const note = request.body.note.toLowerCase();
       const restricted = request.body.restricted ?? false;
       const parent = await unitOfDocument(db, workspace, note);
-      const { levels: found } = await accessible(db, me, workspace);
+      const { levels: found } = await accessible(db, permissions, me, workspace);
       if (found.get(parent) !== "full") {
         return fail(reply, 403, "Sharing a page takes full access to where it is.");
       }
@@ -710,7 +722,7 @@ export function registerUnits(
         const unit = await managed(me, workspace, id);
         if (!("id" in unit)) return unit;
         if (unit.kind !== "page") return [404, noUnit] as const;
-        const { levels: found } = await accessible(db, me, workspace);
+        const { levels: found } = await accessible(db, permissions, me, workspace);
         if (!writesAt(found.get(unit.parentId ?? general))) {
           return [403, "Its notes go back where it sits, which takes edit access there."] as const;
         }
@@ -757,9 +769,10 @@ export function registerUnits(
     async (request, reply) => {
       const workspace = request.params.workspace.toLowerCase();
       const me = accountOf(request).id;
-      const place = await placeOf(db, me, workspace);
+      const place = await placeOf(db, permissions, me, workspace);
       if (place === undefined) return fail(reply, 404, noWorkspace);
-      if (!place.settings.privateSpace) return fail(reply, 403, "Guests have no private space.");
+      if (!place.settings.privateSpace)
+        return fail(reply, 403, "Your role in this workspace has no private space.");
       if (place.encryption !== "none") {
         return fail(reply, 409, "An encrypted workspace has no private spaces yet.");
       }
@@ -801,7 +814,12 @@ export function registerUnits(
       const note = request.params.note.toLowerCase();
       const target = request.body.unit.toLowerCase();
       const move = async () => {
-        const { levels: found } = await accessible(db, accountOf(request).id, workspace);
+        const { levels: found } = await accessible(
+          db,
+          permissions,
+          accountOf(request).id,
+          workspace,
+        );
         if (found.size === 0) return fail(reply, 404, noWorkspace);
         const current = await unitOfDocument(db, workspace, note);
         // A note the server has neither placed nor stored is new, as a guest's

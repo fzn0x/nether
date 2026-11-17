@@ -12,6 +12,7 @@ import { fail, limitBy, uuidField } from "./http.ts";
 import type { Mailer } from "./mail.ts";
 import { accountOf, signedIn } from "./sessions.ts";
 import { accessible, unitOfDocument } from "./units.ts";
+import type { Permissions } from "./places.ts";
 import { membership } from "./workspaces.ts";
 
 /** How many notifications a list gives at once. */
@@ -122,6 +123,7 @@ export function registerNotifications(
   app: FastifyInstance,
   db: Database,
   mailer: Mailer | undefined,
+  permissions: Permissions,
 ): void {
   const account = signedIn(db);
   const sending = new Set<Promise<void>>();
@@ -174,7 +176,7 @@ export function registerNotifications(
         return fail(reply, 400, "An encrypted workspace's notifications carry no text.");
       }
       const unit = await unitOfDocument(db, workspaceId, note.toLowerCase());
-      const level = (await accessible(db, me.id, workspaceId)).levels.get(unit);
+      const level = (await accessible(db, permissions, me.id, workspaceId)).levels.get(unit);
       if (level === undefined || level === "view") {
         return fail(reply, 403, "Only those who may comment on a note mention people in it.");
       }
@@ -184,7 +186,7 @@ export function registerNotifications(
       );
       const recipients: Recipient[] = [];
       for (const id of people) {
-        if (!(await accessible(db, id, workspaceId)).levels.has(unit)) continue;
+        if (!(await accessible(db, permissions, id, workspaceId)).levels.has(unit)) continue;
         const { rows } = await db.query(
           `SELECT id, name, email, email_notifications, deactivated_at IS NOT NULL AS deactivated
              FROM users WHERE id = $1`,

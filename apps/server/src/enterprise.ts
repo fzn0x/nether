@@ -19,6 +19,7 @@ import type { ClusterBus } from "./cluster.ts";
 import type { Config } from "./config.ts";
 import type { DataPolicies } from "./dataPolicies.ts";
 import type { Database, Queryable } from "./db.ts";
+import type { Permissions } from "./places.ts";
 import type { ServerEvents } from "./events.ts";
 import type { Every } from "./jobs.ts";
 import type { SecuritySettings } from "./settings.ts";
@@ -81,6 +82,8 @@ export interface EnterpriseServices {
   readonly events: ServerEvents;
   /** The workspaces' data policies (ADR 0088), which the `policies` module's page reads and sets. */
   readonly dataPolicies: DataPolicies;
+  /** Whether advanced permissions hold (ADR 0089), which custom roles and their checks read. */
+  readonly permissions: Permissions;
 }
 
 /** What a module's plugin is given. */

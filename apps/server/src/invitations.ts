@@ -17,9 +17,17 @@ import {
   tokenField,
   uuidField,
 } from "./http.ts";
-import { higherRole, roleOf } from "./members.ts";
+import { customRolesOff, higherRole, roleOf } from "./members.ts";
 import { hashPassword } from "./passwords.ts";
-import { invitesMembers, placeOf } from "./places.ts";
+import {
+  type Permissions,
+  type Place,
+  covers,
+  customRoleOf,
+  invitesMembers,
+  placeOf,
+  settingsOf,
+} from "./places.ts";
 import { type Level, accessible } from "./units.ts";
 import {
   accountOf,
@@ -47,6 +55,8 @@ interface Invite {
   /** A shared page, to invite a guest to it alone, at `level`. */
   readonly unit?: string;
   readonly level?: Level;
+  /** A custom role of the workspace whose base is `role` (ADR 0089). */
+  readonly customRole?: string;
 }
 
 const inviteBody = {
@@ -58,6 +68,7 @@ const inviteBody = {
     email: emailField,
     unit: uuidField,
     level: { type: "string", enum: ["full", "edit", "comment", "view"] },
+    customRole: uuidField,
   },
 } as const;
 
@@ -125,6 +136,8 @@ export interface OpenInvitation {
   /** The shared page it is to, and the level there, for a guest. */
   readonly unitId: string | null;
   readonly level: string | null;
+  /** The custom role it gives, on `role` as its base (ADR 0089), if one. */
+  readonly customRole: { readonly id: string; readonly name: string } | null;
 }
 
 /** The invitation a token's hash names, if it can still be accepted, locked until the transaction ends. */
@@ -133,8 +146,10 @@ export async function openInvitation(
   hash: string,
 ): Promise<OpenInvitation | undefined> {
   const { rows } = await tx.query(
-    `SELECT i.id, i.workspace_id, i.role, i.email, i.unit_id, i.level, w.name AS workspace_name
+    `SELECT i.id, i.workspace_id, i.role, i.email, i.unit_id, i.level, w.name AS workspace_name,
+            r.id AS role_id, r.name AS role_name
        FROM invitations i JOIN workspaces w ON w.id = i.workspace_id
+       LEFT JOIN custom_roles r ON r.workspace_id = i.workspace_id AND r.id = i.custom_role
       WHERE i.token_hash = $1 AND i.accepted_at IS NULL AND i.expires_at > now()
       FOR UPDATE OF i`,
     [hash],
@@ -149,7 +164,14 @@ export async function openInvitation(
     email: readTextOrNull(row, "email"),
     unitId: readTextOrNull(row, "unit_id"),
     level: readTextOrNull(row, "level"),
+    customRole: customOf(row),
   };
+}
+
+/** An invitation's custom role from its row's `role_id` and `role_name`, or null. */
+function customOf(row: Record<string, unknown>): { id: string; name: string } | null {
+  const id = readTextOrNull(row, "role_id");
+  return id === null ? null : { id, name: readText(row, "role_name") };
 }
 
 /** Whether an invitation may be accepted by an address. */
@@ -161,7 +183,8 @@ export function invites(invitation: OpenInvitation, email: string): boolean {
  * Accepts an invitation into an account, and gives the workspace with the
  * role the account has there: someone in it already keeps theirs. Someone
  * only a group placed there gets the invitation's role as their own, so
- * the group leaving does not take their place (ADR 0085).
+ * the group leaving does not take their place (ADR 0085), with its custom
+ * role (ADR 0089).
  */
 export async function acceptInvitation(
   tx: Queryable,
@@ -170,10 +193,11 @@ export async function acceptInvitation(
   events: ServerEvents,
   origin: EventOrigin,
 ): Promise<{ id: string; name: string; role: string }> {
+  const customRole = invitation.customRole?.id ?? null;
   await tx.query(
-    `INSERT INTO memberships (workspace_id, user_id, role) VALUES ($1, $2, $3)
+    `INSERT INTO memberships (workspace_id, user_id, role, custom_role) VALUES ($1, $2, $3, $4)
      ON CONFLICT (workspace_id, user_id) DO NOTHING`,
-    [invitation.workspaceId, userId, invitation.role],
+    [invitation.workspaceId, userId, invitation.role, customRole],
   );
   const { rows: placed } = await tx.query(
     `SELECT role FROM memberships
@@ -186,8 +210,9 @@ export async function acceptInvitation(
     const own = roleOf(invitation.role);
     const role = higherRole(own, given) ?? given;
     await tx.query(
-      "UPDATE memberships SET role = $3, own_role = $4 WHERE workspace_id = $1 AND user_id = $2",
-      [invitation.workspaceId, userId, role, role === own ? null : own],
+      `UPDATE memberships SET role = $3, own_role = $4, custom_role = $5
+        WHERE workspace_id = $1 AND user_id = $2`,
+      [invitation.workspaceId, userId, role, role === own ? null : own, customRole],
     );
   }
   if (invitation.unitId !== null && invitation.level !== null) {
@@ -226,7 +251,11 @@ export async function acceptInvitation(
       actor: accountActor(userId),
       workspace: invitation.workspaceId,
       target: { type: "account", id: userId },
-      details: { role, ...page },
+      details: {
+        role,
+        ...page,
+        ...(invitation.customRole === null ? {} : { customRole: invitation.customRole }),
+      },
     },
     origin,
   );
@@ -237,22 +266,32 @@ export function registerInvitations(
   app: FastifyInstance,
   db: Database,
   events: ServerEvents,
+  permissions: Permissions,
 ): void {
   const account = signedIn(db);
   const guards = signInGuards(db);
+
+  /** An account's place in a workspace whose invitations it manages, or why it may not. */
+  async function inviting(
+    userId: string,
+    workspaceId: string,
+  ): Promise<Place | readonly [number, string]> {
+    const place = await placeOf(db, permissions, userId, workspaceId);
+    // A workspace the account is not in is not found, so its existence stays hidden.
+    if (place === undefined) return [404, "This account is in no such workspace."];
+    if (!invitesMembers(place.settings)) {
+      return [403, "Your role in this workspace invites no one."];
+    }
+    return place;
+  }
 
   /** Why an account may not manage a workspace's invitations, or undefined if it may. */
   async function refusal(
     userId: string,
     workspaceId: string,
   ): Promise<readonly [number, string] | undefined> {
-    const place = await placeOf(db, userId, workspaceId);
-    // A workspace the account is not in is not found, so its existence stays hidden.
-    if (place === undefined) return [404, "This account is in no such workspace."];
-    if (!invitesMembers(place.settings)) {
-      return [403, "Only the workspace's owners and admins may invite."];
-    }
-    return undefined;
+    const found = await inviting(userId, workspaceId);
+    return "settings" in found ? undefined : found;
   }
 
   app.post<{ Params: WorkspaceParams; Body: Invite }>(
@@ -263,18 +302,20 @@ export function registerInvitations(
       const workspace = request.params.workspace.toLowerCase();
       const { role, level } = request.body;
       const unit = request.body.unit?.toLowerCase();
+      let inviter: Place;
       if (unit === undefined) {
         if (role === "guest") {
           return fail(reply, 400, "A guest is invited to a page: name it, and their level there.");
         }
-        const refused = await refusal(me.id, workspace);
-        if (refused !== undefined) return fail(reply, ...refused);
+        const found = await inviting(me.id, workspace);
+        if (!("settings" in found)) return fail(reply, ...found);
+        inviter = found;
       } else {
         if (role !== "guest" || level === undefined) {
           return fail(reply, 400, "An invitation to a page makes a guest, at a level there.");
         }
         // Anyone with full access to a shared page, whose role invites guests, may invite someone to it.
-        const { levels: found, units, place } = await accessible(db, me.id, workspace);
+        const { levels: found, units, place } = await accessible(db, permissions, me.id, workspace);
         if (place === undefined) return fail(reply, 404, "This account is in no such workspace.");
         if (units.get(unit)?.kind !== "page" || !found.has(unit)) {
           return fail(reply, 404, "This account has no such shared page here.");
@@ -285,6 +326,30 @@ export function registerInvitations(
         if (!place.settings.guests) {
           return fail(reply, 403, "Your role in this workspace invites no guests.");
         }
+        inviter = place;
+      }
+      // A custom role, on the invitation's role as its base (ADR 0089).
+      const customRole = request.body.customRole?.toLowerCase() ?? null;
+      const custom =
+        customRole === null ? undefined : await customRoleOf(db, workspace, customRole);
+      if (customRole !== null) {
+        if (!(await permissions.on())) return fail(reply, 409, customRolesOff);
+        if (custom === undefined)
+          return fail(reply, 404, "This workspace has no such custom role.");
+        if (custom.base !== role) {
+          return fail(
+            reply,
+            400,
+            `The role ${custom.name} is based on ${custom.base}: invite to it as ${custom.base}.`,
+          );
+        }
+      }
+      // No one invites to a role that may do more than their own, owners aside.
+      if (
+        inviter.role !== "owner" &&
+        !covers(inviter.settings, custom?.settings ?? settingsOf(role))
+      ) {
+        return fail(reply, 403, "Your role invites to no role that may do more than your own.");
       }
       const token = newToken();
       const id = randomUUID();
@@ -292,8 +357,9 @@ export function registerInvitations(
       const rows = await db.transaction(async (tx) => {
         const made = await tx.query(
           `INSERT INTO invitations
-             (id, token_hash, workspace_id, role, email, invited_by, expires_at, unit_id, level)
-           VALUES ($1, $2, $3, $4, $5, $6, now() + $7 * interval '1 day', $8, $9)
+             (id, token_hash, workspace_id, role, email, invited_by, expires_at, unit_id, level,
+              custom_role)
+           VALUES ($1, $2, $3, $4, $5, $6, now() + $7 * interval '1 day', $8, $9, $10)
            RETURNING expires_at`,
           [
             id,
@@ -305,6 +371,7 @@ export function registerInvitations(
             invitationDays,
             unit ?? null,
             level ?? null,
+            customRole,
           ],
         );
         await events.emit(
@@ -314,7 +381,11 @@ export function registerInvitations(
             actor: accountActor(me.id),
             workspace,
             target: { type: "invitation", id, name: email },
-            details: { role, ...(unit === undefined ? {} : { unit, level: level ?? null }) },
+            details: {
+              role,
+              ...(unit === undefined ? {} : { unit, level: level ?? null }),
+              ...(custom === undefined ? {} : { customRole: { id: custom.id, name: custom.name } }),
+            },
           },
           originOf(request),
         );
@@ -324,6 +395,7 @@ export function registerInvitations(
         id,
         token,
         role,
+        customRole: custom === undefined ? null : { id: custom.id, name: custom.name },
         email,
         ...(unit === undefined ? {} : { unit, level }),
         expiresAt: readTime(rows[0], "expires_at").toISOString(),
@@ -339,8 +411,10 @@ export function registerInvitations(
       const refused = await refusal(accountOf(request).id, workspace);
       if (refused !== undefined) return fail(reply, ...refused);
       const { rows } = await db.query(
-        `SELECT i.id, i.role, i.email, i.created_at, i.expires_at, u.name AS invited_by
+        `SELECT i.id, i.role, i.email, i.created_at, i.expires_at, u.name AS invited_by,
+                r.id AS role_id, r.name AS role_name
            FROM invitations i LEFT JOIN users u ON u.id = i.invited_by
+           LEFT JOIN custom_roles r ON r.workspace_id = i.workspace_id AND r.id = i.custom_role
           WHERE i.workspace_id = $1 AND i.accepted_at IS NULL AND i.expires_at > now()
           ORDER BY i.created_at`,
         [workspace],
@@ -349,6 +423,7 @@ export function registerInvitations(
         invitations: rows.map((row) => ({
           id: readText(row, "id"),
           role: readText(row, "role"),
+          customRole: customOf(row),
           email: readTextOrNull(row, "email"),
           invitedBy: readTextOrNull(row, "invited_by"),
           createdAt: readTime(row, "created_at").toISOString(),
@@ -407,10 +482,11 @@ export function registerInvitations(
     async (request, reply) => {
       const { rows } = await db.query(
         `SELECT w.id AS workspace_id, w.name AS workspace_name, i.role, i.email, i.expires_at,
-                i.unit_id, i.level, u.name AS invited_by
+                i.unit_id, i.level, u.name AS invited_by, r.id AS role_id, r.name AS role_name
            FROM invitations i
            JOIN workspaces w ON w.id = i.workspace_id
            LEFT JOIN users u ON u.id = i.invited_by
+           LEFT JOIN custom_roles r ON r.workspace_id = i.workspace_id AND r.id = i.custom_role
           WHERE i.token_hash = $1 AND i.accepted_at IS NULL AND i.expires_at > now()`,
         [tokenHash(request.body.token)],
       );
@@ -419,6 +495,7 @@ export function registerInvitations(
       return {
         workspace: { id: readText(row, "workspace_id"), name: readText(row, "workspace_name") },
         role: readText(row, "role"),
+        customRole: customOf(row),
         email: readTextOrNull(row, "email"),
         invitedBy: readTextOrNull(row, "invited_by"),
         // A page's title stays with those who open it: the app says "a page".

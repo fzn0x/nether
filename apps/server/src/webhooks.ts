@@ -25,7 +25,7 @@ import { type EventDetails, type ServerEvents, originOf } from "./events.ts";
 export const maxWebhooks = 20;
 
 const readOnly = "This token only reads: changing webhooks takes a write token.";
-const onlyAdmins = "Only a workspace's owners and admins manage its webhooks.";
+const onlyAdmins = "Your role in this workspace manages no webhooks.";
 const noWebhook = "This workspace has no such webhook.";
 
 interface WebhookParams extends WorkspaceParams {
@@ -98,6 +98,7 @@ export function registerWebhooks(
   serverEvents: ServerEvents,
 ): void {
   const preHandler = [checks.caller, checks.limit];
+  const { permissions } = checks;
 
   /** Tells of a change to a webhook, in its transaction: where it sends, by its origin alone. */
   const told = (
@@ -129,10 +130,10 @@ export function registerWebhooks(
     changing: boolean,
   ): Promise<string | readonly [number, string]> {
     if (changing && caller.access !== "write") return [403, readOnly];
-    const reached = await reach(db, caller, workspace);
+    const reached = await reach(db, permissions, caller, workspace);
     if (!("workspace" in reached)) return reached;
     // Its role manages the workspace's webhooks, as an owner's and an admin's do (ADR 0089).
-    const place = await placeOf(db, caller.userId, reached.workspace);
+    const place = await placeOf(db, permissions, caller.userId, reached.workspace);
     if (place?.settings.workspace !== true) return [403, onlyAdmins];
     return reached.workspace;
   }

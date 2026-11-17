@@ -29,6 +29,7 @@ import { registerSessions } from "./sessions.ts";
 import { SecuritySettings } from "./settings.ts";
 import { AiEndpoints } from "./aiEndpoints.ts";
 import { DataPolicies } from "./dataPolicies.ts";
+import { Permissions } from "./places.ts";
 import { registerSetup } from "./setup.ts";
 import { signInGuards } from "./signIns.ts";
 import { registerRelay } from "./relay.ts";
@@ -192,6 +193,8 @@ export async function buildApp(config: Config, services: Services): Promise<Fast
   registerReadiness(app, services.db, services.redis, services.readiness ?? new Readiness());
   // The data policies (ADR 0088), which hold while the `policies` feature is on.
   const dataPolicies = new DataPolicies(services.db, (db) => switches.on("policies", db));
+  // Whether advanced permissions hold (ADR 0089): custom roles, read wherever access is decided.
+  const permissions = new Permissions((db) => switches.on("permissions", db));
   registerFeatures(app, services.db, switches, events, (feature) => {
     if (feature === "policies") dataPolicies.switched();
   });
@@ -205,12 +208,12 @@ export async function buildApp(config: Config, services: Services): Promise<Fast
   );
 
   registerSetup(app, services.db, services.setupCode, events);
-  registerSessions(app, services.db, security, aiEndpoints, events, dataPolicies);
-  registerInvitations(app, services.db, events);
-  registerWorkspaces(app, services.db, events);
-  registerVersions(app, services.db);
-  registerNotifications(app, services.db, services.mailer);
-  registerSearch(app, services.db);
+  registerSessions(app, services.db, security, aiEndpoints, events, dataPolicies, permissions);
+  registerInvitations(app, services.db, events, permissions);
+  registerWorkspaces(app, services.db, events, permissions);
+  registerVersions(app, services.db, permissions);
+  registerNotifications(app, services.db, services.mailer, permissions);
+  registerSearch(app, services.db, permissions);
   // The apps tell of the exports they make, for audit logs (ADR 0081).
   registerExports(app, services.db, events);
   // This node among the server's nodes (ADR 0082).
@@ -294,16 +297,23 @@ export async function buildApp(config: Config, services: Services): Promise<Fast
     await heartbeat?.stop();
   });
   if (services.blobs !== undefined) {
-    registerAttachments(app, services.db, services.blobs, config.attachmentLimit, dataPolicies);
+    registerAttachments(
+      app,
+      services.db,
+      services.blobs,
+      config.attachmentLimit,
+      dataPolicies,
+      permissions,
+    );
   }
   // The relay's sockets come through the WebSocket plugin sync registers.
-  const sync = await registerSync(app, services.db, events, dataPolicies, {
+  const sync = await registerSync(app, services.db, events, dataPolicies, permissions, {
     extensions: started.flatMap((each) => each.syncExtensions ?? []),
     readsThrough: started.some((each) => each.readsThroughSync === true),
   });
   const bus =
     services.bus ?? started.find((each) => each.bus !== undefined)?.bus ?? new ProcessBus();
-  const relay = registerRelay(app, services.db, bus);
+  const relay = registerRelay(app, services.db, bus, permissions);
   // An account's sockets, or a share-link visitor's, closed on every node,
   // so its apps connect again and are checked anew (ADR 0082).
   const sockets = shareDisconnects(
@@ -326,8 +336,8 @@ export async function buildApp(config: Config, services: Services): Promise<Fast
     done();
   });
   const { disconnect } = sockets;
-  registerMembers(app, services.db, disconnect, events);
-  registerUnits(app, services.db, disconnect, sync, events);
+  registerMembers(app, services.db, disconnect, events, permissions);
+  registerUnits(app, services.db, disconnect, sync, events, permissions);
   // Share links, which open a shared page to anyone with one (ADR 0071).
   registerLinks(app, services.db, {
     publicUrl: config.publicUrl,
@@ -335,6 +345,7 @@ export async function buildApp(config: Config, services: Services): Promise<Fast
     disconnect,
     events,
     policies: dataPolicies,
+    permissions,
   });
   // Published sites, drawn for anyone at /p/<name>/ (ADR 0076).
   // Their custom domains' requests, on any route, are theirs (ADR 0077).
@@ -342,6 +353,7 @@ export async function buildApp(config: Config, services: Services): Promise<Fast
     blobs: services.blobs,
     publicUrl: config.publicUrl,
     policies: dataPolicies,
+    permissions,
   });
   registerSites(app, services.db, {
     publicUrl: config.publicUrl,
@@ -349,10 +361,11 @@ export async function buildApp(config: Config, services: Services): Promise<Fast
     resolveTxt: services.resolveTxt,
     events,
     policies: dataPolicies,
+    permissions,
   });
   // The public API, for personal access tokens (ADR 0059).
   registerTokens(app, services.db, events);
-  const api = registerApi(app, services.db, sync, events, dataPolicies);
+  const api = registerApi(app, services.db, sync, events, dataPolicies, permissions);
   registerWrites(app, services.db, sync, api);
   // Webhooks, and the worker that sends their events (ADR 0060).
   registerWebhooks(app, services.db, config.webhookPrivate, api, events);
@@ -361,6 +374,7 @@ export async function buildApp(config: Config, services: Services): Promise<Fast
       policy: config.webhookPrivate,
       ...(services.mailer === undefined ? {} : { mailer: services.mailer }),
       log: app.log,
+      permissions,
     });
     // Its round ends before the database closes.
     app.addHook("onClose", () => webhooks.stop());
@@ -398,6 +412,7 @@ export async function buildApp(config: Config, services: Services): Promise<Fast
       every: jobs.every,
       events,
       dataPolicies,
+      permissions,
     },
     switches,
     modules,

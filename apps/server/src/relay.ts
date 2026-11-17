@@ -34,7 +34,7 @@ import { lockNumbers } from "./numbers.ts";
 import { sessionAccount } from "./sessions.ts";
 import { parseDocumentName } from "./sync.ts";
 import { base64Bytes } from "./workspaces.ts";
-import { generalLevel, placeOf } from "./places.ts";
+import { type Permissions, generalLevel, placeOf } from "./places.ts";
 import { writesAt } from "./units.ts";
 
 /** The most updates one message carries. */
@@ -87,7 +87,12 @@ function topicOf(workspace: string): string {
   return `relay.${workspace}`;
 }
 
-export function registerRelay(app: FastifyInstance, db: Database, bus: ClusterBus): RelayControl {
+export function registerRelay(
+  app: FastifyInstance,
+  db: Database,
+  bus: ClusterBus,
+  permissions: Permissions,
+): RelayControl {
   /** Each document's subscribers. */
   const subscribers = new Map<string, Set<Client>>();
   const clients = new Set<Client>();
@@ -251,7 +256,7 @@ export function registerRelay(app: FastifyInstance, db: Database, bus: ClusterBu
     if (client.userId === undefined || typeof name !== "string") return undefined;
     const parsed = parseDocumentName(name);
     if (parsed === undefined) return undefined;
-    const found = await placeOf(db, client.userId, parsed.workspaceId);
+    const found = await placeOf(db, permissions, client.userId, parsed.workspaceId);
     if (found?.encryption !== "end-to-end") return undefined;
     return { ...found, ...parsed };
   }
@@ -315,7 +320,7 @@ export function registerRelay(app: FastifyInstance, db: Database, bus: ClusterBu
     }
     // An encrypted workspace is General alone: its role writes there at edit or more (ADR 0089).
     if (!writesAt(generalLevel(found.settings))) {
-      refuse(client, id, "A guest may read this workspace, not change it.");
+      refuse(client, id, "Your role reads this workspace, and does not change it.");
       return;
     }
     const data = typeof message.data === "string" ? base64Bytes(message.data, largest) : undefined;
@@ -371,7 +376,7 @@ export function registerRelay(app: FastifyInstance, db: Database, bus: ClusterBu
     }
     // An encrypted workspace is General alone: its role writes there at edit or more (ADR 0089).
     if (!writesAt(generalLevel(found.settings))) {
-      refuse(client, id, "A guest may read this workspace, not change it.");
+      refuse(client, id, "Your role reads this workspace, and does not change it.");
       return;
     }
     const data = typeof message.data === "string" ? base64Bytes(message.data, largest) : undefined;

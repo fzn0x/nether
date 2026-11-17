@@ -10,7 +10,7 @@ import { type Database, readBytes, readNumber, readText } from "./db.ts";
 import { fail, nameField, uuidField } from "./http.ts";
 import { accountOf, signedIn } from "./sessions.ts";
 import { type ServerEvents, accountActor, originOf } from "./events.ts";
-import { type Encryption, membership, placeOf } from "./places.ts";
+import { type Encryption, type Permissions, membership, placeOf } from "./places.ts";
 
 // An account's place in a workspace is read where what it may do is (ADR 0089).
 export { type Encryption, type Membership, membership } from "./places.ts";
@@ -51,7 +51,12 @@ const workspaceParams = {
   properties: { workspace: uuidField },
 } as const;
 
-export function registerWorkspaces(app: FastifyInstance, db: Database, events: ServerEvents): void {
+export function registerWorkspaces(
+  app: FastifyInstance,
+  db: Database,
+  events: ServerEvents,
+  permissions: Permissions,
+): void {
   const account = signedIn(db);
 
   // An account's key pair: its public key, and its private key in a box only
@@ -191,10 +196,10 @@ export function registerWorkspaces(app: FastifyInstance, db: Database, events: S
     },
     async (request, reply) => {
       const workspace = request.params.workspace.toLowerCase();
-      const place = await placeOf(db, accountOf(request).id, workspace);
+      const place = await placeOf(db, permissions, accountOf(request).id, workspace);
       if (place === undefined) return fail(reply, 404, "This account is in no such workspace.");
       if (!place.settings.workspace) {
-        return fail(reply, 403, "Only the workspace's owners and admins change its settings.");
+        return fail(reply, 403, "Your role in this workspace does not change its settings.");
       }
       await db.transaction(async (tx) => {
         const { rows } = await tx.query("SELECT ai FROM workspaces WHERE id = $1 FOR UPDATE", [

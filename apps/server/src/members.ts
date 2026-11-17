@@ -29,7 +29,18 @@ import {
 } from "./db.ts";
 import { fail, uuidField } from "./http.ts";
 import { accountOf, signedIn } from "./sessions.ts";
-import { type RoleSettings, placeOf, seesMembers, settingsOf } from "./places.ts";
+import {
+  type Permissions,
+  type RoleSettings,
+  covers,
+  customRoleOf,
+  newlyUnmanaged,
+  placeOf,
+  seesMembers,
+  settingsOf,
+  unmanagedRefusal,
+  unmanagedUnits,
+} from "./places.ts";
 import {
   type EventActor,
   type EventDetails,
@@ -55,7 +66,22 @@ export interface RoleSetter {
 }
 
 /** What setting a role came to: changed, already so, or refused, with its status and why. */
-export type RoleOutcome = "changed" | "same" | readonly [status: 403 | 404 | 409, message: string];
+export type RoleOutcome =
+  "changed" | "same" | readonly [status: 400 | 403 | 404 | 409, message: string];
+
+/** Why a custom role is refused while advanced permissions are off. */
+export const customRolesOff =
+  "Advanced permissions are off on this server: a custom role gives nothing.";
+
+/** A refusal thrown inside a transaction, so it rolls back what it did. */
+class Refused extends Error {
+  readonly status: 400 | 403 | 404 | 409;
+
+  constructor(status: 400 | 403 | 404 | 409, message: string) {
+    super(message);
+    this.status = status;
+  }
+}
 
 /** What removing a member came to: removed, or refused, with its status and why. */
 export type RemoveOutcome = "removed" | readonly [status: 403 | 404 | 409, message: string];
@@ -70,6 +96,8 @@ interface MemberParams extends WorkspaceParams {
 
 interface RoleChange {
   readonly role: Role;
+  /** A custom role of the workspace whose base is `role` (ADR 0089); none, or null, for the built-in role. */
+  readonly customRole?: string | null;
 }
 
 const workspaceParams = {
@@ -88,7 +116,10 @@ const roleBody = {
   type: "object",
   required: ["role"],
   additionalProperties: false,
-  properties: { role: { type: "string", enum: roles } },
+  properties: {
+    role: { type: "string", enum: roles },
+    customRole: { type: ["string", "null"], pattern: uuidField.pattern },
+  },
 } as const;
 
 const noWorkspace = "This account is in no such workspace.";
@@ -175,6 +206,8 @@ function ownRole(row: Row): Role | null {
 /** A member's row, locked, and the workspace's active owners besides them. */
 interface Locked {
   readonly role: Role;
+  /** Its own custom role, if it has one. */
+  readonly customRole: string | null;
   readonly active: boolean;
   readonly otherActiveOwners: number;
 }
@@ -190,7 +223,7 @@ async function lockMember(
   user: string,
 ): Promise<Locked | undefined> {
   const { rows } = await tx.query(
-    `SELECT m.user_id, m.role, u.deactivated_at IS NULL AS active
+    `SELECT m.user_id, m.role, m.custom_role, u.deactivated_at IS NULL AS active
        FROM memberships m JOIN users u ON u.id = m.user_id
       WHERE m.workspace_id = $1 AND (m.role = 'owner' OR m.user_id = $2)
       ORDER BY m.user_id
@@ -201,6 +234,7 @@ async function lockMember(
   if (row === undefined) return undefined;
   return {
     role: roleOf(readText(row, "role")),
+    customRole: readTextOrNull(row, "custom_role"),
     active: readBoolean(row, "active"),
     otherActiveOwners: rows.filter(
       (each) =>
@@ -246,57 +280,111 @@ export async function deleteMembership(
 
 /**
  * Sets a member's role under the workspace's rules: its owners, and
- * instance admins, change anyone's; its admins change members' and
- * guests'; it keeps an active owner; and no one lowers a member below
- * what its groups give. The role set is the member's own. A change is
- * told of in its transaction (ADR 0081), whoever made it. When the role
- * changed, the caller closes the account's connections.
+ * instance admins, change anyone's; those whose role manages members, as
+ * an admin's does, change members' and guests'; it keeps an active owner;
+ * and no one lowers a member below what its groups give. The role set is
+ * the member's own, built-in or one of the workspace's custom roles on it
+ * as its base (ADR 0089), while advanced permissions are on. No one but an
+ * owner or an instance admin changes their own role, gives a role that may
+ * do more than their own, or leaves a teamspace or a restricted page with
+ * no one to manage it. A change is told of in its transaction (ADR 0081),
+ * whoever made it. When the role changed, the caller closes the account's
+ * connections.
  */
 export async function setRole(
   db: Database,
+  permissions: Permissions,
   workspace: string,
   user: string,
   role: Role,
   by: RoleSetter,
   events: ServerEvents,
+  customRole: string | null = null,
 ): Promise<RoleOutcome> {
   const manages = managing(by);
   if (manages === "none") {
-    return [403, "Only the workspace's owners and admins change roles."];
+    return [403, "Your role in this workspace changes no one's role."];
   }
-  return db.transaction(async (tx) => {
-    const locked = await lockMember(tx, workspace, user);
-    if (locked === undefined) return [404, noMember] as const;
-    const current = locked.role;
-    if (manages === "members" && !(adminMay(current) && adminMay(role))) {
-      return [403, "An admin changes members and guests; owners change the rest."] as const;
-    }
-    if (takesLastOwner(locked, role)) return [409, lastOwner] as const;
-    if (current === role) return "same";
-    const given = await groupPlace(tx, workspace, user);
-    if (given !== undefined && ranks[role] < ranks[given.role]) {
-      return [
-        409,
-        `The group ${given.group.name} gives them the ${given.role} role here: only their directory changes that.`,
-      ] as const;
-    }
-    await tx.query(
-      "UPDATE memberships SET role = $3, own_role = NULL WHERE workspace_id = $1 AND user_id = $2",
-      [workspace, user, role],
-    );
-    await events.emit(
-      tx,
-      {
-        action: "member.role_changed",
-        actor: accountActor(by.account),
-        workspace,
-        target: { type: "account", id: user },
-        details: { from: current, to: role, as: by.as },
-      },
-      by.origin,
-    );
-    return "changed";
-  });
+  const owns = manages === "all";
+  if (!owns && by.account === user) return [403, "Only an owner changes their own role."];
+  const on = await permissions.on();
+  if (customRole !== null && !on) return [409, customRolesOff];
+  return db
+    .transaction(async (tx) => {
+      const locked = await lockMember(tx, workspace, user);
+      if (locked === undefined) return [404, noMember] as const;
+      const current = locked.role;
+      if (manages === "members" && !(adminMay(current) && adminMay(role))) {
+        return [403, "Your role changes members and guests; owners change the rest."] as const;
+      }
+      const custom =
+        customRole === null ? undefined : await customRoleOf(tx, workspace, customRole);
+      if (customRole !== null && custom === undefined) {
+        return [404, "This workspace has no such custom role."] as const;
+      }
+      if (custom !== undefined && custom.base !== role) {
+        return [
+          400,
+          `The role ${custom.name} is based on ${custom.base}: give it as ${custom.base}.`,
+        ] as const;
+      }
+      // No one gives a role that may do more than their own.
+      if (!owns && !covers(by.may ?? settingsOf(by.as), custom?.settings ?? settingsOf(role))) {
+        return [403, "Your role gives no role that may do more than your own."] as const;
+      }
+      if (takesLastOwner(locked, role)) return [409, lastOwner] as const;
+      if (current === role && locked.customRole === customRole) return "same";
+      const given = await groupPlace(tx, workspace, user);
+      if (given !== undefined && ranks[role] < ranks[given.role]) {
+        return [
+          409,
+          `The group ${given.group.name} gives them the ${given.role} role here: only their directory changes that.`,
+        ] as const;
+      }
+      const before = on ? await unmanagedUnits(tx, permissions, workspace, [user]) : [];
+      await tx.query(
+        `UPDATE memberships SET role = $3, own_role = NULL, custom_role = $4
+          WHERE workspace_id = $1 AND user_id = $2`,
+        [workspace, user, role, customRole],
+      );
+      if (on) {
+        const left = newlyUnmanaged(
+          before,
+          await unmanagedUnits(tx, permissions, workspace, [user]),
+        );
+        // Thrown, so the change rolls back.
+        if (left !== undefined) throw new Refused(409, unmanagedRefusal(left));
+      }
+      const was =
+        locked.customRole === null
+          ? undefined
+          : await customRoleOf(tx, workspace, locked.customRole);
+      const named = (each: { readonly id: string; readonly name: string } | undefined) =>
+        each === undefined ? null : { id: each.id, name: each.name };
+      await events.emit(
+        tx,
+        {
+          action: "member.role_changed",
+          actor: accountActor(by.account),
+          workspace,
+          target: { type: "account", id: user },
+          details: {
+            from: current,
+            to: role,
+            as: by.as,
+            ...(locked.customRole === customRole
+              ? {}
+              : { customRole: { from: named(was), to: named(custom) } }),
+          },
+        },
+        by.origin,
+      );
+      return "changed" as const;
+    })
+    .catch((error: unknown) => {
+      if (error instanceof Refused) return [error.status, error.message] as const;
+      throw error;
+    });
 }
 
 /**
@@ -320,7 +408,8 @@ export async function removeMember(
     const { role } = locked;
     const manages = managing(by);
     const allowed = leaving || manages === "all" || (manages === "members" && adminMay(role));
-    if (!allowed) return [403, "Owners remove anyone, admins remove members and guests."] as const;
+    if (!allowed)
+      return [403, "Your role removes members and guests; owners remove anyone."] as const;
     if (takesLastOwner(locked, null)) return [409, lastOwner] as const;
     const given = await groupPlace(tx, workspace, user);
     if (given !== undefined) {
@@ -467,6 +556,7 @@ export function registerMembers(
   db: Database,
   changed: (userId: string) => void,
   events: ServerEvents,
+  permissions: Permissions,
 ): void {
   const account = signedIn(db);
 
@@ -475,29 +565,50 @@ export function registerMembers(
     { schema: { params: workspaceParams }, preHandler: account },
     async (request, reply) => {
       const workspace = request.params.workspace.toLowerCase();
-      const place = await placeOf(db, accountOf(request).id, workspace);
+      const place = await placeOf(db, permissions, accountOf(request).id, workspace);
       if (place === undefined) return fail(reply, 404, noWorkspace);
       if (!seesMembers(place.settings)) {
-        return fail(reply, 403, "A guest sees what is shared with them, not who else is here.");
+        return fail(
+          reply,
+          403,
+          "Your role in this workspace sees what is shared with you, not who else is here.",
+        );
       }
       const { rows } = await db.query(
         `SELECT u.id, u.name, u.email, m.role, m.created_at,
-                u.deactivated_at IS NOT NULL AS deactivated
+                u.deactivated_at IS NOT NULL AS deactivated, r.id AS role_id, r.name AS role_name
            FROM memberships m JOIN users u ON u.id = m.user_id
+           LEFT JOIN custom_roles r ON r.workspace_id = m.workspace_id AND r.id = m.custom_role
           WHERE m.workspace_id = $1
           ORDER BY lower(u.name), lower(u.email)`,
         [workspace],
       );
       // The groups that give each member a place here, with the role each gives (ADR 0085).
       const placed = await db.query(
-        `SELECT gm.user_id, g.id, g.name, gw.role FROM group_workspaces gw
+        `SELECT gm.user_id, g.id, g.name, gw.role, r.id AS role_id, r.name AS role_name
+           FROM group_workspaces gw
            JOIN group_members gm ON gm.group_id = gw.group_id
            JOIN groups g ON g.id = gw.group_id
+           LEFT JOIN custom_roles r ON r.workspace_id = gw.workspace_id AND r.id = gw.custom_role
           WHERE gw.workspace_id = $1
           ORDER BY array_position(ARRAY['owner', 'admin', 'member'], gw.role), lower(g.name), g.id`,
         [workspace],
       );
-      const groups = new Map<string, { id: string; name: string; role: string }[]>();
+      // A custom role is named while advanced permissions hold, which it does nothing without (ADR 0089).
+      const on = await permissions.on();
+      const customOf = (row: Record<string, unknown>) => {
+        const id = readTextOrNull(row, "role_id");
+        return on && id !== null ? { id, name: readText(row, "role_name") } : null;
+      };
+      const groups = new Map<
+        string,
+        {
+          id: string;
+          name: string;
+          role: string;
+          customRole: { id: string; name: string } | null;
+        }[]
+      >();
       for (const row of placed.rows) {
         const user = readText(row, "user_id");
         const list = groups.get(user) ?? [];
@@ -505,6 +616,7 @@ export function registerMembers(
           id: readText(row, "id"),
           name: readText(row, "name"),
           role: readText(row, "role"),
+          customRole: customOf(row),
         });
         groups.set(user, list);
       }
@@ -514,6 +626,8 @@ export function registerMembers(
           name: readText(row, "name"),
           email: readText(row, "email"),
           role: readText(row, "role"),
+          // Its own custom role, on `role` as its base, or null (ADR 0089).
+          customRole: customOf(row),
           joinedAt: readTime(row, "created_at").toISOString(),
           // Signs in no way until its directory turns it back on (ADR 0085).
           deactivated: readBoolean(row, "deactivated"),
@@ -532,20 +646,23 @@ export function registerMembers(
       const workspace = request.params.workspace.toLowerCase();
       const user = request.params.user.toLowerCase();
       const { role } = request.body;
+      const customRole = request.body.customRole?.toLowerCase() ?? null;
       const myId = accountOf(request).id;
-      const me = await placeOf(db, myId, workspace);
+      const me = await placeOf(db, permissions, myId, workspace);
       if (me === undefined) return fail(reply, 404, noWorkspace);
       const outcome = await setRole(
         db,
+        permissions,
         workspace,
         user,
         role,
         { account: myId, as: me.role, may: me.settings, origin: originOf(request) },
         events,
+        customRole,
       );
       if (typeof outcome !== "string") return fail(reply, outcome[0], outcome[1]);
       if (outcome === "changed") changed(user);
-      return { id: user, role };
+      return { id: user, role, customRole };
     },
   );
 
@@ -556,7 +673,7 @@ export function registerMembers(
       const workspace = request.params.workspace.toLowerCase();
       const user = request.params.user.toLowerCase();
       const myId = accountOf(request).id;
-      const me = await placeOf(db, myId, workspace);
+      const me = await placeOf(db, permissions, myId, workspace);
       if (me === undefined) return fail(reply, 404, noWorkspace);
       const outcome = await removeMember(
         db,

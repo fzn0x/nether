@@ -11,6 +11,7 @@
 // then (ADR 0041). Each sync unit (ADR 0042) has a vault document of its own;
 // a document opens at its unit's level for the account, read-only below edit,
 // and the list of stored documents names only those of the account's units.
+import type { Permissions } from "./places.ts";
 import websocket from "@fastify/websocket";
 import { type Extension, Hocuspocus, type LocalTransactionOrigin } from "@hocuspocus/server";
 import type { FastifyInstance } from "fastify";
@@ -445,6 +446,7 @@ export async function registerSync(
   db: Database,
   events: ServerEvents,
   policies: LinkPolicies,
+  permissions: Permissions,
   options: SyncOptions = {},
 ): Promise<SyncControl> {
   /** Who changed each vault document since it was last stored, by its name. */
@@ -496,7 +498,9 @@ export async function registerSync(
       if (name === undefined) throw new Error(refused);
       const unit = await unitOfDocument(db, name.workspaceId, name.document);
       if (account !== undefined && member?.encryption === "none") {
-        const level = (await accessible(db, account.id, name.workspaceId)).levels.get(unit);
+        const level = (await accessible(db, permissions, account.id, name.workspaceId)).levels.get(
+          unit,
+        );
         if (level !== undefined) {
           // A note's comments take comments from those who may comment, and edit or more.
           const writes = isComments(name.document) ? level !== "view" : writesAt(level);
@@ -635,7 +639,9 @@ export async function registerSync(
         return fail(reply, 404, "This account is in no such workspace.");
       }
       // Only the documents of the units the account opens: the others' names stay hidden.
-      const opens = [...(await accessible(db, accountOf(request).id, workspace)).levels.keys()];
+      const opens = [
+        ...(await accessible(db, permissions, accountOf(request).id, workspace)).levels.keys(),
+      ];
       const { rows } = await db.query(
         `SELECT name, seq FROM (
            SELECT name, seq FROM documents WHERE workspace_id = $1 AND seq > $2

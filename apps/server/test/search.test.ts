@@ -9,6 +9,10 @@ import * as Y from "yjs";
 import { backfillSearch, noteContent, readSnippet, search } from "../src/search.ts";
 import { storeDocument } from "../src/sync.ts";
 import { type SetUp, type TestServer, bearer, setUp, startServer } from "./app.ts";
+import { Permissions } from "../src/places.ts";
+
+/** Advanced permissions off: each role is its built-in one. */
+const builtInOnly = new Permissions(() => Promise.resolve(false));
 
 let running: TestServer | undefined;
 
@@ -52,7 +56,9 @@ function vaultState(paths: Record<string, string>, from?: Uint8Array): Uint8Arra
 }
 
 async function titles(test: Test, query: string, userId = test.userId): Promise<string[]> {
-  return (await search(test.db, userId, query)).results.map((result) => result.title).sort();
+  return (await search(test.db, builtInOnly, userId, query)).results
+    .map((result) => result.title)
+    .sort();
 }
 
 describe("noteContent", () => {
@@ -127,7 +133,7 @@ describe("workspace search", () => {
 
     expect(await titles(test, "launch")).toEqual(["Launch plan", "Monday"]);
     // The last word as it is typed, a prefix; the title weighs most.
-    const ranked = await search(test.db, test.userId, "laun");
+    const ranked = await search(test.db, builtInOnly, test.userId, "laun");
     expect(ranked.results.map((result) => result.title)).toEqual(["Launch plan", "Monday"]);
     expect(await titles(test, '"launch budget"')).toEqual(["Monday"]);
     expect(await titles(test, "spring -onions")).toEqual(["Launch plan"]);
@@ -140,7 +146,7 @@ describe("workspace search", () => {
     // Nothing a query could be read into: quotes and operators are words.
     expect(await titles(test, "spring' | !")).toEqual(["Launch plan", "Soup"]);
 
-    const [first] = (await search(test.db, test.userId, "simmered")).results;
+    const [first] = (await search(test.db, builtInOnly, test.userId, "simmered")).results;
     expect(first?.path).toBe("Recipes/Soup.md");
     expect(first?.workspaceName).not.toBe("");
     const matched = first?.matches[0];
@@ -159,7 +165,7 @@ describe("workspace search", () => {
     await store(note, noteState(["A lighthouse by the sea."]));
     const moved = vaultState({ [note]: "Archive/Old ideas.md" }, first);
     await store("vault", moved);
-    expect((await search(test.db, test.userId, "lighthouse")).results[0]?.path).toBe(
+    expect((await search(test.db, builtInOnly, test.userId, "lighthouse")).results[0]?.path).toBe(
       "Archive/Old ideas.md",
     );
     await store("vault", vaultState({}, moved));
@@ -227,7 +233,7 @@ describe("workspace search", () => {
       "INSERT INTO memberships (workspace_id, user_id, role) VALUES ($1, $2, 'owner')",
       [encrypted, bea.user.id],
     );
-    expect((await search(test.db, bea.user.id, "brand")).encrypted).toEqual(["Diary"]);
+    expect((await search(test.db, builtInOnly, bea.user.id, "brand")).encrypted).toEqual(["Diary"]);
 
     // Through the API, signed in, limited and checked.
     const answer = await test.server.inject({

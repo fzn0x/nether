@@ -27,6 +27,10 @@ import {
   setUp,
   startServer,
 } from "./app.ts";
+import { Permissions } from "../src/places.ts";
+
+/** Advanced permissions off: each role is its built-in one. */
+const builtInOnly = new Permissions(() => Promise.resolve(false));
 
 let running: TestServer | undefined;
 const servers: Server[] = [];
@@ -122,7 +126,7 @@ async function hook(test: Test, url: string, events?: string[]): Promise<Shown> 
 /** One round of the worker, with every change due now. */
 async function round(test: Test, policy: boolean | readonly string[] = ["loopback"]) {
   await test.db.query("UPDATE webhook_changes SET due_at = now()");
-  await fanOut(test.db);
+  await fanOut(test.db, builtInOnly);
   await sendDue(test.db, { policy, mailer: test.mailer, random: () => 0.5 });
 }
 

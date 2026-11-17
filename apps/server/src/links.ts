@@ -16,6 +16,7 @@ import { accountOf, newToken, signedIn, tokenHash } from "./sessions.ts";
 import { accessible, vaultDocument } from "./units.ts";
 import { membership } from "./workspaces.ts";
 import { type ServerEvents, accountActor, originOf } from "./events.ts";
+import type { Permissions } from "./places.ts";
 
 export const linkPrefix = "nether_link_";
 export const visitPrefix = "nether_visit_";
@@ -217,9 +218,11 @@ export function registerLinks(
     readonly policies: LinkPolicies & {
       listen(listener: (workspaces: readonly string[] | null) => void): void;
     };
+    /** Whether advanced permissions hold (ADR 0089). */
+    readonly permissions: Permissions;
   },
 ): void {
-  const { events } = options;
+  const { events, permissions } = options;
   const account = signedIn(db);
   const { policies } = options;
 
@@ -249,7 +252,7 @@ export function registerLinks(
     if (place.encryption !== "none") {
       return [409, "An encrypted workspace has no share links yet."] as const;
     }
-    const { levels, units, place: placed } = await accessible(db, me, workspace);
+    const { levels, units, place: placed } = await accessible(db, permissions, me, workspace);
     if (units.get(unit)?.kind !== "page")
       return [404, "This workspace shares no such page."] as const;
     if (levels.get(unit) !== "full") {

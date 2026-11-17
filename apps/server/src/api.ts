@@ -15,7 +15,7 @@ import type { SyncControl } from "./sync.ts";
 import { type ApiCaller, apiCaller, callerActor, callerOf } from "./tokens.ts";
 import { type EventTarget, type ServerEvents, originOf } from "./events.ts";
 import { type Level, type Unit, accessible, general } from "./units.ts";
-import { membership, placeOf } from "./places.ts";
+import { type Permissions, membership, placeOf } from "./places.ts";
 
 /** How many notes a page lists unless asked, and the most it lists. */
 const pageSize = 100;
@@ -50,6 +50,7 @@ export interface Reached {
 /** The workspace a caller asks for, if it reaches it and the server can read it; else why not. */
 export async function reach(
   db: Queryable,
+  permissions: Permissions,
   caller: ApiCaller,
   id: string,
 ): Promise<Reached | readonly [number, string]> {
@@ -58,7 +59,7 @@ export async function reach(
   const member = await membership(db, caller.userId, workspace);
   if (member === undefined) return [404, noWorkspace];
   if (member.encryption !== "none") return [409, encryptedWorkspace];
-  const { levels, units } = await accessible(db, caller.userId, workspace);
+  const { levels, units } = await accessible(db, permissions, caller.userId, workspace);
   return { workspace, opens: [...levels.keys()], levels, units };
 }
 
@@ -312,6 +313,7 @@ export function registerApi(
   sync: SyncControl,
   events: ServerEvents,
   policies: ApiPolicies,
+  permissions: Permissions,
 ) {
   /**
    * Whether the API gives a workspace's text to an account: its data policy
@@ -319,7 +321,7 @@ export function registerApi(
    */
   const exported = async (workspace: string, userId: string) =>
     (await policies.of(workspace)).export &&
-    (await placeOf(db, userId, workspace))?.settings.export === true;
+    (await placeOf(db, permissions, userId, workspace))?.settings.export === true;
   const caller = apiCaller(db);
 
   /**
@@ -377,12 +379,17 @@ export function registerApi(
       [me.userId, me.workspaceId],
     );
     return {
-      workspaces: rows.map((row) => ({
-        id: readText(row, "id"),
-        name: readText(row, "name"),
-        role: readText(row, "role"),
-        encryption: readText(row, "encryption"),
-      })),
+      workspaces: await Promise.all(
+        rows.map(async (row) => ({
+          id: readText(row, "id"),
+          name: readText(row, "name"),
+          role: readText(row, "role"),
+          // The custom roles that give it, beside its role (ADR 0089).
+          customRoles:
+            (await placeOf(db, permissions, me.userId, readText(row, "id")))?.customRoles ?? [],
+          encryption: readText(row, "encryption"),
+        })),
+      ),
     };
   });
 
@@ -390,7 +397,7 @@ export function registerApi(
     "/api/v1/workspaces/:workspace/notes",
     { schema: { params: workspaceParams, querystring: notesQuery }, preHandler: checks },
     async (request, reply) => {
-      const reached = await reach(db, callerOf(request), request.params.workspace);
+      const reached = await reach(db, permissions, callerOf(request), request.params.workspace);
       if (!("workspace" in reached)) return fail(reply, reached[0], reached[1]);
       const after = request.query.after === undefined ? undefined : readCursor(request.query.after);
       if (request.query.after !== undefined && after === undefined) {
@@ -419,7 +426,7 @@ export function registerApi(
     "/api/v1/workspaces/:workspace/notes/:note",
     { schema: { params: noteParams }, preHandler: checks },
     async (request, reply) => {
-      const reached = await reach(db, callerOf(request), request.params.workspace);
+      const reached = await reach(db, permissions, callerOf(request), request.params.workspace);
       if (!("workspace" in reached)) return fail(reply, reached[0], reached[1]);
       const row = await listedNote(db, reached, request.params.note);
       if (row === undefined) return fail(reply, 404, noNote);
@@ -446,7 +453,7 @@ export function registerApi(
     "/api/v1/workspaces/:workspace/databases",
     { schema: { params: workspaceParams, querystring: pageQuery }, preHandler: checks },
     async (request, reply) => {
-      const reached = await reach(db, callerOf(request), request.params.workspace);
+      const reached = await reach(db, permissions, callerOf(request), request.params.workspace);
       if (!("workspace" in reached)) return fail(reply, reached[0], reached[1]);
       const after = request.query.after === undefined ? undefined : readCursor(request.query.after);
       if (request.query.after !== undefined && after === undefined) {
@@ -481,7 +488,7 @@ export function registerApi(
     "/api/v1/workspaces/:workspace/databases/:note",
     { schema: { params: noteParams }, preHandler: checks },
     async (request, reply) => {
-      const reached = await reach(db, callerOf(request), request.params.workspace);
+      const reached = await reach(db, permissions, callerOf(request), request.params.workspace);
       if (!("workspace" in reached)) return fail(reply, reached[0], reached[1]);
       const found = await findDatabase(db, sync, reached, request.params.note);
       if (found === undefined) return fail(reply, 404, noDatabase);
@@ -505,7 +512,7 @@ export function registerApi(
     "/api/v1/workspaces/:workspace/databases/:note/rows",
     { schema: { params: noteParams, querystring: pageQuery }, preHandler: checks },
     async (request, reply) => {
-      const reached = await reach(db, callerOf(request), request.params.workspace);
+      const reached = await reach(db, permissions, callerOf(request), request.params.workspace);
       if (!("workspace" in reached)) return fail(reply, reached[0], reached[1]);
       const found = await findDatabase(db, sync, reached, request.params.note);
       if (found === undefined) return fail(reply, 404, noDatabase);
@@ -562,8 +569,14 @@ export function registerApi(
       if (only !== undefined && !(await exported(only, me.userId))) {
         return fail(reply, 403, exportOff);
       }
-      const found = await search(db, me.userId, request.query.q, request.query.limit, only, (id) =>
-        exported(id, me.userId),
+      const found = await search(
+        db,
+        permissions,
+        me.userId,
+        request.query.q,
+        request.query.limit,
+        only,
+        (id) => exported(id, me.userId),
       );
       // The notes whose passages it gave, never what was searched for.
       await toldRead(
@@ -576,5 +589,5 @@ export function registerApi(
     },
   );
 
-  return { caller, limit, exported };
+  return { caller, limit, exported, permissions };
 }

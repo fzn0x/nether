@@ -23,6 +23,7 @@ import { type Queryable, readBytes, readText } from "./db.ts";
 import { readNote } from "./markdown.ts";
 import type { Site } from "./sites.ts";
 import { accessible, general } from "./units.ts";
+import type { Permissions } from "./places.ts";
 
 /** What a site has, as its publisher may open the workspace now. */
 export interface SiteIndex {
@@ -60,8 +61,12 @@ function texts(value: unknown): string[] {
 }
 
 /** Reads what a site has: its pages, and the notes and files its links may name. */
-export async function siteIndex(db: Queryable, site: Site): Promise<SiteIndex> {
-  const { levels } = await accessible(db, site.publisher, site.workspace);
+export async function siteIndex(
+  db: Queryable,
+  permissions: Permissions,
+  site: Site,
+): Promise<SiteIndex> {
+  const { levels } = await accessible(db, permissions, site.publisher, site.workspace);
   const { rows } = await db.query(
     `SELECT s.note, s.path, s.title, s.properties, d.updated_at,
             COALESCE(u.unit_id::text, $2) AS unit

@@ -25,6 +25,7 @@ import { accountOf, signedIn } from "./sessions.ts";
 import { accessible, unitOfDocument } from "./units.ts";
 import { hasControl, isName, unitForPath } from "./writes.ts";
 import { type EventDetails, type ServerEvents, accountActor, originOf } from "./events.ts";
+import type { Permissions } from "./places.ts";
 
 /** A site's name, its address under /p/: 3 to 63 lowercase letters, digits and hyphens. */
 export const siteName = /^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$/;
@@ -196,10 +197,12 @@ export function registerSites(
     readonly events: ServerEvents;
     /** The workspaces' data policies, which may stop their publishing. */
     readonly policies: SitePolicies;
+    /** Whether advanced permissions hold (ADR 0089). */
+    readonly permissions: Permissions;
   },
 ): void {
   const account = signedIn(db);
-  const { events } = options;
+  const { events, permissions } = options;
 
   /** Tells of a change to a site, in the transaction that makes it. */
   const told = (
@@ -229,7 +232,7 @@ export function registerSites(
 
   /** The workspace and what the account may do in it, or why it may do nothing. */
   async function placed(userId: string, workspace: string) {
-    const { levels, units, place } = await accessible(db, userId, workspace);
+    const { levels, units, place } = await accessible(db, permissions, userId, workspace);
     if (place === undefined) return [404, noWorkspace] as const;
     if (place.encryption !== "none") return [409, encrypted] as const;
     return {
@@ -689,7 +692,7 @@ export function registerSites(
       const place = await placed(accountOf(request).id, request.params.workspace.toLowerCase());
       if (!("workspace" in place)) return fail(reply, place[0], place[1]);
       if (!place.admin) {
-        return fail(reply, 403, "Only a workspace's owners and admins turn publishing on or off.");
+        return fail(reply, 403, "Your role in this workspace does not turn publishing on or off.");
       }
       await db.transaction(async (tx) => {
         const { rows: was } = await tx.query(
