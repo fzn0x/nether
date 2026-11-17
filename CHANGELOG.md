@@ -8,6 +8,15 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- The admin console lists the server's nodes, each with its name, version
+  and start, in every build. A node writes its heartbeat every half a
+  minute; its name is `NETHER_NODE_NAME`, or its machine's. A node without
+  high availability that sees another for over two minutes says so in its
+  log. Stores merge with what another node stored since, so two nodes, or
+  an old and a new pod during a restart, never drop each other's edits;
+  making a note through the API locks the workspace on every node; and
+  hourly work runs on one node at a time
+  ([ADR 0082](docs/adr/0082-several-nodes-share-sync-through-valkey-take-their-order-from-postgresql-and-roll-out-one-at-a-time.md)).
 - Publishing: a page with its subpages, or the folder it is in, published
   from its Share dialog as a site anyone opens at the server's
   `/p/<name>/`, with no account. The server draws each page from its note

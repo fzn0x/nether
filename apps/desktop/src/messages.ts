@@ -875,6 +875,10 @@ export const messages = {
   adminTurnedOff: "{feature}: off.",
   adminConsoleOff:
     "Turn on the console's usage, workspaces and security pages to see the server's usage here.",
+  adminNodes: "Nodes",
+  adminNodesIntro: "The server's nodes that wrote their heartbeat in the last two minutes.",
+  adminNode: "{name}, version {version}, started {started}",
+  adminNodeCurrent: "(answered this page)",
   adminUsage: "Usage",
   adminCounting: "Counting.",
   adminAccounts: "Accounts",
