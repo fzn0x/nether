@@ -27,6 +27,15 @@ if (build.web && location.pathname === providerReturn) {
   done.textContent = t("webProviderDone");
   root.append(done);
   window.close();
+} else if (build.web && location.pathname === "/admin") {
+  // The admin console, for the server's instance admins (ADR 0079): only its own code loads.
+  void import("./AdminPage.tsx").then(({ AdminPage }) => {
+    createRoot(root).render(
+      <StrictMode>
+        <AdminPage />
+      </StrictMode>,
+    );
+  });
 } else if (build.web && location.pathname === "/s") {
   // A share link's page, for someone with no account (ADR 0071): only its own code loads.
   void import("./SharedPage.tsx").then(({ SharedPage }) => {
