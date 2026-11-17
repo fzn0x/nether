@@ -3,7 +3,8 @@
 // transaction of its change as the next row of a chain that a changed or
 // missing row breaks; searched by instance admins, purged when old, with
 // its own settings recorded too.
-import { randomUUID } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
+import { pkceChallenge } from "@nether/server/src/oidc.ts";
 import { storeDocument } from "@nether/server/src/sync.ts";
 import {
   type SetUp,
@@ -14,7 +15,9 @@ import {
   signIn,
   startServer,
 } from "@nether/server/test/app.ts";
+import { type TestProvider, startProvider } from "@nether/server/test/provider.ts";
 import { adminModule } from "@nether/enterprise-admin";
+import { ssoModule } from "@nether/enterprise-sso";
 import { afterEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
 import {
@@ -30,10 +33,13 @@ import {
 /** A server, its setup, and how many rows the log had once it was set up. */
 type Test = TestServer & SetUp & { readonly since: number };
 let running: Test | undefined;
+let provider: TestProvider | undefined;
 
 afterEach(async () => {
   await running?.close();
+  await provider?.close();
   running = undefined;
+  provider = undefined;
 });
 
 const secret = Buffer.alloc(32, 7).toString("base64");
@@ -44,7 +50,8 @@ async function start(
 ): Promise<Test> {
   const server = await startServer({
     env,
-    enterpriseModules: [createAuditModule(moduleEnv), adminModule],
+    // Single sign-on's too, off unless a test turns it on, as in the image.
+    enterpriseModules: [createAuditModule(moduleEnv), adminModule, ssoModule],
   });
   const set = await setUp(server);
   const { rows: counted } = await server.db.query("SELECT count(*) AS count FROM audit_events");
@@ -161,6 +168,103 @@ describe("the audit log", () => {
       actorEmail: "nobody@example.org",
     });
     expect(log[2]).toMatchObject({ userAgent: "Firefox", details: { method: "password" } });
+  });
+
+  it("records sign-ins through single sign-on's providers as core's, by the provider", async () => {
+    const test = await start({
+      NETHER_ENTERPRISE_AUDIT: "on",
+      NETHER_ENTERPRISE_SSO: "on",
+      NETHER_PUBLIC_URL: "https://nether.example.org",
+      NETHER_SECRET_KEY: secret,
+      NETHER_SSO_PRIVATE: "loopback",
+    });
+    provider = await startProvider();
+    const added = await test.server.inject({
+      method: "POST",
+      url: "/api/admin/sso/providers",
+      headers: bearer(test.token),
+      payload: {
+        id: "okta",
+        name: "Okta",
+        domains: ["corp.example"],
+        oidc: {
+          issuer: provider.issuer,
+          clientId: provider.clientId,
+          clientSecret: provider.clientSecret,
+        },
+      },
+    });
+    expect(added.statusCode, added.body).toBe(201);
+    const idp = provider;
+    // A flow as the app runs it, to the address the provider sends the browser back to.
+    async function signInThrough() {
+      const verifier = randomBytes(32).toString("base64url");
+      const started = await test.server.inject({
+        method: "POST",
+        url: "/api/sso/okta/flows",
+        payload: {
+          redirect: "http://127.0.0.1:43123/signed-in",
+          challenge: pkceChallenge(verifier),
+        },
+      });
+      const callback = new URL(idp.authorize(started.json<{ url: string }>().url));
+      const answered = await test.server.inject({
+        method: "GET",
+        url: callback.pathname + callback.search,
+        headers: { "user-agent": "Firefox" },
+      });
+      const code = new URL(String(answered.headers.location)).searchParams.get("code");
+      return { code, verifier };
+    }
+    const redeem = (code: string, verifier: string) =>
+      test.server.inject({ method: "POST", url: "/api/sso/redeem", payload: { code, verifier } });
+
+    // A first sign-in at its domain makes the account, then signs it in.
+    idp.person = { sub: "grace-oid", email: "grace@corp.example", name: "Grace" };
+    const first = await signInThrough();
+    const session = await redeem(first.code ?? "", first.verifier);
+    expect(session.statusCode, session.body).toBe(201);
+    const grace = session.json<{ user: { id: string } }>().user.id;
+    // An address outside its domains that it has not verified links nothing.
+    idp.person = { sub: "ada-oid", email: "ada@example.org", name: "Ada" };
+    expect((await signInThrough()).code).toBeNull();
+    // A code redeemed by an app that did not begin it.
+    idp.person = { sub: "grace-oid", email: "grace@corp.example", name: "Grace" };
+    const stolen = await signInThrough();
+    expect(
+      (await redeem(stolen.code ?? "", randomBytes(32).toString("base64url"))).statusCode,
+    ).toBe(401);
+
+    const log = await rows(test);
+    expect(actions(log)).toEqual([
+      "account.created",
+      "session.signed_in",
+      "session.signed_in (failed)",
+      "session.signed_in (failed)",
+    ]);
+    const by = { method: "sso", provider: "okta" };
+    expect(log[0]).toMatchObject({
+      actorId: grace,
+      targetName: "Grace",
+      userAgent: "Firefox",
+      details: { by: "sso", provider: "okta" },
+    });
+    expect(log[1]).toMatchObject({
+      actorId: grace,
+      actorEmail: "grace@corp.example",
+      details: by,
+    });
+    expect(log[2]).toMatchObject({
+      reason: "email not verified",
+      actorType: "anonymous",
+      actorEmail: "ada@example.org",
+      details: by,
+    });
+    expect(log[3]).toMatchObject({
+      reason: "not the app that began it",
+      actorId: grace,
+      details: by,
+    });
   });
 
   it("records permission changes, shares, exports and deletions", async () => {

@@ -341,6 +341,9 @@ importers:
       '@nether/enterprise-admin':
         specifier: workspace:*
         version: link:../admin
+      '@nether/enterprise-sso':
+        specifier: workspace:*
+        version: link:../sso
       '@types/node':
         specifier: ^24.19.2
         version: 24.19.2
