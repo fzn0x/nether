@@ -274,6 +274,13 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   accounts, those active in the last 30 days, workspaces, notes and
   attachments. An instance admin opens it from Servers and signing in
   ([ADR 0079](docs/adr/0079-enterprise-features-are-in-every-image-off-and-switched-in-the-console-or-pinned-by-the-environment.md)).
+- The admin console's Workspaces page: every workspace on the server, 50
+  a page, found by its name or by a member's name or email, each with its
+  owners, members, notes the server can read, size and last change. A
+  workspace opens to its members, and an instance admin sets a member's
+  role there, so a workspace whose owners are gone gets a new one; it keeps
+  at least one owner, and the member's apps connect again at the new role
+  ([ADR 0083](docs/adr/0083-the-console-lists-every-workspace-and-an-instance-admin-may-set-its-members-roles.md)).
 
 ### Changed
 

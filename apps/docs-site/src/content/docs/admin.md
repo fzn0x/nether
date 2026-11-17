@@ -44,4 +44,36 @@ you choose **Count again**:
 - **Attachments**, and their size;
 - **The server's version**.
 
-The console's workspaces and security pages come in a later version.
+## Workspaces
+
+**Workspaces** lists every workspace on your server, 50 at a time, by
+name; **More** shows the next 50. To find one, type part of its name, or
+part of a member's name or email address, and choose **Find**.
+
+Each workspace shows:
+
+- its name, and **End-to-end encrypted** when it is;
+- its **Owners**, by name;
+- how many **Members** it has, guests too;
+- its **Notes**: **Encrypted** for an encrypted workspace, whose notes the
+  server cannot read;
+- its **Size**: its notes, their history and its attachments, as the
+  server stores them;
+- its **Last change**, when a note in it last changed on the server.
+
+The console never shows a note's title or text.
+
+### Giving a workspace a new owner
+
+Choose a workspace's name to see its members: each one's name, email,
+role and the day they joined. Set a member's **Role** there, to owner,
+admin, member or guest. This is how a workspace whose owners have left
+gets a new one.
+
+- A workspace keeps at least one owner: make someone else an owner first,
+  then change the last one's role.
+- The member's apps connect again at once, and work by the new role.
+- The console does not add or remove members, and does not make you one.
+  A workspace's owners invite and remove people, as before.
+
+The console's security page comes in a later version.
