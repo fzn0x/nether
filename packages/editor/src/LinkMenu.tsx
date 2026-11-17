@@ -48,6 +48,8 @@ export interface NoteLinks {
         readonly title: string;
         readonly blocks: readonly ContentBlock[];
         readonly synced?: boolean;
+        /** What the app shows above the blocks, as a highlight's passage drawn from its PDF. */
+        readonly figure?: ReactNode;
       }
     | undefined
   >;

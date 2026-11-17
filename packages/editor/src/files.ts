@@ -6,6 +6,7 @@ import { Extension } from "@tiptap/core";
 import { Fragment, Slice } from "@tiptap/pm/model";
 import { Plugin, PluginKey } from "@tiptap/pm/state";
 import type { EditorView } from "@tiptap/pm/view";
+import type { ReactNode } from "react";
 
 /** Where a note's files come from, which the app that shows the note knows. */
 export interface NoteFiles {
@@ -25,6 +26,11 @@ export interface NoteFiles {
    * tells the user.
    */
   attach?(file: File, pasted: boolean): Promise<string | undefined>;
+  /**
+   * Draws a PDF a note embeds, by its link and what followed its `#`, as
+   * `page=3`; without it, the webview's own viewer shows the PDF.
+   */
+  pdf?(link: string, part: string | undefined): ReactNode;
 }
 
 export type FileKind = "image" | "pdf" | "audio" | "video" | "file";
