@@ -1,0 +1,23 @@
+# The chart's own test on kind (.github/workflows/kind.yml): two nodes with
+# high availability, the bundled PostgreSQL and Valkey, the image built and
+# loaded into the cluster, and a NodePort the host reaches. The workflow
+# makes the `nether-files` claim first: kind's one node lets two pods share
+# a ReadWriteOnce volume.
+ha:
+  enabled: true
+replicaCount: 2
+image:
+  repository: ghcr.io/fzn0x/nether-server
+  tag: kind
+  pullPolicy: Never
+bundled:
+  enabled: true
+storage:
+  disk:
+    existingClaim: nether-files
+service:
+  type: NodePort
+  nodePort: 30080
+server:
+  drainSeconds: 3
+preStopSleepSeconds: 3
