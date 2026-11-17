@@ -145,6 +145,12 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   password; those with full access make, copy and revoke them in the
   Share dialog, and revoking one ends what it opened
   ([ADR 0071](docs/adr/0071-a-share-link-opens-one-shared-page-to-anyone-with-it-through-the-web-app.md)).
+- Share links to comment and to edit, which completes them. A visitor
+  who writes gives a name first, kept in their browser: their comments
+  carry it, marked as by a link, and an edit link's visitor's caret
+  shows it to the others. The page is live for both. A comment link
+  writes only the page's comments; an edit link writes its notes' text
+  and comments, never which pages there are.
 - API tokens and webhooks in the app, which completes the REST API: API
   tokens on a server, under each account in Servers and signing in and in
   the Sync menu, list, make with the password again, show once to copy,
@@ -175,6 +181,15 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   embed, its passage. An area of a page is highlighted by a drag or from
   the keyboard, written as PDF++'s `&rect=`. Every view and embed of a PDF
   shares one loaded copy.
+- The web clipper, `apps/clipper`, a Manifest V3 extension for Chrome and
+  Firefox: its button saves the selection, or the whole page as a reader
+  view shows it, as Markdown the importer would write, to edit before it
+  goes; as a new note with its `source`, `clipped` and `author`, added to
+  a note found by search, read again if it changed meanwhile, or as a
+  database row. It signs in with a write token, kept in the browser's own
+  storage, and reaches the person's server alone
+  ([ADR 0066](docs/adr/0066-the-web-clipper-is-a-manifest-v3-extension-that-sends-clips-to-the-users-own-server-alone.md)).
+  The build makes a ZIP of each for its store.
 
 ### Changed
 

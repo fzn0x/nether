@@ -73,6 +73,7 @@ record supersedes it and says so. Start a new one from
 | [0063](0063-a-vault-plugins-views-draw-in-its-worker-and-the-page-shows-them-cleaned.md) | A vault plugin's views draw in its worker, and the page shows them cleaned | Accepted |
 | [0064](0064-a-plugin-reads-and-writes-notes-through-the-app-as-far-as-it-asked.md) | A plugin reads and writes notes through the app, as far as it asked | Accepted |
 | [0065](0065-the-directory-is-an-index-in-the-repository-of-files-pinned-by-commit-and-hash.md) | The directory is an index in the repository, of files pinned by commit and hash | Accepted |
+| [0066](0066-the-web-clipper-is-a-manifest-v3-extension-that-sends-clips-to-the-users-own-server-alone.md) | The web clipper is a Manifest V3 extension that sends clips to the user's own server alone | Accepted |
 | [0067](0067-pdf-embeds-draw-with-pdf-js-when-on-screen-and-an-area-is-pdf-plus-plus-rect.md) | PDF embeds draw with pdf.js when on screen, and a highlight of an area is PDF++'s rect | Accepted |
 | [0068](0068-ai-comes-from-the-users-own-provider-reached-from-their-device.md) | AI comes from the user's own provider, reached from their device, and shows nothing until there is one | Accepted |
 | [0069](0069-writing-assist-streams-into-a-preview-and-goes-in-as-one-edit.md) | Writing assist streams into a preview, and goes into the note as one edit | Accepted |
