@@ -3,6 +3,7 @@
 // kind, workspace, outcome and time, 50 at a time; how long the log keeps
 // them; and a check of its chain. Only IDs and names, never contents.
 import { type SyntheticEvent, useCallback, useEffect, useId, useState } from "react";
+import { AdminAuditSiem } from "./AdminAuditSiem.tsx";
 import { type MessageKey, messages, t } from "./messages.ts";
 import { webFetch, webServer } from "./web.ts";
 
@@ -525,6 +526,7 @@ export function AdminAudit() {
       )}
       {status === undefined ? null : <p role="status">{status}</p>}
       {error === undefined ? null : <p role="alert">{error}</p>}
+      <AdminAuditSiem />
     </section>
   );
 }
