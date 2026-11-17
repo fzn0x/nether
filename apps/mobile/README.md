@@ -94,10 +94,12 @@ xcodebuild test -scheme NetherMobilePlugin \
 
 The simulator's builds are signed to run locally, with no account, and the
 simulator applies the App Group's entitlement unsigned. To run on a phone,
-open `ios/App/App.xcodeproj` and choose your own team for the `App` and
-`ShareExtension` targets, with an App Group of yours in both, named in
-`Captures.swift` too: no signing identity, team or profile is ever in the
-repository.
+write your own bundle ID in `ios/nether.local.xcconfig`, which git
+ignores (`NETHER_BUNDLE_ID = com.yourname.nether`; the share extension's ID
+and the App Group follow from it), open `ios/App/App.xcodeproj`, and
+choose your own team, a free Apple ID's will do, for the `App` and
+`ShareExtension` targets: no signing identity, team or profile is ever in
+the repository.
 `App.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved`
 pins the Swift packages the app ships, as `pnpm-lock.yaml` pins npm's.
 

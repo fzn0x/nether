@@ -13,6 +13,11 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   over the last release's with no store. The app's version and its code
   come from `apps/mobile/package.json`, which the release check holds to
   the tag (#238).
+- The iOS app builds for your own phone with a free Apple ID: its bundle
+  IDs and App Group come from one setting, `NETHER_BUNDLE_ID` in
+  `apps/mobile/ios/nether.xcconfig`, which a git-ignored
+  `nether.local.xcconfig` overrides, and the install guide walks through
+  it (#238).
 
 - The admin console lists the server's nodes, each with its name, version
   and start, in every build. A node writes its heartbeat every half a

@@ -91,25 +91,40 @@ Inbox ([Quick capture](../writing/#quick-capture-on-a-phone)). Exports, and
 
 ## On iPhone and iPad
 
-The iOS app is on its way, and not in the App Store or TestFlight yet:
-until it is signed with the project's Apple account, it is built from the
-source, on a Mac with Xcode 26, for iOS 16.4 and later. After
-`pnpm --filter @nether/mobile build`, open
-`apps/mobile/ios/App/App.xcodeproj`, choose your own team under Signing,
-and run it on your phone. Give a vault a name: it is a folder of Markdown
-notes in the app's Documents, which the Files app shows under On My
-iPhone, Nether, and which works with no account. Notes another app
-changes there show when you come back to Nether. Each note is saved as
-you leave the app. Signing in to a server and opening its workspaces works
-as on Android, and so do the icon's quick actions, exports and **Send a
-copy**.
+The iOS app is free, and built from the source on a Mac with Xcode 26, for
+iOS 16.4 and later; it is in no store. A free Apple ID is enough to sign it
+for your own phone:
+
+1. In Xcode's settings, under **Accounts**, add your Apple ID. Xcode makes
+   it a personal team.
+2. Give the app IDs of your own: in `apps/mobile/ios`, make a file
+   `nether.local.xcconfig`, which git ignores, with one line,
+   `NETHER_BUNDLE_ID = com.yourname.nether`, a name no one else uses. The
+   share extension's ID and the App Group the two share follow from it
+   ([`nether.xcconfig`](https://github.com/fzn0x/nether/blob/main/apps/mobile/ios/nether.xcconfig)).
+3. Run `pnpm install` and `pnpm --filter @nether/mobile build`, open
+   `apps/mobile/ios/App/App.xcodeproj`, choose your personal team under
+   **Signing & Capabilities** for both the `App` and `ShareExtension`
+   targets, and run it on your phone.
+
+An app signed by a free Apple ID runs for 7 days: run it from Xcode again
+to renew it, and your vaults stay. Apple sets the limits of free teams,
+and the project has not tried every one on a device; if yours refuses the
+App Group, tell us in an
+[issue](https://github.com/fzn0x/nether/issues/new?template=bug_report.yml).
+
+Give a vault a name: it is a folder of Markdown notes in the app's
+Documents, which the Files app shows under On My iPhone, Nether, and which
+works with no account. Notes another app changes there show when you come
+back to Nether. Each note is saved as you leave the app. Signing in to a
+server and opening its workspaces works as on Android, and so do the
+icon's quick actions, exports and **Send a copy**.
 
 Nether shows in other apps' share sheets: its own sheet asks which vault a
 text, a link, images or files go to, and Nether files them as notes in the
 vault's Inbox as it opens. The share sheet and the app share the App Group
-`group.io.github.fzn0x.nether`. Built with your own team, give both the
-`App` and `ShareExtension` targets an App Group of yours, and name it in
-`apps/mobile/plugin/ios/Sources/Shares/Captures.swift`.
+`group.` and your bundle ID, `group.io.github.fzn0x.nether` for the
+project's.
 
 ## From the source
 
