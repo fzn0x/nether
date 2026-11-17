@@ -4,9 +4,11 @@
 // is, and is written by the HTML export's own `blocksToHtml`. Links are
 // resolved as the app resolves them, among the notes the publisher may
 // open, and lead only to the site's own pages; files go by their hash.
-// Loaded when a published page is first asked for, as it brings the
-// editor's schema.
-import type { LinkTarget } from "@nether/core";
+// Each page tells search engines what it is (ADR 0077): its description,
+// its canonical address, its Open Graph card, and whether to index it; a
+// site lists its pages in its sitemap. Loaded when a published page is
+// first asked for, as it brings the editor's schema.
+import type { Block, ContentBlock, Inline, LinkTarget, PropertyEntry } from "@nether/core";
 import { highlightCode, mathToMathml } from "@nether/editor/render";
 import {
   type HtmlHooks,
@@ -35,6 +37,10 @@ export interface SiteIndex {
   /** The site's pages: each note to its address under the site, "" for its root. */
   readonly pages: ReadonlyMap<string, string>;
   readonly byAddress: ReadonlyMap<string, string>;
+  /** The pages whose notes ask search engines not to index them, with `noindex: true`. */
+  readonly noindex: ReadonlySet<string>;
+  /** When each page's note was last stored. */
+  readonly updated: ReadonlyMap<string, Date>;
   /** Every file and note, by path, to resolve files among, and each file's hash. */
   readonly files: LinkIndex;
   readonly hashOf: ReadonlyMap<string, string>;
@@ -57,9 +63,11 @@ function texts(value: unknown): string[] {
 export async function siteIndex(db: Queryable, site: Site): Promise<SiteIndex> {
   const { levels } = await accessible(db, site.publisher, site.workspace);
   const { rows } = await db.query(
-    `SELECT s.note, s.path, s.title, s.properties, COALESCE(u.unit_id::text, $2) AS unit
+    `SELECT s.note, s.path, s.title, s.properties, d.updated_at,
+            COALESCE(u.unit_id::text, $2) AS unit
        FROM note_search s
        LEFT JOIN note_units u ON u.workspace_id = s.workspace_id AND u.note = s.note
+       LEFT JOIN documents d ON d.workspace_id = s.workspace_id AND d.name = s.note
       WHERE s.workspace_id = $1 AND s.path <> ''`,
     [site.workspace, general],
   );
@@ -68,6 +76,8 @@ export async function siteIndex(db: Queryable, site: Site): Promise<SiteIndex> {
   const titleOf = new Map<string, string>();
   const aliases = new Map<string, string>();
   const published = new Set<string>();
+  const noindex = new Set<string>();
+  const updated = new Map<string, Date>();
   for (const row of rows) {
     const unit = readText(row, "unit");
     if (!levels.has(unit)) continue;
@@ -76,10 +86,13 @@ export async function siteIndex(db: Queryable, site: Site): Promise<SiteIndex> {
     byPath.set(path, id);
     pathOf.set(id, path);
     titleOf.set(id, readText(row, "title"));
+    if (row.updated_at instanceof Date) updated.set(id, row.updated_at);
+    else if (typeof row.updated_at === "string") updated.set(id, new Date(row.updated_at));
     const properties = record(row.properties);
     for (const alias of texts(properties.aliases)) aliases.set(alias.toLowerCase(), id);
     // Published only with full access, and not when the note says it is not.
     if (levels.get(unit) === "full" && properties.publish !== false) published.add(id);
+    if (properties.noindex === true) noindex.add(id);
   }
 
   const pages = new Map<string, string>();
@@ -126,12 +139,16 @@ export async function siteIndex(db: Queryable, site: Site): Promise<SiteIndex> {
     aliases,
     pages,
     byAddress: new Map([...pages].map(([id, address]) => [address, id])),
+    noindex,
+    updated,
     files: new LinkIndex([...byPath.keys(), ...hashOf.keys()]),
     hashOf,
   };
 }
 
 const webAddress = /^(https?:|mailto:|tel:)/i;
+const httpAddress = /^https?:\/\//i;
+const imageFile = /\.(png|jpe?g|gif|webp|avif|bmp|svg)$/i;
 
 function folderOf(path: string): string {
   const slash = path.lastIndexOf("/");
@@ -167,11 +184,16 @@ export function pageUrl(base: string, address: string): string {
 /** Where the files of a site are served, by their hash. */
 export const filesFolder = ".files";
 
-/** What a page needs beside its site: where the site is, and where its stylesheet is. */
+/** What a page needs beside its site: where the site is, its stylesheet, and its canonical address. */
 export interface Where {
-  /** The site's address, ending with a slash, as `/p/notes/`. */
+  /** The site's address on the host asked, ending with a slash: `/p/notes/`, or `/` on its domain. */
   readonly base: string;
   readonly stylesheet: string;
+  /**
+   * The site's address as search engines should know it, whole and ending
+   * with a slash: on its domain once it holds one, else on the server.
+   */
+  readonly canonical: string;
 }
 
 /** The note a link's target names from the note at `from`, among those the publisher may open. */
@@ -184,6 +206,20 @@ function resolve(index: SiteIndex, target: LinkTarget, from: string): string | u
   return path === undefined ? index.aliases.get(title.toLowerCase()) : index.byPath.get(path);
 }
 
+/** A file of the vault a note names, from the note at `from`: its address under a site's base. */
+function fileAt(index: SiteIndex, src: string, from: string): string | undefined {
+  const path = index.files.resolve(src, from) ?? index.files.resolve(decode(src), from);
+  const hash = path === undefined ? undefined : index.hashOf.get(path);
+  if (path === undefined || hash === undefined) return undefined;
+  const name = path.slice(path.lastIndexOf("/") + 1);
+  return `${filesFolder}/${hash}/${encodeURIComponent(name)}`;
+}
+
+/** The hash in a file's address under a site's base. */
+function hashIn(address: string): string {
+  return address.split("/")[1] ?? "";
+}
+
 /** The hooks a page is drawn with: links among the site's pages, its files by hash, math and code. */
 function hooks(index: SiteIndex, where: Where, from: string, files: Set<string>): HtmlHooks {
   const pageHref = (note: string, anchor = "") => {
@@ -191,12 +227,10 @@ function hooks(index: SiteIndex, where: Where, from: string, files: Set<string>)
     return address === undefined ? undefined : `${pageUrl(where.base, address)}${anchor}`;
   };
   const fileHref = (src: string) => {
-    const path = index.files.resolve(src, from) ?? index.files.resolve(decode(src), from);
-    const hash = path === undefined ? undefined : index.hashOf.get(path);
-    if (path === undefined || hash === undefined) return undefined;
-    files.add(hash);
-    const name = path.slice(path.lastIndexOf("/") + 1);
-    return `${where.base}${filesFolder}/${hash}/${encodeURIComponent(name)}`;
+    const address = fileAt(index, src, from);
+    if (address === undefined) return undefined;
+    files.add(hashIn(address));
+    return `${where.base}${address}`;
   };
   return {
     link: (target) => {
@@ -232,19 +266,65 @@ function hooks(index: SiteIndex, where: Where, from: string, files: Set<string>)
   };
 }
 
-/** A whole page: its title, the site's header and the article. */
-function document(where: Where, site: Site, title: string, article: string): string {
+/** What a page's head tells browsers and search engines. */
+interface Meta {
+  /** The tab's title, the page's and its site's. */
+  readonly title: string;
+  /** The page's own title, for its card. */
+  readonly name?: string;
+  readonly description?: string;
+  /** Its address as search engines should know it; none for a page not there. */
+  readonly canonical?: string;
+  readonly image?: string;
+  readonly type?: "website" | "article";
+  readonly noindex: boolean;
+}
+
+function metaTag(attribute: "name" | "property", key: string, value: string): string {
+  return `<meta ${attribute}="${key}" content="${escapeHtml(value)}">`;
+}
+
+/** The head's lines for a page: its title, stylesheet, description, address and card. */
+function head(where: Where, site: Site | undefined, meta: Meta): string[] {
+  const lines = [
+    '<meta charset="utf-8">',
+    '<meta name="viewport" content="width=device-width, initial-scale=1">',
+    `<title>${escapeHtml(meta.title)}</title>`,
+    `<link rel="stylesheet" href="${escapeHtml(where.stylesheet)}">`,
+  ];
+  if (meta.noindex) lines.push(metaTag("name", "robots", "noindex"));
+  if (meta.description !== undefined) lines.push(metaTag("name", "description", meta.description));
+  if (meta.canonical !== undefined && site !== undefined) {
+    lines.push(`<link rel="canonical" href="${escapeHtml(meta.canonical)}">`);
+    lines.push(metaTag("property", "og:type", meta.type ?? "article"));
+    lines.push(metaTag("property", "og:site_name", site.title));
+    lines.push(metaTag("property", "og:title", meta.name ?? meta.title));
+    lines.push(metaTag("property", "og:url", meta.canonical));
+    if (meta.description !== undefined) {
+      lines.push(metaTag("property", "og:description", meta.description));
+    }
+    if (meta.image !== undefined) lines.push(metaTag("property", "og:image", meta.image));
+    lines.push(
+      metaTag("name", "twitter:card", meta.image === undefined ? "summary" : "summary_large_image"),
+    );
+  }
+  return lines;
+}
+
+/** A whole page: its head, the site's header and the article. */
+function document(where: Where, site: Site | undefined, meta: Meta, article: string): string {
   return [
     "<!doctype html>",
     '<html lang="en">',
     "<head>",
-    '<meta charset="utf-8">',
-    '<meta name="viewport" content="width=device-width, initial-scale=1">',
-    `<title>${escapeHtml(title)}</title>`,
-    `<link rel="stylesheet" href="${escapeHtml(where.stylesheet)}">`,
+    ...head(where, site, meta),
     "</head>",
     "<body>",
-    `<header class="site"><a href="${escapeHtml(where.base)}">${escapeHtml(site.title)}</a></header>`,
+    ...(site === undefined
+      ? []
+      : [
+          `<header class="site"><a href="${escapeHtml(where.base)}">${escapeHtml(site.title)}</a></header>`,
+        ]),
     "<main>",
     "<article>",
     article,
@@ -256,33 +336,19 @@ function document(where: Where, site: Site, title: string, article: string): str
   ].join("\n");
 }
 
-/** What drawing a page gives: its status, its HTML, and the files it showed, by hash. */
+/** What drawing a page gives: its status, its HTML, the files it showed by hash, and whether to index it. */
 export interface Drawn {
   readonly status: 200 | 404;
   readonly html: string;
   readonly files: readonly string[];
+  readonly noindex: boolean;
 }
 
 /** The page answered for an address the site has no page at. */
 export function notPublished(where: Where, site: Site | undefined): Drawn {
   const article = "<h1>Not published</h1>\n<p>Nothing is published at this address.</p>";
-  const html =
-    site === undefined
-      ? [
-          "<!doctype html>",
-          '<html lang="en">',
-          "<head>",
-          '<meta charset="utf-8">',
-          '<meta name="viewport" content="width=device-width, initial-scale=1">',
-          "<title>Not published</title>",
-          `<link rel="stylesheet" href="${escapeHtml(where.stylesheet)}">`,
-          "</head>",
-          `<body><main><article>${article}</article></main></body>`,
-          "</html>",
-          "",
-        ].join("\n")
-      : document(where, site, "Not published", article);
-  return { status: 404, html, files: [] };
+  const html = document(where, site, { title: "Not published", noindex: true }, article);
+  return { status: 404, html, files: [], noindex: true };
 }
 
 /** A folder's site's first page: its pages, by path. */
@@ -295,8 +361,83 @@ function folderIndex(index: SiteIndex, where: Where): Drawn {
       const detail = folder === "" ? "" : ` <small>${escapeHtml(folder)}</small>`;
       return `<li><a href="${escapeHtml(pageUrl(where.base, address))}">${escapeHtml(title)}</a>${detail}</li>`;
     });
-  const article = `<h1 class="title">${escapeHtml(index.site.title)}</h1>\n<nav class="index"><ul>\n${items.join("\n")}\n</ul></nav>`;
-  return { status: 200, html: document(where, index.site, index.site.title, article), files: [] };
+  const { site } = index;
+  const article = `<h1 class="title">${escapeHtml(site.title)}</h1>\n<nav class="index"><ul>\n${items.join("\n")}\n</ul></nav>`;
+  const meta: Meta = {
+    title: site.title,
+    canonical: where.canonical,
+    type: "website",
+    noindex: !site.indexed,
+  };
+  return {
+    status: 200,
+    html: document(where, site, meta, article),
+    files: [],
+    noindex: meta.noindex,
+  };
+}
+
+/** Inline content as plain text, as a description shows it. */
+function inlineText(inlines: readonly Inline[]): string {
+  return inlines
+    .map((inline) => {
+      switch (inline.type) {
+        case "text":
+          return inline.text;
+        case "wikiLink":
+          return inline.alias ?? ("title" in inline.target ? inline.target.title : "");
+        case "tag":
+          return `#${inline.name}`;
+        case "math":
+          return inline.latex;
+        default:
+          return " ";
+      }
+    })
+    .join("")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/** A text cut to at most `most` characters, at a word when it can be, with an ellipsis when cut. */
+function cut(text: string, most = 160): string {
+  const plain = text.replace(/\s+/g, " ").trim();
+  if (plain.length <= most) return plain;
+  const part = plain.slice(0, most - 1);
+  const space = part.lastIndexOf(" ");
+  return `${(space > most / 2 ? part.slice(0, space) : part).trimEnd()}…`;
+}
+
+/** A property's text, by its key in any case; undefined for none or one that is not text. */
+function textProperty(properties: readonly PropertyEntry[], key: string): string | undefined {
+  const value = properties.find((entry) => entry.key.toLowerCase() === key)?.value;
+  return typeof value === "string" && value.trim() !== "" ? value.trim() : undefined;
+}
+
+/** A page's description: its `description` property, or else its first paragraph's text. */
+function describe(properties: readonly PropertyEntry[], content: readonly ContentBlock[]) {
+  const given = textProperty(properties, "description");
+  if (given !== undefined) return cut(given);
+  for (const block of content) {
+    if (block.type !== "paragraph") continue;
+    const text = inlineText(block.content);
+    if (text !== "") return cut(text);
+  }
+  return undefined;
+}
+
+/** The first image a page shows, as its note links to it: an image block's or an image's embed. */
+function firstImage(blocks: readonly Block[]): string | undefined {
+  for (const block of blocks) {
+    if (block.type === "image") return block.attrs.src;
+    if (block.type === "embed" && "title" in block.attrs.target) {
+      if (imageFile.test(block.attrs.target.title)) return block.attrs.target.title;
+    }
+    const children = "children" in block && Array.isArray(block.children) ? block.children : [];
+    const found = firstImage(children as readonly Block[]);
+    if (found !== undefined) return found;
+  }
+  return undefined;
 }
 
 /** Draws the page at an address under a site, as its note is now. */
@@ -330,9 +471,67 @@ export async function drawPage(
       : `<h1 class="title">${escapeHtml(title)}</h1>\n`;
   const shownTitle =
     address === "" || title === index.site.title ? title : `${title} · ${index.site.title}`;
+
+  // The card's image: the `image` property's, else the first the page shows.
+  const named = textProperty(parsed.properties, "image")?.replace(/^\[\[|\]\]$/g, "");
+  const source = named ?? firstImage(parsed.content);
+  let image: string | undefined;
+  if (source !== undefined && httpAddress.test(source)) image = source;
+  else if (source !== undefined) {
+    const file = fileAt(index, source, path);
+    if (file !== undefined) {
+      files.add(hashIn(file));
+      image = `${where.canonical}${file}`;
+    }
+  }
+  const description = describe(parsed.properties, parsed.content);
+  const meta: Meta = {
+    title: shownTitle,
+    name: title,
+    canonical: pageUrl(where.canonical, address),
+    type: address === "" ? "website" : "article",
+    noindex: !index.site.indexed || index.noindex.has(note),
+    ...(description === undefined ? {} : { description }),
+    ...(image === undefined ? {} : { image }),
+  };
   return {
     status: 200,
-    html: document(where, index.site, shownTitle, `${heading}${body}`),
+    html: document(where, index.site, meta, `${heading}${body}`),
     files: [...files],
+    noindex: meta.noindex,
   };
+}
+
+/**
+ * A site's sitemap: the whole addresses of the pages search engines may
+ * index, each with when its note was last stored; none while the site asks
+ * not to be indexed.
+ */
+export function sitemap(index: SiteIndex, where: Where): string {
+  const urls: string[] = [];
+  if (index.site.indexed) {
+    const entries = [...index.pages]
+      .filter(([note]) => !index.noindex.has(note))
+      .map(([note, address]) => ({ address, updated: index.updated.get(note) }));
+    if (index.site.rootFolder !== null) entries.push({ address: "", updated: undefined });
+    entries.sort((a, b) => a.address.localeCompare(b.address));
+    for (const { address, updated } of entries) {
+      const lastmod = updated === undefined ? "" : `<lastmod>${updated.toISOString()}</lastmod>`;
+      urls.push(`<url><loc>${escapeHtml(pageUrl(where.canonical, address))}</loc>${lastmod}</url>`);
+    }
+  }
+  return [
+    '<?xml version="1.0" encoding="UTF-8"?>',
+    '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">',
+    ...urls,
+    "</urlset>",
+    "",
+  ].join("\n");
+}
+
+/** A site's robots.txt, on its domain: everything, with its sitemap, or nothing while it asks not to be indexed. */
+export function robots(index: SiteIndex, where: Where): string {
+  return index.site.indexed
+    ? `User-agent: *\nAllow: /\n\nSitemap: ${where.canonical}sitemap.xml\n`
+    : "User-agent: *\nDisallow: /\n";
 }
