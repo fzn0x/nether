@@ -60,7 +60,9 @@ directory. The server's [REST API](../api/) reads and writes notes,
 databases and search for scripts, with personal access tokens, and its
 webhooks tell other services when notes change; the app makes both.
 [PDFs](../pdfs/) open in a view of their own, to be highlighted and
-commented on, each highlight Markdown that Obsidian reads. The
+commented on, each highlight Markdown that Obsidian reads.
+[Share links](../servers/#share-links) open a page to anyone with one,
+with no account, to read, to comment on or to edit. The
 [roadmap](../roadmap/) lists what each phase delivers.
 
 The full requirements, the architecture and the decision records live in
