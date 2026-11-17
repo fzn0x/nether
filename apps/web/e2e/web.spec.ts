@@ -476,3 +476,94 @@ test("a share link opens its page to someone with no account, until it is revoke
   }
   expect(problems).toEqual([]);
 });
+
+/** Opens the settings at their AI tab, through the palette. */
+async function aiTab(page: Page) {
+  await page.keyboard.press("Control+p");
+  await page.keyboard.type("Plugins");
+  await page.keyboard.press("Enter");
+  const settings = page.getByRole("dialog", { name: "Settings" });
+  await settings.getByRole("tab", { name: "AI" }).click();
+  return { settings, tab: settings.getByRole("tabpanel", { name: "AI" }) };
+}
+
+test("the admin's provider for everyone, kept on the server, and writing assist through its relay", async ({
+  page,
+}) => {
+  const problems = problemsOf(page);
+  // Ada set the server up, so she is its admin.
+  await signIn(page, { email: "ada@example.org", password: "a long password" });
+  await openTeam(page);
+  await newNote(page, "Typo", "Teh cat sat.");
+  await expect.poll(() => fileText(page, "Typo.md")).toBe("Teh cat sat.\n");
+
+  const { settings, tab } = await aiTab(page);
+  await expect(tab.getByRole("heading", { name: "Providers on 127.0.0.1:4175" })).toBeVisible();
+  await expect(tab.getByText("No provider is set up yet.")).toBeVisible();
+  await tab.getByRole("button", { name: "Add a provider" }).click();
+  await tab.getByLabel("For").selectOption("instance");
+  await tab.getByLabel("Name", { exact: true }).fill("Team model");
+  await tab.getByLabel("Address").fill("http://127.0.0.1:4178/v1");
+  await tab.getByLabel("Model").fill("test-model");
+  await tab.getByLabel("Key", { exact: true }).fill("sk-team");
+  expect(await violations(page)).toEqual([]);
+  await tab.getByRole("button", { name: "Save" }).click();
+  const listed = tab.getByRole("listitem").filter({ hasText: "Team model" });
+  await expect(listed).toContainText("Everyone's");
+  await expect(listed).toContainText("test-model at 127.0.0.1:4178");
+  expect(await violations(page)).toEqual([]);
+  await settings.getByRole("button", { name: "Close" }).click();
+
+  const editor = page.getByRole("textbox", { name: "Typo, note text" });
+  await editor.locator("p").first().click();
+  await page.keyboard.press("End");
+  await page.keyboard.press("Shift+Home");
+  await page.keyboard.press("Control+j");
+  const assist = page.getByRole("region", { name: "Writing assist" });
+  await expect(assist).toContainText(
+    "Sends the text through 127.0.0.1:4175 to Team model, test-model at 127.0.0.1:4178.",
+  );
+  await assist.getByRole("button", { name: "Fix grammar" }).click();
+  await expect(assist.getByRole("region", { name: "What came back" })).toHaveText(
+    "Fixed: The cat sat.",
+  );
+  await assist.getByRole("button", { name: "Replace" }).click();
+  await expect(editor.locator("p").first()).toHaveText("Fixed: The cat sat.");
+  await expect.poll(() => fileText(page, "Typo.md")).toBe("Fixed: The cat sat.\n");
+
+  // The server added the key and the provider's model; the page sent neither.
+  const heard =
+    await ask<{ path: string; authorization?: string; body: { model: string } }[]>("/model");
+  expect(heard.at(-1)).toMatchObject({
+    path: "/v1/chat/completions",
+    authorization: "Bearer sk-team",
+    body: { model: "test-model" },
+  });
+
+  // Gone again, so the other tests see no AI.
+  const again = await aiTab(page);
+  await again.tab.getByRole("button", { name: "Remove Team model" }).click();
+  await expect(again.tab.getByText("No provider is set up yet.")).toBeVisible();
+  await again.settings.getByRole("button", { name: "Close" }).click();
+  expect(problems).toEqual([]);
+});
+
+test("a member's own provider is reached at public addresses only", async ({ page }) => {
+  const problems = problemsOf(page);
+  const mia = await person("Mia");
+  await signIn(page, mia);
+  await openTeam(page);
+  const { settings, tab } = await aiTab(page);
+  await tab.getByRole("button", { name: "Add a provider" }).click();
+  // A member's provider is the member's own: no choice of whose it is.
+  await expect(tab.getByLabel("For")).toHaveCount(0);
+  await tab.getByLabel("Name", { exact: true }).fill("Sneaky");
+  await tab.getByLabel("Address").fill("https://127.0.0.1:4178/v1");
+  await tab.getByLabel("Model").fill("test-model");
+  await tab.getByRole("button", { name: "Save" }).click();
+  await expect(tab.getByRole("alert")).toHaveText("An account's provider is at a public address.");
+  await tab.getByRole("button", { name: "Cancel" }).click();
+  await expect(tab.getByText("No provider is set up yet.")).toBeVisible();
+  await settings.getByRole("button", { name: "Close" }).click();
+  expect(problems).toEqual([]);
+});
