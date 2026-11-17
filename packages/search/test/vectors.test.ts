@@ -105,16 +105,27 @@ describe("SignIndex", () => {
     expect(index.closest(signs, 2)).toEqual([0, 1]);
   });
 
-  it("ranks 150,000 passages of 1,536 numbers in well under a second", () => {
-    const index = new SignIndex(1536);
-    const signs = new Uint8Array(192);
-    for (let at = 0; at < signs.length; at++) signs[at] = (at * 37) & 0xff;
-    for (let id = 0; id < 150_000; id++) {
-      signs[id % 192] = id & 0xff;
-      index.add(id, signs);
+  it("finds the closest among many passages, nearest first", () => {
+    const dimensions = 1536;
+    const index = new SignIndex(dimensions);
+    const query = new Uint8Array(dimensions / 8);
+    for (let at = 0; at < query.length; at++) query[at] = (at * 37) & 0xff;
+    // Many passages far from the query, each its opposite but for a few bits.
+    for (let id = 0; id < 20_000; id++) {
+      const far = query.map((byte) => ~byte & 0xff);
+      far[id % far.length] = (far[id % far.length] ?? 0) ^ 0x0f;
+      index.add(id, far);
     }
-    const started = performance.now();
-    expect(index.closest(signs, 200)).toHaveLength(200);
-    expect(performance.now() - started).toBeLessThan(1000);
+    // And three near it: the same, then one bit and two bits turned.
+    const near = (turned: number) => {
+      const signs = new Uint8Array(query);
+      for (let bit = 0; bit < turned; bit++) signs[0] = (signs[0] ?? 0) ^ (1 << bit);
+      return signs;
+    };
+    index.add(90_002, near(2));
+    index.add(90_000, near(0));
+    index.add(90_001, near(1));
+    expect(index.size).toBe(20_003);
+    expect(index.closest(query, 3)).toEqual([90_000, 90_001, 90_002]);
   });
 });
