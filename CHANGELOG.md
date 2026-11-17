@@ -339,6 +339,19 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   A change closes the visits it stops, and `/api/me` tells the apps each
   workspace's `export`
   ([ADR 0088](docs/adr/0088-data-policies-set-a-workspaces-retention-legal-hold-public-sharing-and-export-over-its-owners.md)).
+- Provisioning, first part: an account can be deactivated, which the
+  server enforces whether the `scim` feature is on or off. It signs in no
+  way: a password answers as a wrong one, no email code is sent, and a
+  provider's sign-in says the account is deactivated. Its sessions, codes
+  and API tokens end with it, while it keeps its workspaces, roles, grants
+  and keys, and comes back as it was. It does not count as a workspace's
+  owner, waits for no key and gets no mail, and members' lists and the
+  console mark it **Deactivated**. The server's last active instance admin
+  is never deactivated. A membership keeps its own role beside the roles
+  its groups give, and core works it out from both; the tables of
+  directories, their accounts and their groups are in place for the SCIM
+  server and the LDAP pull that follow
+  ([ADR 0085](docs/adr/0085-a-directory-provisions-accounts-and-groups-by-scim-or-an-ldap-pull-and-deprovisioning-deactivates-before-it-removes.md)).
 
 ### Changed
 
