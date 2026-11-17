@@ -101,7 +101,10 @@ have it, needs no Kotlin toolchain in the build.
   - `SignIn`: on iOS, the system's sign-in sheet for providers.
 
   Everything else comes from maintained Capacitor plugins, listed at the
-  end with their licenses.
+  end with their licenses. On Android the plugin is in the app's project;
+  on iOS it is a Swift package of its own, `apps/mobile/plugin`, linked as
+  `@nether/mobile-plugin`, so Capacitor's CLI adds it to the app as it does
+  each plugin from npm, and its tests run without the app.
 
 ### A vault on the phone
 
@@ -461,9 +464,11 @@ as the app left.
   minutes.
 - **iOS, on macOS**: CI builds the app for the simulator, signed to run
   locally, which needs no account. It runs the plugin's Swift tests, and
-  starts the app in a simulator, waiting for the page's first mark. The
+  starts the app in a simulator with a vault, waiting for the page's marks
+  until the vault's notes are read, then finds the note in the index. The
   share extension builds too. Its App Group needs signing, so it is tried
-  on a device, with the maintainer's account.
+  on a device, with the maintainer's account. macOS runners cost more than
+  Linux's, so this runs only for changes to the app, its plugin or the page.
 - **Release builds** are unsigned until the maintainer adds the signing
   keys as secrets.
 

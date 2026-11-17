@@ -74,6 +74,19 @@ the app, so nothing typed is lost when the phone ends it.
 Signing in to a server and sync, and exports through the share sheet,
 come to the app next.
 
+## On iPhone and iPad
+
+The iOS app is on its way, and not in the App Store or TestFlight yet:
+until it is signed with the project's Apple account, it is built from the
+source, on a Mac with Xcode 26, for iOS 16.4 and later. After
+`pnpm --filter @nether/mobile build`, open
+`apps/mobile/ios/App/App.xcodeproj`, choose your own team under Signing,
+and run it on your phone. Give a vault a name: it is a folder of Markdown
+notes in the app's Documents, which the Files app shows under On My
+iPhone, Nether, and which works with no account. Notes another app
+changes there show when you come back to Nether. Each note is saved as
+you leave the app.
+
 ## From the source
 
 You need Node.js 24, pnpm 10 and Go 1.27:

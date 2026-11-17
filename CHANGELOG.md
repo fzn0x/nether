@@ -403,7 +403,16 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   with no account; signing in, sync and exports come in later parts. CI
   builds the debug APK, tests the plugin on the JVM, checks every library
   the app ships against ADR 0001's licenses, and runs the app on an
-  Android 15 emulator, ending it mid-edit.
+  Android 15 emulator, ending it mid-edit. Then the iOS app, for iOS 16.4
+  and later: the same vaults, each a folder in the app's Documents, which
+  the Files app shows under On My iPhone, Nether, through the plugin in
+  Swift, `apps/mobile/plugin`, whose core is plain Foundation with the
+  Java's tests, and which syncs a note to the disk itself with
+  `F_FULLFSYNC` before its rename. CI on macOS, only for changes to the app
+  or its page, builds it for the simulator, signed to run locally with no
+  account, checks each Swift package it ships against ADR 0001's licenses
+  by `Package.resolved`, runs the plugin's tests on the simulator, and
+  starts the app there with a vault, its note found in the index.
 - Provisioning, first part: an account can be deactivated, which the
   server enforces whether the `scim` feature is on or off. It signs in no
   way: a password answers as a wrong one, no email code is sent, and a
