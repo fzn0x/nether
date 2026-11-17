@@ -32,7 +32,13 @@ import {
 } from "@nether/server/src/oidc.ts";
 import { checkedFetch } from "@nether/server/src/outbound.ts";
 import { type Seal, SealedElsewhere, sealWith } from "@nether/server/src/secrets.ts";
-import { newToken, startSession, tokenHash } from "@nether/server/src/sessions.ts";
+import { AccountDeactivated, deactivatedMessage } from "@nether/server/src/accounts.ts";
+import {
+  newToken,
+  refusedDeactivated,
+  startSession,
+  tokenHash,
+} from "@nether/server/src/sessions.ts";
 import { type Outcome, type SignInError, resolveAccount } from "./accounts.ts";
 import {
   type OidcSettings,
@@ -402,7 +408,7 @@ export function registerSignIn(app: FastifyInstance, context: SignInContext): vo
       preHandler: whenOn,
     },
     async (request, reply) => {
-      const outcome = await db.transaction(async (tx) => {
+      const redeemed = db.transaction(async (tx) => {
         // Spent by any try, right or wrong.
         const { rows } = await tx.query(
           `DELETE FROM sso_flows
@@ -454,6 +460,15 @@ export function registerSignIn(app: FastifyInstance, context: SignInContext): vo
               }),
         };
       });
+      let outcome: Awaited<typeof redeemed>;
+      try {
+        outcome = await redeemed;
+      } catch (error) {
+        if (!(error instanceof AccountDeactivated)) throw error;
+        // Told of and answered as core's own provider's are (ADR 0085).
+        await refusedDeactivated(db, events, request, error);
+        return fail(reply, 403, deactivatedMessage);
+      }
       if ("failed" in outcome) {
         // Told of as core's own failed redemptions are (ADR 0081).
         await events.attempt(

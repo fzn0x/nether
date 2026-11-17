@@ -3,7 +3,8 @@
 // token's SHA-256, so its database cannot sign anyone in. A session ends
 // when its client signs out, or after the days unused or the days since it
 // began that the security settings give now (ADR 0084), 30 and 90 unless
-// changed, whichever comes first.
+// changed, whichever comes first. A deactivated account starts none, and
+// its sessions end with it (ADR 0085).
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import {
@@ -25,6 +26,7 @@ import {
   uuidField,
 } from "./http.ts";
 import { type ServerEvents, type SessionMethod, accountActor, originOf } from "./events.ts";
+import { AccountDeactivated, isDeactivated } from "./accounts.ts";
 import { hashPassword, verifyPassword } from "./passwords.ts";
 import type { AiEndpoints } from "./aiEndpoints.ts";
 import { type DataPolicies, appsPolicy } from "./dataPolicies.ts";
@@ -69,7 +71,9 @@ export interface NewSession {
 /**
  * Starts a session for a user, as signing in does, and tells of it in the
  * same transaction, by how it began (ADR 0081): through a single sign-on
- * provider, `provider` is its ID.
+ * provider, `provider` is its ID. A deactivated account throws
+ * AccountDeactivated and starts nothing, whichever way it came in (ADR
+ * 0085); the caller tells of it with `refusedDeactivated`.
  */
 export async function startSession(
   db: Queryable,
@@ -79,6 +83,7 @@ export async function startSession(
   events: ServerEvents,
   provider?: string,
 ): Promise<NewSession> {
+  if (await isDeactivated(db, userId)) throw new AccountDeactivated(userId, method, provider);
   const token = newToken();
   const client = (request.headers["user-agent"] ?? "").slice(0, 200);
   // Its end as the lifetime is now; a later setting ends it sooner or later.
@@ -100,18 +105,45 @@ export async function startSession(
   return { token, expiresAt: readTime(rows[0], "expires_at").toISOString() };
 }
 
+/**
+ * Tells of a sign-in refused because its account is deactivated, as a
+ * failure with that reason (ADR 0085), through `db`, not the transaction
+ * the refusal undid.
+ */
+export async function refusedDeactivated(
+  db: Queryable,
+  events: ServerEvents,
+  request: FastifyRequest,
+  refused: AccountDeactivated,
+): Promise<void> {
+  const { method, provider } = refused;
+  await events.attempt(
+    db,
+    {
+      action: "session.signed_in",
+      outcome: "failure",
+      reason: "deactivated",
+      actor: accountActor(refused.userId),
+      details: provider === undefined ? { method } : { method, provider },
+    },
+    originOf(request),
+    request.log,
+  );
+}
+
 /** The token in an `Authorization: Bearer` header. */
 export function bearerToken(header: string | undefined): string | undefined {
   return /^Bearer +(\S+) *$/i.exec(header ?? "")?.[1];
 }
 
-/** The account a token signs in, while its session lasts. */
+/** The account a token signs in, while its session lasts and the account is not deactivated. */
 export async function sessionAccount(db: Database, token: string): Promise<Account | undefined> {
   const { rows } = await db.query(
     `SELECT s.id AS session_id, s.created_at, s.used_at,
             u.id, u.name, u.email, u.instance_admin
        FROM sessions s JOIN users u ON u.id = s.user_id
       WHERE s.token_hash = $1
+        AND u.deactivated_at IS NULL
         AND ${lasting}`,
     [tokenHash(token)],
   );
@@ -234,6 +266,8 @@ const passwordBody = {
 
 export const wrongPassword = "That password is not this account's.";
 
+const noMatch = "That email address and password do not match an account.";
+
 /**
  * The routes of signing in and out, of one's sessions, and of one's
  * account. The security settings give the sign-in limits; the account's
@@ -303,12 +337,18 @@ export function registerSessions(
           originOf(request),
           request.log,
         );
-        return fail(reply, 401, "That email address and password do not match an account.");
+        return fail(reply, 401, noMatch);
       }
       const id = readText(row, "id");
-      const session = await db.transaction((tx) =>
-        startSession(tx, id, request, "password", events),
-      );
+      let session: NewSession;
+      try {
+        session = await db.transaction((tx) => startSession(tx, id, request, "password", events));
+      } catch (error) {
+        if (!(error instanceof AccountDeactivated)) throw error;
+        // As a wrong password answers, so a password cannot be tested here.
+        await refusedDeactivated(db, events, request, error);
+        return fail(reply, 401, noMatch);
+      }
       return reply.code(201).send({
         ...session,
         user: {

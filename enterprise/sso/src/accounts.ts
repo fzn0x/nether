@@ -8,6 +8,7 @@ import { type Queryable, readText } from "@nether/server/src/db.ts";
 import { type EventOrigin, type ServerEvents, accountActor } from "@nether/server/src/events.ts";
 import { emailKey } from "@nether/server/src/http.ts";
 import { acceptInvitation, invites, openInvitation } from "@nether/server/src/invitations.ts";
+import { isDeactivated } from "@nether/server/src/accounts.ts";
 import type { Person } from "@nether/server/src/oidc.ts";
 import { type Provider, addressDomain } from "./providers.ts";
 
@@ -89,7 +90,10 @@ export async function resolveAccount(
     ]);
   }
 
-  if (invitation === undefined) return { userId, workspaceId: null };
+  // A deactivated account accepts none: redeeming refuses it (ADR 0085).
+  if (invitation === undefined || (await isDeactivated(tx, userId))) {
+    return { userId, workspaceId: null };
+  }
   if (email === undefined) {
     const { rows } = await tx.query("SELECT email FROM users WHERE id = $1", [userId]);
     email = readText(rows[0], "email");

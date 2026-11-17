@@ -12,7 +12,9 @@
 //    minute, which the app redeems with its PKCE verifier for a session.
 //
 // No token reaches the browser's address bar or history, and a code taken
-// from the redirect is no use without the verifier the app kept.
+// from the redirect is no use without the verifier the app kept. A
+// deactivated account accepts no invitation, and redeeming says it is
+// deactivated, as the provider has said who it is (ADR 0085).
 import { createHash, randomUUID, timingSafeEqual } from "node:crypto";
 import type { FastifyBaseLogger, FastifyInstance, FastifyReply } from "fastify";
 import * as client from "openid-client";
@@ -21,7 +23,8 @@ import { type Database, type Queryable, readBoolean, readText, readTextOrNull } 
 import { emailKey, fail, limitByAddress, tokenField } from "./http.ts";
 import { acceptInvitation, invites, openInvitation } from "./invitations.ts";
 import type { CheckedFetch } from "./outbound.ts";
-import { newToken, startSession, tokenHash } from "./sessions.ts";
+import { AccountDeactivated, deactivatedMessage, isDeactivated } from "./accounts.ts";
+import { newToken, refusedDeactivated, startSession, tokenHash } from "./sessions.ts";
 import { type EventOrigin, type ServerEvents, accountActor, originOf } from "./events.ts";
 
 /** Minutes a flow may take at the provider. */
@@ -306,7 +309,10 @@ export function registerOidc(
       ]);
     }
 
-    if (invitation === undefined) return { userId, workspaceId: null };
+    // A deactivated account accepts none: redeeming refuses it (ADR 0085).
+    if (invitation === undefined || (await isDeactivated(tx, userId))) {
+      return { userId, workspaceId: null };
+    }
     if (email === undefined) {
       const { rows } = await tx.query("SELECT email FROM users WHERE id = $1", [userId]);
       email = readText(rows[0], "email");
@@ -451,7 +457,7 @@ export function registerOidc(
       onRequest: limitByAddress(app, "oidc-redeem", 30, "5 minutes"),
     },
     async (request, reply) => {
-      const outcome = await db.transaction(async (tx) => {
+      const redeemed = db.transaction(async (tx) => {
         // Spent by any try, right or wrong.
         const { rows } = await tx.query(
           `DELETE FROM oidc_flows
@@ -505,6 +511,14 @@ export function registerOidc(
               }),
         };
       });
+      let outcome: Awaited<typeof redeemed>;
+      try {
+        outcome = await redeemed;
+      } catch (error) {
+        if (!(error instanceof AccountDeactivated)) throw error;
+        await refusedDeactivated(db, events, request, error);
+        return fail(reply, 403, deactivatedMessage);
+      }
       if ("failed" in outcome) {
         await events.attempt(
           db,

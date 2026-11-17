@@ -3,13 +3,15 @@
 // once within 15 minutes. Asking answers the same whether or not the
 // address has an account, and as fast, since the code is made and sent
 // after the answer. Five wrong tries spend a code, and asking again
-// replaces it. Only a code's SHA-256 is kept.
+// replaces it. Only a code's SHA-256 is kept. A deactivated account is
+// sent none, with the answer every address gets (ADR 0085).
 import { createHash, randomInt, randomUUID, timingSafeEqual } from "node:crypto";
 import type { FastifyBaseLogger, FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { type Database, readBoolean, readNumber, readText } from "./db.ts";
 import { emailField, emailKey, fail, limitBy, limitByAddress } from "./http.ts";
 import type { Mailer } from "./mail.ts";
-import { startSession } from "./sessions.ts";
+import { AccountDeactivated } from "./accounts.ts";
+import { refusedDeactivated, startSession } from "./sessions.ts";
 import type { SecuritySettings } from "./settings.ts";
 import { type ServerEvents, accountActor, originOf } from "./events.ts";
 
@@ -61,16 +63,17 @@ const redeemBody = {
 
 const wrongCode = "That code is not this address's, or has been used or has expired.";
 
-/** Makes a code for an address that has an account, and emails it. */
+/** Makes a code for an address that has an account, not deactivated, and emails it. */
 async function sendCode(
   db: Database,
   mailer: Mailer,
   email: string,
   publicUrl: string | null,
 ): Promise<void> {
-  const { rows } = await db.query("SELECT id, name, email FROM users WHERE email_key = $1", [
-    emailKey(email),
-  ]);
+  const { rows } = await db.query(
+    "SELECT id, name, email FROM users WHERE email_key = $1 AND deactivated_at IS NULL",
+    [emailKey(email)],
+  );
   const user = rows[0];
   if (user === undefined) return;
   const userId = readText(user, "id");
@@ -178,7 +181,7 @@ export function registerCodes(
     },
     async (request, reply) => {
       const digits = digitsOf(request.body.code);
-      const outcome = await db.transaction(async (tx) => {
+      const redeemed = db.transaction(async (tx) => {
         const { rows } = await tx.query(
           `SELECT c.id AS code_id, c.code_hash, c.tries, u.id, u.name, u.email, u.instance_admin
              FROM sign_in_codes c JOIN users u ON u.id = c.user_id
@@ -213,6 +216,14 @@ export function registerCodes(
           },
         };
       });
+      let outcome: Awaited<typeof redeemed>;
+      try {
+        outcome = await redeemed;
+      } catch (error) {
+        if (!(error instanceof AccountDeactivated)) throw error;
+        await refusedDeactivated(db, events, request, error);
+        return fail(reply, 401, wrongCode);
+      }
       if ("failed" in outcome) {
         await events.attempt(
           db,

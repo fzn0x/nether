@@ -88,14 +88,15 @@ function tokenInfo(row: Row): TokenInfo {
 const tokenColumns = `t.id, t.name, t.access, t.hint, t.workspace_id, w.name AS workspace_name,
   t.expires_at, t.created_at, t.used_at`;
 
-/** The caller a personal access token signs in, while it lasts. */
+/** The caller a personal access token signs in, while it lasts and its account is not deactivated. */
 export async function tokenCaller(db: Database, token: string): Promise<ApiCaller | undefined> {
   const { rows } = await db.query(
     `SELECT ${tokenColumns}, u.id AS user_id, u.name AS user_name, u.email
        FROM api_tokens t
        JOIN users u ON u.id = t.user_id
        LEFT JOIN workspaces w ON w.id = t.workspace_id
-      WHERE t.token_hash = $1 AND (t.expires_at IS NULL OR t.expires_at > now())`,
+      WHERE t.token_hash = $1 AND (t.expires_at IS NULL OR t.expires_at > now())
+        AND u.deactivated_at IS NULL`,
     [tokenHash(token)],
   );
   const row = rows[0];
