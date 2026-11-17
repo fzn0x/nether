@@ -28,7 +28,9 @@ import {
   signedIn,
   startSession,
   tokenHash,
+  useProvider,
 } from "./sessions.ts";
+import { SignInRefused, signInGuards } from "./signIns.ts";
 
 /** Days an invitation can be accepted in. */
 export const invitationDays = 7;
@@ -190,6 +192,7 @@ export async function acceptInvitation(
 
 export function registerInvitations(app: FastifyInstance, db: Database): void {
   const account = signedIn(db);
+  const guards = signInGuards(db);
 
   /** Why an account may not manage a workspace's invitations, or undefined if it may. */
   async function refusal(
@@ -367,53 +370,72 @@ export function registerInvitations(app: FastifyInstance, db: Database): void {
       ) {
         return fail(reply, 400, "Give a name, an email address and a password for the account.");
       }
+      // An address whose domain signs in through a provider joins through it.
+      const required =
+        me === undefined && body.email !== undefined
+          ? await guards.requiredFor(body.email)
+          : undefined;
       // Hashed before the transaction, which a slow hash would hold.
       const passwordHash =
         me === undefined && body.password !== undefined
           ? await hashPassword(body.password)
           : undefined;
 
-      const outcome = await db.transaction(async (tx) => {
-        const invitation = await openInvitation(tx, tokenHash(body.token));
-        if (invitation === undefined) return { status: 404, message: noInvitation } as const;
-        const email = me?.email ?? body.email ?? "";
-        if (!invites(invitation, email)) return { status: 403, message: otherAddress } as const;
+      const outcome = await db
+        .transaction(async (tx) => {
+          const invitation = await openInvitation(tx, tokenHash(body.token));
+          if (invitation === undefined) return { status: 404, message: noInvitation } as const;
+          const email = me?.email ?? body.email ?? "";
+          if (!invites(invitation, email)) return { status: 403, message: otherAddress } as const;
 
-        let user = me && {
-          id: me.id,
-          name: me.name,
-          email: me.email,
-          instanceAdmin: me.instanceAdmin,
-        };
-        if (user === undefined) {
-          const taken = await tx.query("SELECT 1 FROM users WHERE email_key = $1", [
-            emailKey(email),
-          ]);
-          if (taken.rows.length > 0) {
-            return {
-              status: 409,
-              message: "An account has this email address already: sign in, then accept.",
-            } as const;
-          }
-          user = {
-            id: randomUUID(),
-            name: (body.name ?? "").trim(),
-            email: email.trim(),
-            instanceAdmin: false,
+          let user = me && {
+            id: me.id,
+            name: me.name,
+            email: me.email,
+            instanceAdmin: me.instanceAdmin,
           };
-          await tx.query(
-            "INSERT INTO users (id, email, email_key, name, password_hash) VALUES ($1, $2, $3, $4, $5)",
-            [user.id, user.email, emailKey(email), user.name, passwordHash],
-          );
-        }
+          if (user === undefined) {
+            const taken = await tx.query("SELECT 1 FROM users WHERE email_key = $1", [
+              emailKey(email),
+            ]);
+            if (taken.rows.length > 0) {
+              return {
+                status: 409,
+                message: "An account has this email address already: sign in, then accept.",
+              } as const;
+            }
+            user = {
+              id: randomUUID(),
+              name: (body.name ?? "").trim(),
+              email: email.trim(),
+              instanceAdmin: false,
+            };
+            await tx.query(
+              "INSERT INTO users (id, email, email_key, name, password_hash) VALUES ($1, $2, $3, $4, $5)",
+              [user.id, user.email, emailKey(email), user.name, passwordHash],
+            );
+          }
 
-        const workspace = await acceptInvitation(tx, invitation, user.id);
-        const session = me === undefined ? await startSession(tx, user.id, request) : undefined;
-        return {
-          status: me === undefined ? 201 : 200,
-          body: { ...session, user, workspace },
-        } as const;
-      });
+          const workspace = await acceptInvitation(tx, invitation, user.id);
+          const session =
+            me === undefined
+              ? await startSession(tx, user.id, request, { method: "invitation", guards })
+              : undefined;
+          return {
+            status: me === undefined ? 201 : 200,
+            body: { ...session, user, workspace },
+          } as const;
+        })
+        .catch((error: unknown) => {
+          // Refused, the account it made is not kept.
+          if (!(error instanceof SignInRefused)) throw error;
+          return "refused" as const;
+        });
+      if (outcome === "refused") {
+        return required === undefined
+          ? fail(reply, 403, "This server signs people in through a provider: join with it.")
+          : useProvider(reply, body.email ?? "", required);
+      }
       if ("message" in outcome) return fail(reply, outcome.status, outcome.message);
       return reply.code(outcome.status).send(outcome.body);
     },

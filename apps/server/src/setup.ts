@@ -10,6 +10,7 @@ import type { Database } from "./db.ts";
 import { emailField, emailKey, fail, limitByAddress, nameField, newPasswordField } from "./http.ts";
 import { hashPassword } from "./passwords.ts";
 import { startSession } from "./sessions.ts";
+import { signInGuards } from "./signIns.ts";
 
 /** Whether the server still waits for its first account. */
 export async function setupNeeded(db: Database): Promise<boolean> {
@@ -100,7 +101,11 @@ export function registerSetup(app: FastifyInstance, db: Database, code: string |
           "INSERT INTO memberships (workspace_id, user_id, role) VALUES ($1, $2, 'owner')",
           [workspace.id, user.id],
         );
-        return { ...(await startSession(tx, user.id, request)), user, workspace };
+        const session = await startSession(tx, user.id, request, {
+          method: "setup",
+          guards: signInGuards(db),
+        });
+        return { ...session, user, workspace };
       });
       if (made === undefined) return fail(reply, 409, "The server is set up already.");
       request.log.info(
