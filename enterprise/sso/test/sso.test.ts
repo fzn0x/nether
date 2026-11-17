@@ -818,10 +818,11 @@ describe("as Okta and Entra ID answer", () => {
     // Entra ID signs the assertion alone; who someone is comes from the object ID.
     const viaEntra = await samlAt(test, entraIdp, "entra", entra.saml(alan), entra.bend);
     expect(viaEntra.session?.user).toMatchObject({ name: "Alan Turing", email: alan.email });
-    const { rows } = await test.db.query("SELECT issuer, subject FROM identities ORDER BY issuer");
+    // By subject, which sorts alike in every collation.
+    const { rows } = await test.db.query("SELECT issuer, subject FROM identities ORDER BY subject");
     expect(rows).toEqual([
-      { issuer: okta.entityId, subject: grace.email },
       { issuer: entra.entityId, subject: alan.id },
+      { issuer: okta.entityId, subject: grace.email },
     ]);
     // Each at its own domain alone: Alan through Okta's app links nothing.
     expect((await samlAt(test, oktaIdp, "okta", okta.saml(alan), okta.bend)).error).toBe(
