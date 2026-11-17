@@ -89,7 +89,7 @@ and nothing of the other page. Markdown links to notes are treated the
 same; web addresses stay as they are.
 
 **Files go by their hash.** An image or another file a page shows is
-served at `/p/<site>/files/<hash>/<name>`, found as the app finds it among
+served at `/p/<site>/.files/<hash>/<name>`, found as the app finds it among
 the files of the units the publisher may open.
 
 - Only files a page of the site showed are served: they are recorded in
@@ -127,6 +127,16 @@ images and media from the server, `https:` and `data:`, the server's own
 stylesheet, and no scripts, frames, forms or base. They neither read nor
 set cookies. On the server's origin, beside the web app, they so run
 nothing.
+
+- **Style attributes are let through, style elements are not**
+  (`style-src 'self'; style-src-attr 'unsafe-inline'`). `blocksToHtml`
+  writes two: a table cell's alignment and a column's width, from values
+  it checks. A note's own HTML is written as text, so a note cannot add
+  one. A browser without `style-src-attr` blocks them, and only the
+  alignment is lost.
+- **Files are under `.files/`**, so no note's path takes their address:
+  a vault's hidden folders are not synced. The stylesheet is at
+  `/p/.nether/site.css`, a name no site can have.
 
 ### SEO, in the second part
 
