@@ -881,6 +881,45 @@ export const migrations: readonly Migration[] = [
       CREATE INDEX group_workspaces_by_workspace ON group_workspaces (workspace_id);
     `,
   },
+  {
+    version: 28,
+    name: "where the audit log is sent",
+    sql: `
+      -- Where the audit log is sent (ADR 0081): a SIEM, by syslog over TLS
+      -- or by a webhook, each with the last event it took. The log is the
+      -- queue: a destination that fails waits, and takes up from there.
+      -- The audit module alone writes and reads it; it is here so a backup
+      -- restores it, with each destination's place.
+      CREATE TABLE audit_destinations (
+        id uuid PRIMARY KEY,
+        kind text NOT NULL CHECK (kind IN ('syslog', 'webhook')),
+        name text NOT NULL,
+        -- syslog: host and port; webhook: its https:// or http:// address.
+        address text NOT NULL,
+        -- syslog: a certificate authority to trust, or a pinned certificate's
+        -- SHA-256 fingerprint, as the module keeps them.
+        settings jsonb NOT NULL DEFAULT '{}',
+        -- A webhook's signing secret, sealed with NETHER_SECRET_KEY.
+        secret bytea,
+        -- Which variable sets it, NETHER_AUDIT_SYSLOG or NETHER_AUDIT_WEBHOOK;
+        -- none for the console's.
+        pinned_by text UNIQUE,
+        -- The last event it took.
+        cursor bigint NOT NULL,
+        delivered_at timestamptz,
+        failures integer NOT NULL DEFAULT 0,
+        last_error text,
+        failed_at timestamptz,
+        -- When the server's log last said it fails.
+        warned_at timestamptz,
+        next_try_at timestamptz NOT NULL DEFAULT now(),
+        -- The node sending to it now, until when.
+        claimed_until timestamptz,
+        created_at timestamptz NOT NULL DEFAULT now(),
+        updated_at timestamptz NOT NULL DEFAULT now()
+      );
+    `,
+  },
 ];
 
 /** The schema version this server writes and reads. */

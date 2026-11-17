@@ -1041,6 +1041,12 @@ function Database(props: DatabaseProps & { readonly entries: readonly PropertyEn
       if (token === undefined) return;
       try {
         setExported({ path: await exporter.saveText(token, text) });
+        // Saved: the workspace's audit log is told of it (ADR 0081).
+        exportPolicy.report({
+          scope: "view",
+          format: "csv",
+          notes: runView(shown, exporting, schema).rows.length,
+        });
       } catch (problem) {
         await exporter.cancel(token);
         throw problem;

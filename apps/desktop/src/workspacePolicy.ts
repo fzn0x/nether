@@ -18,7 +18,7 @@ import {
 } from "react";
 import { backend } from "./backend.ts";
 import { t } from "./messages.ts";
-import { account } from "./server.ts";
+import { type ExportMade, account, reportExport } from "./server.ts";
 import { type VaultLink, hostOf } from "./sync.ts";
 
 const policyKey = "policy.workspace";
@@ -213,9 +213,19 @@ export interface ExportPolicy {
    * what the server last said holds; with none ever, export is allowed.
    */
   readonly check: () => Promise<string | undefined>;
+  /**
+   * Tells the workspace's server of an export made, for its audit log (ADR
+   * 0081). Once, as it is made: an export made offline, or that the server
+   * does not answer, goes untold.
+   */
+  readonly report: (made: ExportMade) => void;
 }
 
-const allowed: ExportPolicy = { blocked: undefined, check: () => Promise.resolve(undefined) };
+const allowed: ExportPolicy = {
+  blocked: undefined,
+  check: () => Promise.resolve(undefined),
+  report: () => undefined,
+};
 
 /** The export policy of the vault open now, for what exports deep in its views, as a database's CSV. */
 export const ExportPolicyContext = createContext<ExportPolicy>(allowed);
@@ -247,6 +257,19 @@ export function useExportPolicy(
     return why;
   }, []);
 
+  const report = useCallback((made: ExportMade) => {
+    const linked = current.current.link;
+    if (linked === undefined) return;
+    void (async () => {
+      const token = await backend.serverToken(linked.server);
+      if (token === undefined) return;
+      await reportExport(backend.serverFetch, linked.server, token, linked.workspaceId, made);
+    })().catch(() => undefined);
+  }, []);
+
   const linked = link !== undefined;
-  return useMemo(() => (linked ? { blocked, check } : allowed), [linked, blocked, check]);
+  return useMemo(
+    () => (linked ? { blocked, check, report } : allowed),
+    [linked, blocked, check, report],
+  );
 }

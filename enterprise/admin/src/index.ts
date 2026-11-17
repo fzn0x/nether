@@ -6,7 +6,7 @@
 import { serverVersion } from "@nether/server/src/app.ts";
 import type { Database } from "@nether/server/src/db.ts";
 import type { EnterpriseModule } from "@nether/server/src/enterprise.ts";
-import { originOf } from "@nether/server/src/events.ts";
+import { type EventValue, accountActor, originOf } from "@nether/server/src/events.ts";
 import { instanceAdmin } from "@nether/server/src/features.ts";
 import { fail, uuidField } from "@nether/server/src/http.ts";
 import { type Role, roles, setRole } from "@nether/server/src/members.ts";
@@ -189,7 +189,18 @@ export const adminModule: EnterpriseModule = {
       },
       async (request, reply) => {
         try {
-          await security.set(request.body);
+          // Recorded with each setting that changed, from and to (ADR 0081).
+          await security.set(request.body, (tx, changed) =>
+            events.emit(
+              tx,
+              {
+                action: "instance.security_changed",
+                actor: accountActor(accountOf(request).id),
+                details: changed as Record<string, EventValue>,
+              },
+              originOf(request),
+            ),
+          );
         } catch (error) {
           if (error instanceof SettingRefused) return fail(reply, error.status, error.message);
           throw error;

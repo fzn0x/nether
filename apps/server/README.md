@@ -143,6 +143,7 @@ token as `Authorization: Bearer <token>`. Every error is
 | `POST /api/notifications/read` | yes | Marks the notifications `ids`, or `all`, read |
 | `GET /api/me/notification-settings`, `PUT /api/me/notification-settings` | yes | Whether the account is emailed when mentioned, `email` |
 | `GET /api/search` | yes | Searches `q` in every workspace the account is in that the server can read, in the units it opens (ADR 0050): words, the last one a prefix, `"phrases"`, `-exclusions`, `tag:`, `path:` and `prop:` filters; gives up to `limit` (50) `results`, each with `workspace`, `note`, `title`, `path`, a `snippet` and its `matches` as offsets, and the `encrypted` workspaces not searched |
+| `POST /api/workspaces/:id/exports` | member | Tells of an export an app made from the workspace's vault: its `scope` (`note`, `folder`, `vault` or `view`), `format` (`markdown`, `html`, `pdf` or `csv`) and how many `notes`, never their text; with audit logs on, recorded as `export.made` (ADR 0081) |
 | `GET /api/relay` | per message | The WebSocket encrypted workspaces sync over, below |
 | `GET /api/workspaces/:id/documents` | member | The documents stored since `since`, a number, in order, a thousand at a time with `more` |
 | `GET /api/sync` | per document | The WebSocket that Hocuspocus providers sync documents over, below |
@@ -537,7 +538,7 @@ machine.
 | `NETHER_AI` | `on` | AI for the web app through this server (ADR 0070): `on` with each account's providers and the admin's, `admin` with the admin's alone, or `off` |
 | `NETHER_AI_PRIVATE` | `off` | Addresses that are not public which the admin's AI providers may reach, as a model on your own network: `on` for any, or addresses and ranges such as `192.168.1.20, 10.0.0.0/8`; those may use `http://`. An account's own providers reach public addresses only |
 | `NETHER_SETUP_CODE` | none | The setup code while the server has no account: 16 to 64 characters, not counting spaces and hyphens, as `openssl rand -hex 12` makes. Every node takes the same one (ADR 0082). Without it, each start makes a code and writes it to the log |
-| `NETHER_SECRET_KEY` | none | 32 random bytes in base64, as `openssl rand -base64 32` makes them, which seal AI providers' keys at rest; without it the server keeps no keys. Keep it with your backups' secrets: a restore needs the same key to open them |
+| `NETHER_SECRET_KEY` | none | 32 random bytes in base64, as `openssl rand -base64 32` makes them, which seal AI providers' keys, single sign-on's secrets and audit log webhooks' secrets at rest; without it the server keeps no keys. Keep it with your backups' secrets: a restore needs the same key to open them |
 | `NETHER_ENTERPRISE_SSO` | unset | Single sign-on |
 | `NETHER_SSO_ENFORCE` | unset | `off` stops single sign-on requiring its providers, as the console sets it, until unset: the way back in when a provider breaks (ADR 0080) |
 | `NETHER_ENTERPRISE_SCIM` | unset | Provisioning through SCIM and LDAP |

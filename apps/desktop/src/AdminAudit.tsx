@@ -3,7 +3,8 @@
 // kind, workspace, outcome and time, 50 at a time; how long the log keeps
 // them; and a check of its chain. Only IDs and names, never contents.
 import { type SyntheticEvent, useCallback, useEffect, useId, useState } from "react";
-import { type MessageKey, t } from "./messages.ts";
+import { AdminAuditSiem } from "./AdminAuditSiem.tsx";
+import { type MessageKey, messages, t } from "./messages.ts";
 import { webFetch, webServer } from "./web.ts";
 
 const groups = ["signIns", "permissions", "shares", "exports", "deletions", "log"] as const;
@@ -117,6 +118,15 @@ function whoOf(event: AuditEvent): string {
   return actor.email === null ? name : `${name} <${actor.email}>`;
 }
 
+/** An action's name as the console says it, as `member.role_changed` is "Role changed"; none for one it does not know. */
+export function actionLabel(action: string): string | undefined {
+  const key = `adminAuditAction${action
+    .split(/[._]/)
+    .map((part) => part.slice(0, 1).toUpperCase() + part.slice(1))
+    .join("")}`;
+  return Object.hasOwn(messages, key) ? t(key as MessageKey) : undefined;
+}
+
 function EventRow(props: {
   readonly event: AuditEvent;
   readonly onOnly: (actor: { readonly id: string; readonly name: string }) => void;
@@ -151,7 +161,8 @@ function EventRow(props: {
         )}
       </td>
       <td>
-        <code>{event.action}</code>
+        {/* Its name, and its code, which a SIEM receives. */}
+        {actionLabel(event.action) ?? null} <code>{event.action}</code>
         {target === null ? null : <span> {target.name ?? target.id}</span>}
         {event.outcome === "failure" ? (
           <p className="audit-reason">
@@ -515,6 +526,7 @@ export function AdminAudit() {
       )}
       {status === undefined ? null : <p role="status">{status}</p>}
       {error === undefined ? null : <p role="alert">{error}</p>}
+      <AdminAuditSiem />
     </section>
   );
 }

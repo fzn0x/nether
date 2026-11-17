@@ -467,9 +467,9 @@ and names, never what a note says, a search, a password or a token.
 | Kind | What it records |
 | --- | --- |
 | Sign-ins | Signing in, by password, an emailed code, OpenID Connect, single sign-on, an invitation or setup, and each failure with why; signing out; sessions ended; a password changed; a share link opened, or refused |
-| Permission changes | Members joined, removed or leaving, and their roles; a space's or a page's access given or taken; teamspaces, pages shared on their own, private spaces; a note moved where others may open it; an encrypted workspace's key given to a member; workspaces made or changed; API tokens made; enterprise features turned on or off; data policies changed, and legal hold set or taken off |
+| Permission changes | Members joined, removed or leaving, and their roles; a space's or a page's access given or taken; teamspaces, pages shared on their own, private spaces; a note moved where others may open it; an encrypted workspace's key given to a member; workspaces made or changed; API tokens made; enterprise features turned on or off; the security settings, single sign-on's providers and whether it is required, and the approved AI endpoints, each from and to; data policies changed, and legal hold set or taken off |
 | Shares | Share links made and revoked; sites published, changed and taken down, and their domains; publishing allowed or not; invitations made, revoked and accepted; webhooks |
-| Exports | Each request to the [REST API](../api/) that gives notes' text, rows or search results, naming up to 50 notes and counting the rest; the server's backups |
+| Exports | Each request to the [REST API](../api/) that gives notes' text, rows or search results, naming up to 50 notes and counting the rest; each export the desktop and web apps make from a vault linked to a workspace, with what, in which format and how many notes; the server's backups |
 | Deletions | Notes deleted, in the apps or through the API; API tokens revoked |
 
 With **Provisioning** on, a directory's changes are recorded too, with the
@@ -481,15 +481,19 @@ instance admin's, never with a token.
 A change is recorded in the same step as the change itself: with the log
 on, a change it cannot record does not happen. An end-to-end encrypted
 workspace's notes are named by their IDs only, and its notes deleted in the
-apps are not seen, since the server cannot read their list.
+apps are not seen, since the server cannot read their list. The apps tell
+the server of their exports as they make them: one made offline goes
+untold, and the server can vouch only for what it serves.
 
 ### Finding events
 
 Find events by **Email**, as an account had it or as someone typed it to
 sign in; by **Kind**; by **Workspace**; by **Outcome**; and by the days
 **From** and **To**. Fifty show at a time: **Older** shows the next. Each
-event's **Details** show its address, client and what changed, as a role
-from and to. **Only theirs** beside someone shows their events alone.
+event shows by its name, as **Signed in**, with its code beside it, as
+`session.signed_in`, the name a SIEM sees. Each event's **Details** show
+its address, client and what changed, as a role from and to. **Only
+theirs** beside someone shows their events alone.
 
 ### Keeping the log
 
@@ -507,3 +511,51 @@ event that does not hold. Once an hour the server also writes the chain's
 last event to its own log, so events cut off the end show against those
 lines. Changing settings, adding a destination and checking the log are
 events too; searching is not.
+
+### Sending to a SIEM
+
+Under **Sending to a SIEM**, the log goes to up to five destinations as it
+is written: a syslog server over TLS, or a webhook. Each gets every event,
+in order. **Start with** sends the events from then on, or every event the
+log keeps.
+
+- **Syslog over TLS**: a host, with its port if not 6514. Each event is an
+  RFC 5424 message, framed by its length as RFC 5425 has it, with facility
+  13, log audit, the action as its `MSGID`, and the event as JSON. The
+  server connects by TLS 1.2 or later, and checks the syslog server's
+  certificate against the system's authorities, a certificate authority
+  you paste in, or its SHA-256 fingerprint. For mutual TLS, set
+  `NETHER_AUDIT_SYSLOG_CERT` and `NETHER_AUDIT_SYSLOG_KEY` to the files of
+  the client certificate and its key. There is no plain TCP and no UDP.
+- **Webhook**: an `https://` address, or `http://` to one on your own
+  network, which a SIEM often is. Each `POST` holds up to 100 events, as
+  `{"type": "audit.events", "timestamp": ..., "data": {"events": [...]}}`,
+  signed as [Standard Webhooks](https://www.standardwebhooks.com) has it
+  with a `whsec_` secret the console shows once, as you add it. A batch
+  keeps its `webhook-id` on every try. Its events carry `hash` and
+  `prevHash`, so the SIEM can check the chain too. The server keeps the
+  secret sealed under `NETHER_SECRET_KEY`, so a webhook needs it set.
+
+A destination that fails waits 30 seconds, then a minute, 2, 5 and 10,
+then every 15 minutes for as long as it fails, and goes on from where it
+stopped. It is never turned off on its own. The console shows each one's
+last delivery, the events waiting and its last error, and the server's
+log says so every hour while it fails. A syslog server may get an event
+twice after a broken connection: drop it by its `id`. Nothing is lost but
+what the hourly purge deletes first, and the purge records that as
+**Events a SIEM never got**, `audit.export_gap`, with the events each
+destination missed.
+
+The server's settings can pin one destination of each kind, which the
+console shows with no control:
+
+| Setting | What it does |
+| --- | --- |
+| `NETHER_AUDIT_SYSLOG` | A syslog server, as `siem.example.org:6514` |
+| `NETHER_AUDIT_SYSLOG_CA` | A file holding the certificate authority it is checked against, in PEM |
+| `NETHER_AUDIT_SYSLOG_FINGERPRINT` | Or its certificate's SHA-256 fingerprint |
+| `NETHER_AUDIT_WEBHOOK` | A webhook's address |
+| `NETHER_AUDIT_WEBHOOK_SECRET` | Its `whsec_` secret, which you make, as `whsec_` and 32 random bytes in base64 |
+
+A pinned destination starts with the events from then on. One set wrong
+stops the server as it starts, naming the setting.
