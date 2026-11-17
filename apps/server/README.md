@@ -50,6 +50,10 @@ set it up. Only someone who can read the server's log can set it up, so a new
 server reachable from the internet cannot be claimed by whoever finds it
 first.
 
+`NETHER_SETUP_CODE` sets the code instead, so every node of a server takes
+the same one (ADR 0082); a single node may use it too. The server then
+says in its log that it waits for setup, without the code.
+
 ```sh
 curl -X POST http://127.0.0.1:3000/api/setup -H 'content-type: application/json' \
   -d '{"code":"ABCDE-FGHJK-LMNPQ-RSTUV","name":"Ada","email":"ada@example.org",
@@ -190,8 +194,12 @@ job one node runs (ADR 0082).
 ## Members
 
 A change to someone's role, or their removal, closes their open sync and
-relay connections. Their apps connect again, and every document is checked
-anew: a removed member syncs nothing more, and one made a guest only reads.
+relay connections, on every node: the node that made the change closes its
+own and asks the others through the cluster bus (ADR 0082). A node whose
+bus connection comes back after it was lost closes every socket it has,
+spread over five seconds, since it may have missed such a request. Their
+apps connect again, and every document is checked anew: a removed member
+syncs nothing more, and one made a guest only reads.
 Someone removed from an encrypted workspace loses their copy of its key on
 the server; what their devices decrypted before stays with them.
 
@@ -494,6 +502,7 @@ machine.
 | `NETHER_WEBHOOK_PRIVATE` | `off` | Addresses that are not public which webhooks may reach, for services on your own network: `on` for any, or addresses and ranges such as `192.168.1.20, 10.0.0.0/8`; those may use `http://` |
 | `NETHER_AI` | `on` | AI for the web app through this server (ADR 0070): `on` with each account's providers and the admin's, `admin` with the admin's alone, or `off` |
 | `NETHER_AI_PRIVATE` | `off` | Addresses that are not public which the admin's AI providers may reach, as a model on your own network: `on` for any, or addresses and ranges such as `192.168.1.20, 10.0.0.0/8`; those may use `http://`. An account's own providers reach public addresses only |
+| `NETHER_SETUP_CODE` | none | The setup code while the server has no account: 16 to 64 characters, not counting spaces and hyphens, as `openssl rand -hex 12` makes. Every node takes the same one (ADR 0082). Without it, each start makes a code and writes it to the log |
 | `NETHER_SECRET_KEY` | none | 32 random bytes in base64, as `openssl rand -base64 32` makes them, which seal AI providers' keys at rest; without it the server keeps no keys. Keep it with your backups' secrets: a restore needs the same key to open them |
 | `NETHER_ENTERPRISE_SSO` | unset | Single sign-on |
 | `NETHER_ENTERPRISE_SCIM` | unset | Provisioning through SCIM and LDAP |

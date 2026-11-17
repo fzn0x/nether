@@ -27,8 +27,10 @@ export interface EnterpriseServices {
   /** The server's configuration, as its environment set it: its public address and secret key among them. */
   readonly config: Config;
   /**
-   * Closes an account's open sync connections, so its apps connect again
-   * and every document is checked anew, as a change of its role does.
+   * Closes an account's open sync and relay connections on every node, so
+   * its apps connect again and every document is checked anew, as a change
+   * of its role does (ADR 0082). This node's close at once; the others'
+   * are asked through the bus, fire and forget, so callers never wait.
    */
   readonly disconnect: (userId: string) => void;
   /** The security settings (ADR 0084), which the console's Security page reads and sets. */

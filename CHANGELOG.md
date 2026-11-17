@@ -15,7 +15,11 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   log. Stores merge with what another node stored since, so two nodes, or
   an old and a new pod during a restart, never drop each other's edits;
   making a note through the API locks the workspace on every node; and
-  hourly work runs on one node at a time
+  hourly work runs on one node at a time. A change to someone's access
+  closes their sync and relay connections on every node, through the
+  cluster bus; a node whose bus comes back after it was lost closes every
+  socket it has, spread over five seconds. `NETHER_SETUP_CODE` sets the
+  first-run setup code, so every node takes the same one
   ([ADR 0082](docs/adr/0082-several-nodes-share-sync-through-valkey-take-their-order-from-postgresql-and-roll-out-one-at-a-time.md)).
 - Publishing: a page with its subpages, or the folder it is in, published
   from its Share dialog as a site anyone opens at the server's

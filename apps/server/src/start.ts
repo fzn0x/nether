@@ -1,6 +1,7 @@
 // Starts the server, configured by environment variables: it brings the
-// database to its schema first, and while it has no account it writes the
-// setup code to its log. Its entries call it: `dist/main.js`, with no
+// database to its schema first, and while it has no account it takes
+// NETHER_SETUP_CODE as its setup code, or makes one and writes it to its
+// log. Its entries call it: `dist/main.js`, with no
 // enterprise module, and `enterprise/server`, the image's, with every one
 // (ADR 0079).
 import type { Redis } from "ioredis";
@@ -27,7 +28,8 @@ export async function startServer(options: StartOptions = {}): Promise<void> {
   try {
     if (config.redisUrl !== null) redis = await connectRedis(config.redisUrl);
     const migrated = await migrate(db);
-    const setupCode = (await setupNeeded(db)) ? newSetupCode() : undefined;
+    // Every node takes the same code when the environment sets one (ADR 0082).
+    const setupCode = (await setupNeeded(db)) ? (config.setupCode ?? newSetupCode()) : undefined;
     const mailer = config.mail === null ? undefined : smtpMailer(config.mail.url, config.mail.from);
     const blobs =
       config.storage.kind === "disk"
@@ -59,7 +61,10 @@ export async function startServer(options: StartOptions = {}): Promise<void> {
       });
     }
     await app.listen({ host: config.host, port: config.port });
-    if (setupCode !== undefined) {
+    if (setupCode !== undefined && config.setupCode !== null) {
+      // Set by whoever runs the server, so not written where logs go.
+      app.log.warn("The server has no account yet. Set it up from the app with NETHER_SETUP_CODE.");
+    } else if (setupCode !== undefined) {
       app.log.warn(
         { setupCode },
         `The server has no account yet. Set it up from the app with this code: ${setupCode}`,
