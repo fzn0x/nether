@@ -1049,3 +1049,40 @@ test("the admin console's security page sets how long sessions last, and email c
   }
   expect(problems).toEqual([]);
 });
+
+test("the admin console locks AI to approved endpoints, and the AI tab says so", async ({
+  page,
+}) => {
+  const problems = problemsOf(page);
+  await signIn(page, { email: "ada@example.org", password: "a long password" });
+  await page.goto("/admin");
+  const policies = page.getByRole("checkbox", { name: "Data policies" });
+  await policies.check();
+  const section = page.getByRole("region", { name: "AI endpoints" });
+  const list = section.getByRole("textbox", { name: "Approved addresses, one a line" });
+  const save = section.getByRole("button", { name: "Save" });
+  try {
+    await list.fill("https://LLM.corp.example/v1/");
+    await save.click();
+    await expect(section.getByRole("status")).toHaveText("Saved: AI goes only to these addresses.");
+    await expect(list).toHaveValue("https://llm.corp.example/v1");
+    expect(await violations(page)).toEqual([]);
+
+    await page.goto("/");
+    await openTeam(page);
+    const { settings, tab } = await aiTab(page);
+    await expect(tab).toContainText(
+      "127.0.0.1:4175 allows AI only through https://llm.corp.example/v1.",
+    );
+    expect(await violations(page)).toEqual([]);
+    await settings.getByRole("button", { name: "Close" }).click();
+  } finally {
+    // Nothing locked, as the other tests expect.
+    await page.goto("/admin");
+    await list.fill("");
+    await save.click();
+    await expect(section.getByRole("status")).toHaveText("Saved: nothing is locked.");
+    await policies.uncheck();
+  }
+  expect(problems).toEqual([]);
+});

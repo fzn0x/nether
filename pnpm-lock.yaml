@@ -350,6 +350,9 @@ importers:
       '@nether/enterprise-admin':
         specifier: workspace:*
         version: link:../admin
+      '@nether/enterprise-policies':
+        specifier: workspace:*
+        version: link:../policies
       '@nether/server':
         specifier: workspace:*
         version: link:../../apps/server

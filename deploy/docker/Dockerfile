@@ -49,6 +49,7 @@ COPY packages/storage/package.json packages/storage/
 # feature's module, each off until an admin switches it on (ADR 0079).
 COPY enterprise/server/package.json enterprise/server/
 COPY enterprise/admin/package.json enterprise/admin/
+COPY enterprise/policies/package.json enterprise/policies/
 RUN --mount=type=cache,id=pnpm-store,target=/root/.local/share/pnpm/store \
     pnpm install --prod --frozen-lockfile --ignore-scripts --filter "@nether/enterprise-server..."
 
@@ -76,6 +77,7 @@ COPY --from=build /src/apps/server/dist/ apps/server/dist/
 COPY --from=build /src/apps/server/src/ apps/server/src/
 COPY --from=build /src/enterprise/server/src/ enterprise/server/src/
 COPY --from=build /src/enterprise/admin/src/ enterprise/admin/src/
+COPY --from=build /src/enterprise/policies/src/ enterprise/policies/src/
 COPY --from=build /src/apps/web/dist/ apps/web/dist/
 COPY LICENSE ./
 # A new named volume starts with these folders, owned by the server's user.

@@ -5,6 +5,7 @@
 // 0083) and its security settings (ADR 0084). Only its own code loads, as
 // a share link's page does.
 import { type ReactNode, useCallback, useEffect, useState } from "react";
+import { AiEndpointsPage } from "./AdminPolicies.tsx";
 import { SecurityPage } from "./AdminSecurity.tsx";
 import { WorkspacesPage } from "./AdminWorkspaces.tsx";
 import { t } from "./messages.ts";
@@ -146,6 +147,8 @@ export function AdminPage() {
 
   const consoleOn =
     step.kind === "open" && step.features.some((state) => state.feature === "admin" && state.on);
+  const policiesOn =
+    step.kind === "open" && step.features.some((state) => state.feature === "policies" && state.on);
 
   const count = useCallback(() => {
     setUsage(undefined);
@@ -255,6 +258,7 @@ export function AdminPage() {
           ) : (
             <p className="hint">{t("adminConsoleOff")}</p>
           )}
+          {policiesOn ? <AiEndpointsPage /> : null}
         </>
       ) : null}
       {status === undefined ? null : <p role="status">{status}</p>}
