@@ -365,6 +365,25 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   through a hook enterprise modules listen to, so core never depends on
   `enterprise/`
   ([ADR 0081](docs/adr/0081-audit-events-come-from-a-hook-the-server-emits-kept-in-a-chained-append-only-log-and-sent-to-a-siem.md)).
+  Then the log goes to a SIEM: under the Audit log page's Sending to a
+  SIEM, an instance admin adds up to five destinations, each syslog over
+  TLS as RFC 5424 and RFC 5425 have it, its server checked against the
+  system's authorities, a given one or a pinned SHA-256 fingerprint, with
+  a client certificate from files for mutual TLS; or a webhook signed as
+  Standard Webhooks has it, its `whsec_` secret shown once and sealed
+  under `NETHER_SECRET_KEY`. `NETHER_AUDIT_SYSLOG` and
+  `NETHER_AUDIT_WEBHOOK` pin one of each. Each destination takes every
+  event in order from its own place in the log, one node sending to it at
+  a time. One that fails waits from 30 seconds up to 15 minutes and is
+  tried again from where it stopped, never turned off, and the console
+  shows its last delivery, the events waiting and its last error. Events
+  the purge takes before a destination got them are recorded as
+  `audit.export_gap`. The desktop and web apps tell the server of each
+  export from a vault linked to a workspace, recorded as `export.made`
+  with its scope, format and count of notes, never their text. The
+  console's changes to the security settings, single sign-on's providers
+  and requirement, and the approved AI endpoints are recorded, each from
+  and to, and the Audit log page names every action, its code beside it.
 - Data policies for public sharing and export, on the server: in the
   console's Data policies section, an instance admin sets for every
   workspace, or for one set apart, whether share links open at any level,
