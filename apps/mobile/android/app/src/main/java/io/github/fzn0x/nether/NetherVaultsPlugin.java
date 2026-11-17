@@ -104,14 +104,74 @@ public class NetherVaultsPlugin extends Plugin {
     }
 
     private void saveRegistry(JSONObject registry) throws IOException, JSONException {
-        File file = registryFile();
+        saveJson(registryFile(), registry);
+    }
+
+    /** Writes a list in one step: to a temporary file, synced, then renamed over it. */
+    private static void saveJson(File file, JSONObject json) throws IOException, JSONException {
         File temp = new File(file.getPath() + ".tmp");
         try (FileOutputStream out = new FileOutputStream(temp)) {
-            out.write(registry.toString(2).getBytes(StandardCharsets.UTF_8));
+            out.write(json.toString(2).getBytes(StandardCharsets.UTF_8));
             out.getFD().sync();
         }
         DISK.replace(temp, file);
         DISK.syncFolder(file.getParentFile());
+    }
+
+    // The servers signed in to, with their accounts and without their tokens,
+    // which the page keeps in the Keystore's care (ADR 0087).
+
+    private File serversFile() {
+        return new File(getContext().getFilesDir(), "servers.json");
+    }
+
+    private JSONArray serverList() throws IOException, JSONException {
+        File file = serversFile();
+        if (!file.isFile()) return new JSONArray();
+        return new JSONObject(new String(VaultFolder.read(file), StandardCharsets.UTF_8)).getJSONArray("servers");
+    }
+
+    /** The list without the server at an address, and with {@code first} at its head, if given. */
+    private void saveServers(JSONObject first, String without) throws IOException, JSONException {
+        JSONArray before = serverList();
+        JSONArray after = new JSONArray();
+        if (first != null) after.put(first);
+        for (int i = 0; i < before.length(); i++) {
+            JSONObject each = before.getJSONObject(i);
+            if (!each.optString("url").equals(without)) after.put(each);
+        }
+        saveJson(serversFile(), new JSONObject().put("servers", after));
+    }
+
+    @PluginMethod
+    public void servers(PluginCall call) {
+        onDisk(call, () -> {
+            JSONArray kept = serverList();
+            JSArray list = new JSArray();
+            for (int i = 0; i < kept.length(); i++) list.put(kept.getJSONObject(i));
+            return new JSObject().put("servers", list);
+        });
+    }
+
+    @PluginMethod
+    public void saveServer(PluginCall call) {
+        JSObject account = call.getObject("account");
+        onDisk(call, () -> {
+            if (account == null || account.optString("url").isEmpty()) {
+                throw new IOException("A server's account needs its address.");
+            }
+            saveServers(account, account.getString("url"));
+            return null;
+        });
+    }
+
+    @PluginMethod
+    public void forgetServer(PluginCall call) {
+        String url = call.getString("url", "");
+        onDisk(call, () -> {
+            saveServers(null, url);
+            return null;
+        });
     }
 
     private static JSONObject entryOf(JSONObject registry, String id) throws JSONException {
@@ -159,12 +219,22 @@ public class NetherVaultsPlugin extends Plugin {
     public void openVault(PluginCall call) {
         String id = call.getString("id");
         String name = call.getString("name");
+        boolean fresh = Boolean.TRUE.equals(call.getBoolean("fresh", false));
         onDisk(call, () -> {
             JSONObject registry = registry();
             JSONObject known = id == null ? null : entryOf(registry, id);
             if (id != null && known == null) throw new IOException("No vault " + id + " is on this phone.");
             String shown = known != null ? known.getString("name") : (name == null ? "" : name.trim());
             String folderName = known != null ? known.getString("folder") : VaultFolder.folderName(shown);
+            // A fresh vault, as a workspace opened on the phone, never takes a folder that is there.
+            if (known == null && fresh) {
+                String base = folderName;
+                String named = shown.isEmpty() ? base : shown;
+                for (int n = 2; new File(vaultsFolder(), folderName).exists(); n++) {
+                    folderName = base + " " + n;
+                    shown = named + " " + n;
+                }
+            }
             File root = new File(vaultsFolder(), folderName);
             if (!root.isDirectory() && !root.mkdirs()) throw new IOException("The vault's folder could not be made.");
             VaultFolder folder = new VaultFolder(root, DISK);
