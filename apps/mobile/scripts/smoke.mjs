@@ -1,7 +1,8 @@
 // The Android app on a device or an emulator (ADR 0087): installs the debug
 // APK, starts it fresh, makes a vault and a note through the page in its
-// WebView, which Playwright drives over adb, and checks that what was typed
-// is there after the app is ended, as the system ends apps:
+// WebView, which Playwright drives over adb, checks that the back button
+// closes the drawer, and that what was typed is there after the app is
+// ended, as the system ends apps:
 //
 // 1. sent home, then forced to stop: the page saved as the app left;
 // 2. forced to stop a second and a half after typing, without leaving: the
@@ -39,10 +40,17 @@ const timeout = 60_000;
 const [device] = await android.devices();
 if (device === undefined) throw new Error("No device is attached: start an emulator first.");
 
-/** Starts the app and gives the page in its WebView. */
+/**
+ * Starts the app and gives the page in its WebView: this process's, by its
+ * DevTools socket, never one Playwright still knows from before an end.
+ */
 async function start() {
   shell("am", "start", "-W", "-n", `${app}/.MainActivity`);
-  const webView = await device.webView({ pkg: app }, { timeout });
+  const pid = shell("pidof", app).trim();
+  const webView = await device.webView(
+    { socketName: `webview_devtools_remote_${pid}` },
+    { timeout },
+  );
   const page = await webView.page();
   page.setDefaultTimeout(timeout);
   return page;
@@ -69,7 +77,15 @@ try {
   page = await start();
   await page.getByRole("textbox", { name: "Name" }).fill("Smoke");
   await page.getByRole("button", { name: "New vault" }).click();
-  await page.getByRole("button", { name: "Notes and menus", exact: true }).click();
+  // The back button closes the drawer, as Escape does, and leaves the app open.
+  const menu = page.getByRole("button", { name: "Notes and menus", exact: true });
+  await menu.click();
+  const drawer = page.getByRole("complementary", { name: "Smoke" });
+  await drawer.waitFor({ state: "visible" });
+  shell("input", "keyevent", "KEYCODE_BACK");
+  await drawer.waitFor({ state: "hidden" });
+  console.log("The back button closed the drawer.");
+  await menu.click();
   await page.getByRole("button", { name: "New note", exact: true }).click();
   const dialog = page.getByRole("dialog", { name: "New note" });
   await dialog.getByRole("textbox", { name: "Name" }).fill("Durable");

@@ -18,7 +18,8 @@ phone and its index in SQLite. This is the Android app; iOS comes next.
   with full syncs (`apps/desktop/src/mobileIndex.ts`).
 - **Leaving the screen**, the page saves every open note at once, in the
   time the system gives. **Coming back**, the vault looks at its folder
-  again.
+  again. **The back button** closes a menu, a dialog or the drawer, as
+  Escape does, then puts the app away.
 - Signing in and sync, and exports through the share sheet, come in later
   parts; the build leaves them out until then.
 

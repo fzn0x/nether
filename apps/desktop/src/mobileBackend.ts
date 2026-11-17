@@ -5,7 +5,8 @@
 // It works with no account. Images and PDFs load from the files' own URLs.
 // Before the app leaves the screen, the page saves what it holds, in the
 // time the system gives; as it comes back, each open vault looks at its
-// folder again, for what another app changed. Signing in and sync come
+// folder again, for what another app changed. Android's back button and
+// gesture close what is open, then put the app away. Signing in and sync come
 // with the apps' fourth part, and exports through the share sheet with the
 // fifth: until then the build leaves them out (features.ts).
 import { App } from "@capacitor/app";
@@ -72,6 +73,27 @@ function followTheApp(): void {
       void save();
     }).then(given);
   });
+  void App.addListener("backButton", goBack);
+}
+
+/** What the back button and gesture close first: a menu, a dialog, or the drawer. */
+const closable = '[role="menu"], [role="dialog"], .vault.drawer-open';
+
+/**
+ * The back button and gesture on Android: they close what is open, as
+ * Escape does where the focus is, and otherwise put the app away, as the
+ * system's own back does at an app's first screen.
+ */
+export function goBack(): void {
+  if (document.querySelector(closable) === null) {
+    void App.minimizeApp();
+    return;
+  }
+  const target =
+    document.activeElement instanceof HTMLElement ? document.activeElement : document.body;
+  target.dispatchEvent(
+    new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }),
+  );
 }
 
 /** Not before the apps' fourth part, which signs in. */
