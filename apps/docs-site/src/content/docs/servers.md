@@ -211,6 +211,13 @@ sees nothing else of the workspace, not even other pages' names. **Copy
 link** copies it again, and **Revoke** stops it, which ends what it
 opened. A server opens links only when it serves the web app.
 
+### Publishing
+
+**Publish to the web**, in the same dialog, publishes the page with its
+subpages, or its folder, as a public site the server serves at
+`/p/<name>/`, for anyone, with links only between the site's pages.
+[Publishing](../publishing/) has the details.
+
 An encrypted workspace has no spaces, shared pages or links yet: everyone
 in it opens all of it.
 
