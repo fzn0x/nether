@@ -136,6 +136,79 @@ export function cssColor(color: string | undefined): string | undefined {
   return colorValue(color, (name) => CSS.supports("color", name));
 }
 
+/** A PDF open, and how many views and embeds draw it. */
+interface Opened {
+  refs: number;
+  readonly doc: Promise<PDFDocumentProxy>;
+  readonly stop: () => void;
+}
+
+/** The PDFs open, by vault, then by path and the file's size and time. */
+const opened = new WeakMap<Vault, Map<string, Opened>>();
+
+/** Loads a PDF through the vault's files, with a worker of its own, which `stop` ends. */
+function load(vault: Vault, path: string): Opened {
+  let port: Worker | undefined;
+  let worker: PDFWorker | undefined;
+  let task: PDFDocumentLoadingTask | undefined;
+  let stopped = false;
+  const doc = vault.readBytes(path).then((file) => {
+    if (stopped) throw new Error(t("pdfGone"));
+    port = new PdfJsWorker();
+    worker = PDFWorker.create({ port });
+    task = getDocument({ data: file.bytes, worker, ...resources() });
+    return task.promise;
+  });
+  return {
+    refs: 0,
+    doc,
+    stop() {
+      stopped = true;
+      const done = task?.destroy() ?? Promise.resolve();
+      void done.finally(() => {
+        worker?.destroy();
+        port?.terminate();
+        // What the text layers measured text with, unless another PDF still draws.
+        TextLayer.cleanup();
+      });
+    },
+  };
+}
+
+/**
+ * The PDF at `path`, for one view or embed: every view and embed of the
+ * same file shares one, which closes, with its worker, when the last lets
+ * it go, so that nothing stays once none draws it.
+ */
+function acquire(vault: Vault, path: string, stamp: string) {
+  let byFile = opened.get(vault);
+  if (byFile === undefined) {
+    byFile = new Map();
+    opened.set(vault, byFile);
+  }
+  const key = `${path}\n${stamp}`;
+  let entry = byFile.get(key);
+  if (entry === undefined) {
+    entry = load(vault, path);
+    byFile.set(key, entry);
+  }
+  const held = entry;
+  const files = byFile;
+  held.refs += 1;
+  let released = false;
+  return {
+    doc: held.doc,
+    release() {
+      if (released) return;
+      released = true;
+      held.refs -= 1;
+      if (held.refs > 0) return;
+      files.delete(key);
+      held.stop();
+    },
+  };
+}
+
 /** The PDF at `path`, loaded through the vault's files, again when the file changes. */
 export function usePdf(vault: Vault, path: string): { doc?: PDFDocumentProxy; error?: string } {
   const [state, setState] = useState<{ doc?: PDFDocumentProxy; error?: string }>({});
@@ -150,40 +223,27 @@ export function usePdf(vault: Vault, path: string): { doc?: PDFDocumentProxy; er
     });
   }, [vault, path]);
   useEffect(() => {
-    // StrictMode starts this twice: what the first start made is stopped.
+    // StrictMode starts this twice: what the first start held is let go.
     const controller = new AbortController();
     const stopped = () => controller.signal.aborted;
-    let port: Worker | undefined;
-    let worker: PDFWorker | undefined;
-    let task: PDFDocumentLoadingTask | undefined;
     setState({});
-    if (vault.fileInfo(path) === undefined) {
+    const info = vault.fileInfo(path);
+    if (info === undefined) {
       setState({ error: t("pdfGone") });
       return;
     }
-    vault
-      .readBytes(path)
-      .then(async (file) => {
-        if (stopped()) return;
-        // A worker of its own, stopped with the PDF, so that nothing stays once it closes.
-        port = new PdfJsWorker();
-        worker = PDFWorker.create({ port });
-        task = getDocument({ data: file.bytes, worker, ...resources() });
-        const doc = await task.promise;
+    const held = acquire(vault, path, `${String(info.size)}:${String(info.modified)}`);
+    held.doc.then(
+      (doc) => {
         if (!stopped()) setState({ doc });
-      })
-      .catch((error: unknown) => {
+      },
+      (error: unknown) => {
         if (!stopped()) setState({ error: errorText(error) });
-      });
+      },
+    );
     return () => {
       controller.abort();
-      const done = task?.destroy() ?? Promise.resolve();
-      void done.finally(() => {
-        worker?.destroy();
-        port?.terminate();
-        // What the text layers measured text with, unless another PDF still draws.
-        TextLayer.cleanup();
-      });
+      held.release();
     };
   }, [vault, path, version]);
   return state;
