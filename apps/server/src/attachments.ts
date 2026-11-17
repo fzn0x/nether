@@ -10,7 +10,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import type { BlobStore } from "./blobs.ts";
 import { type Database, readText } from "./db.ts";
 import { fail, uuidField } from "./http.ts";
-import { visitOf, visitToken } from "./links.ts";
+import { type LinkPolicies, visitOf, visitToken } from "./links.ts";
 import { accountOf, requestToken, sessionAccount, signedIn } from "./sessions.ts";
 import { membership, writes } from "./workspaces.ts";
 
@@ -33,6 +33,7 @@ export function registerAttachments(
   db: Database,
   blobs: BlobStore,
   limit: number,
+  policies: LinkPolicies,
 ): void {
   const account = signedIn(db);
   /** The workspace each reading request may read: a member's, or a visit's. */
@@ -48,7 +49,7 @@ export function registerAttachments(
       );
       return undefined;
     }
-    const visit = await visitOf(db, visitToken(request.headers.cookie));
+    const visit = await visitOf(db, policies, visitToken(request.headers.cookie));
     if (visit !== undefined) {
       readable.set(request, (workspace) => Promise.resolve(workspace === visit.workspace));
       return undefined;

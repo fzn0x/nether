@@ -133,8 +133,10 @@ describe("share links", () => {
     // The same link, copied again.
     const gone = await call(test, "DELETE", `/units/${unit}/links/${link.id}`, bearer(test.token));
     expect(gone.statusCode).toBe(204);
+    // With no data policy, links open at any level.
     expect((await call(test, "GET", `/units/${unit}/links`, bearer(test.token))).json()).toEqual({
       links: [],
+      policy: "on",
     });
   });
 

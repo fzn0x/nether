@@ -5,7 +5,7 @@
 // 0083) and its security settings (ADR 0084). Only its own code loads, as
 // a share link's page does.
 import { type ReactNode, useCallback, useEffect, useState } from "react";
-import { AiEndpointsPage } from "./AdminPolicies.tsx";
+import { AiEndpointsPage, DataPoliciesPage } from "./AdminPolicies.tsx";
 import { SecurityPage } from "./AdminSecurity.tsx";
 import { SsoPage } from "./AdminSso.tsx";
 import { WorkspacesPage } from "./AdminWorkspaces.tsx";
@@ -266,7 +266,12 @@ export function AdminPage() {
             <p className="hint">{t("adminConsoleOff")}</p>
           )}
           {ssoOn ? <SsoPage /> : null}
-          {policiesOn ? <AiEndpointsPage /> : null}
+          {policiesOn ? (
+            <>
+              <AiEndpointsPage />
+              <DataPoliciesPage />
+            </>
+          ) : null}
           {auditOn ? <AdminAudit /> : null}
         </>
       ) : null}

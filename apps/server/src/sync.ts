@@ -30,7 +30,7 @@ import {
   vaultDocument,
   writesAt,
 } from "./units.ts";
-import { socketVisitToken, visitOf, visitPrefix, visitor } from "./links.ts";
+import { type LinkPolicies, socketVisitToken, visitOf, visitPrefix, visitor } from "./links.ts";
 import { membership } from "./workspaces.ts";
 import {
   type EventActor,
@@ -343,6 +343,7 @@ export async function registerSync(
   app: FastifyInstance,
   db: Database,
   events: ServerEvents,
+  policies: LinkPolicies,
 ): Promise<SyncControl> {
   /** Who changed each vault document since it was last stored, by its name. */
   const changers = new Map<string, Changer[]>();
@@ -393,6 +394,7 @@ export async function registerSync(
       // writes the unit's vault document, which says what notes it has.
       const visit = await visitOf(
         db,
+        policies,
         token === ""
           ? socketVisitToken(requestHeaders)
           : token.startsWith(visitPrefix)

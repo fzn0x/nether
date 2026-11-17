@@ -15,7 +15,7 @@ import { domainName, ownHost } from "./domains.ts";
 import { limitByAddress } from "./http.ts";
 import type { Drawn, SiteIndex, Where } from "./pages.ts";
 import { siteStyle } from "./siteStyle.ts";
-import { type Site, siteAtDomain, siteName, siteNamed } from "./sites.ts";
+import { type Site, type SitePolicies, siteAtDomain, siteName, siteNamed } from "./sites.ts";
 
 /**
  * A published page's policy: nothing runs, nothing is framed or sent, and
@@ -98,6 +98,8 @@ function addressOf(rest: string): string | undefined {
 export interface PublishedOptions {
   /** Where files are kept; without a store, a site shows no files. */
   readonly blobs?: BlobStore | undefined;
+  /** The workspaces' data policies (ADR 0088), which may stop serving a workspace's sites. */
+  readonly policies: SitePolicies;
   /** The server's own address, for sites' canonical addresses without a domain. */
   readonly publicUrl?: string | null;
 }
@@ -110,13 +112,19 @@ export interface PublishedOptions {
 export function registerPublished(
   app: FastifyInstance,
   db: Database,
-  options: PublishedOptions = {},
+  options: PublishedOptions,
 ): { readonly changed: (site: string) => void } {
   const publicUrl = options.publicUrl ?? null;
   const own = ownHost(publicUrl);
   const kept = new Map<string, { readonly at: number; readonly index: Promise<SiteIndex> }>();
   /** Hosts found to be no site's, and when. */
   const unclaimed = new Map<string, number>();
+
+  /** A site found, while its workspace's policy lets it be served; undefined otherwise, as one not there. */
+  async function served(site: Site | undefined): Promise<Site | undefined> {
+    if (site === undefined) return undefined;
+    return (await options.policies.of(site.workspace)).sites ? site : undefined;
+  }
 
   /** What a site has, as kept for a few seconds, read again after. */
   function indexOf(site: Site): Promise<SiteIndex> {
@@ -241,7 +249,7 @@ export function registerPublished(
     if (domain === undefined) return;
     const seen = unclaimed.get(domain);
     if (seen !== undefined && Date.now() - seen < keptFor) return;
-    const site = await siteAtDomain(db, domain);
+    const site = await served(await siteAtDomain(db, domain));
     if (site === undefined) {
       if (unclaimed.size >= keptHosts) unclaimed.clear();
       unclaimed.set(domain, Date.now());
@@ -280,7 +288,7 @@ export function registerPublished(
     { onRequest: limit },
     async (request, reply) => {
       const name = request.params.site;
-      const site = siteName.test(name) ? await siteNamed(db, name) : undefined;
+      const site = siteName.test(name) ? await served(await siteNamed(db, name)) : undefined;
       if (site === undefined) return notThere(request, reply, undefined);
       // The raw path, as the request names it, past `/p/<name>/`.
       const pathname = request.url.split("?")[0] ?? "";

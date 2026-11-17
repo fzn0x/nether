@@ -92,3 +92,4 @@ record supersedes it and says so. Start a new one from
 | [0083](0083-the-console-lists-every-workspace-and-an-instance-admin-may-set-its-members-roles.md) | The console lists every workspace, and an instance admin may set its members' roles | Accepted |
 | [0084](0084-the-consoles-security-page-sets-session-lengths-sign-in-limits-and-email-codes-unless-the-environment-does.md) | The console's Security page sets session lengths, sign-in limits and email codes, unless the environment does | Accepted |
 | [0086](0086-ai-is-locked-to-the-endpoints-an-instance-admin-approves-in-the-apps-and-the-relay.md) | AI is locked to the endpoints an instance admin approves, in the apps and the relay | Accepted |
+| [0088](0088-data-policies-set-a-workspaces-retention-legal-hold-public-sharing-and-export-over-its-owners.md) | Data policies set a workspace's retention, legal hold, public sharing and export, over its owners | Accepted |
