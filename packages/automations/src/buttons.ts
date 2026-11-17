@@ -123,6 +123,8 @@ function readAction(raw: unknown): Read | { readonly unknown: string } {
   const type = typeof fields.type === "string" ? fields.type : "";
   const bad = (field: string): Read => ({ problem: { kind: "badAction", action: type, field } });
   switch (type) {
+    case "":
+      return bad("type");
     case "command": {
       const command = text(fields.command);
       return command === undefined ? bad("command") : { action: { type, command } };
@@ -203,7 +205,7 @@ export function readButton(
       const evaluated = type === "updateMetadata" ? "updateMetadata with evaluate" : String(type);
       unsupported.push(evaluated);
     } else if ("unknown" in read) {
-      unsupported.push(read.unknown === "" ? "?" : read.unknown);
+      unsupported.push(read.unknown);
     } else if ("problem" in read) {
       return { problem: read.problem };
     } else {

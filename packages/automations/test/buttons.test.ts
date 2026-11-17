@@ -111,12 +111,11 @@ describe("buttons, as Meta Bind writes them", () => {
         "    line: 1",
         "    value: Hello",
         "  - type: somethingNew",
-        "  - notAType: 1",
       ].join("\n"),
     );
     expect(read).toMatchObject({
       button: {
-        unsupported: ["js", "updateMetadata with evaluate", "insertIntoNote", "somethingNew", "?"],
+        unsupported: ["js", "updateMetadata with evaluate", "insertIntoNote", "somethingNew"],
       },
     });
   });
@@ -148,6 +147,9 @@ describe("buttons, as Meta Bind writes them", () => {
       problem: { kind: "badAction", action: "sleep", field: "ms" },
     });
     expect(readButton("label: Bad\naction: just text")).toEqual({
+      problem: { kind: "badAction", action: "", field: "type" },
+    });
+    expect(readButton("label: Bad\nactions:\n  - notAType: 1")).toEqual({
       problem: { kind: "badAction", action: "", field: "type" },
     });
   });
