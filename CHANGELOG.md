@@ -386,6 +386,19 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   and a property's handle opens a menu that moves it up or down, with no
   drag. The phone's parts load only at a phone's width
   ([ADR 0087](docs/adr/0087-the-mobile-apps-run-the-shared-page-in-capacitor-with-each-vaults-files-and-index-on-the-phone.md)).
+  Then the Android app, `apps/mobile`: the page in Capacitor 8, with
+  vaults of the phone's own, each a folder of Markdown files in the app's
+  storage with its ID in `.nether/vault.json` as the desktop app keeps it,
+  and its index in SQLite through `@capacitor-community/sqlite`, in WAL
+  mode with full syncs. The app's own plugin writes a note in one step,
+  to a temporary file synced to the disk and renamed over it, after
+  checking it is still what the page read; `DeviceFiles` in
+  `packages/storage` does the rest. Every open note is saved as the app
+  leaves the screen, and the vault looks again as it comes back. It works
+  with no account; signing in, sync and exports come in later parts. CI
+  builds the debug APK, tests the plugin on the JVM, checks every library
+  the app ships against ADR 0001's licenses, and runs the app on an
+  Android 15 emulator, ending it mid-edit.
 
 ### Changed
 

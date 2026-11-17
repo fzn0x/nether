@@ -61,6 +61,19 @@ update checks off** stops the checks.
 The Debian package, the AppImage and the Flatpak do not update
 themselves: download the next release when it comes.
 
+## On Android
+
+The Android app is on its way, and not in the stores yet. Each build of
+the repository makes a debug APK, `nether-android-debug`, among its
+artifacts, for Android 7 and later. Install it, then give a vault a name:
+it is a folder of Markdown notes in the app's own storage, which works
+with no account. Opening the same name again finds its notes, and the
+app opens to the vault it had open last. Each note is saved as you leave
+the app, so nothing typed is lost when the phone ends it.
+
+Signing in to a server and sync, and exports through the share sheet,
+come to the app next.
+
 ## From the source
 
 You need Node.js 24, pnpm 10 and Go 1.27:
