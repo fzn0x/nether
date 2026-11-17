@@ -135,6 +135,12 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   password; those with full access make, copy and revoke them in the
   Share dialog, and revoking one ends what it opened
   ([ADR 0071](docs/adr/0071-a-share-link-opens-one-shared-page-to-anyone-with-it-through-the-web-app.md)).
+- Share links to comment and to edit, which completes them. A visitor
+  who writes gives a name first, kept in their browser: their comments
+  carry it, marked as by a link, and an edit link's visitor's caret
+  shows it to the others. The page is live for both. A comment link
+  writes only the page's comments; an edit link writes its notes' text
+  and comments, never which pages there are.
 - API tokens and webhooks in the app, which completes the REST API: API
   tokens on a server, under each account in Servers and signing in and in
   the Sync menu, list, make with the password again, show once to copy,

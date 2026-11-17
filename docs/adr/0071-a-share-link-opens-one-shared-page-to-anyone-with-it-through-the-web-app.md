@@ -46,8 +46,18 @@ is. Revoking a link ends its visits.
 **A visit opens only its link's unit**: the sync server takes its
 cookie, after an account's, for that unit's documents alone, read-only
 below edit; and the attachments of that workspace by their hash, as a
-member does. A visitor is no member: no presence, no mentions, and none
-of the workspace's other pages, not even their names.
+member does. A visitor is no member: no presence in the workspace, no
+mentions, and none of the workspace's other pages, not even their names.
+
+**A visitor writes what their link's level lets them, and no more.** A
+comment link's visit writes the page's comments; an edit link's writes
+its notes' text and their comments. Neither writes the unit's own
+document, which lists its pages, so a visitor cannot add, rename, move
+or delete one. A visitor who writes gives a name first, which their
+browser keeps with an ID of its own, `visitor-<random>`. Their comments
+carry both, and the app marks them as by a link, since no account
+stands behind the name; an edit link's visitor's caret shows it to the
+others in the note.
 
 **This comes in two parts**, one pull request each:
 

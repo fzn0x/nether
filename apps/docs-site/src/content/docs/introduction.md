@@ -65,9 +65,11 @@ Firefox as Markdown.
 them, their words or areas highlighted and commented on, each highlight
 Markdown that Obsidian reads. [Writing assist](../ai/) rewrites, fixes,
 summarizes, translates or continues what you select, with an AI provider
-you bring. [Buttons](../buttons/) in a note, written as Obsidian's Meta
-Bind writes them, run commands, make notes from templates and set
-properties. The [roadmap](../roadmap/) lists what each phase delivers.
+you bring. [Share links](../servers/#share-links) open a page to anyone
+with one, with no account, to read, to comment on or to edit.
+[Buttons](../buttons/) in a note, written as Obsidian's Meta Bind writes
+them, run commands, make notes from templates and set properties. The
+[roadmap](../roadmap/) lists what each phase delivers.
 
 The full requirements, the architecture and the decision records live in
 the [repository](https://github.com/fzn0x/nether/tree/main/docs).
