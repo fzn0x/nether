@@ -35,6 +35,9 @@ export const actionGroups = {
     "workspace.changed",
     "token.created",
     "instance.feature_changed",
+    "policy.changed",
+    "policy.hold_set",
+    "policy.hold_removed",
   ],
   shares: [
     "share_link.created",

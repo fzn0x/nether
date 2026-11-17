@@ -347,7 +347,11 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   and a database's CSV export say the server's policy keeps the
   workspace's notes, asking the server as an export starts and holding to
   its last answer offline, and the Share dialog offers only what links and
-  publishing may do, saying why.
+  publishing may do, saying why. Retention and legal hold on the server:
+  each workspace's history is kept for its policy's days, nothing of a
+  workspace on legal hold is purged, the audit log purges nothing while
+  any workspace is on hold, `/api/me` gives the apps each workspace's
+  trash days and hold, and each change of a policy is in the audit log.
 
 ### Changed
 

@@ -1,15 +1,20 @@
 // Data policies (ADR 0088). While the `policies` feature is on, an instance
 // admin sets for every workspace, or for one set apart, how far its pages
-// are shared in public and whether its text leaves the server through the
-// public API. The policy for every workspace is kept in instance_settings,
-// each workspace set apart in workspace_policies. Every node reads them
-// again at most every five seconds; the node that changes one hears of it
-// at once, and tells its listeners, which close what the change stops.
-import { type Database, readText } from "./db.ts";
+// are shared in public, whether its text leaves the server through the
+// public API, how long its history and its members' trash are kept, and
+// whether it is on legal hold. The policy for every workspace is kept in
+// instance_settings, each workspace set apart in workspace_policies. Every
+// node reads them again at most every five seconds; the node that changes
+// one hears of it at once, and tells its listeners, which close what the
+// change stops.
+import { type Database, type Queryable, readText } from "./db.ts";
 
 /** What a workspace's share links may do: open at any level, only view, or open nothing. */
 export const shareLinkPolicies = ["on", "view", "off"] as const;
 export type ShareLinkPolicy = (typeof shareLinkPolicies)[number];
+
+/** The fewest and most days a policy keeps history or trash. */
+export const keptDays = { min: 1, max: 3650 } as const;
 
 /** The settings a policy holds. */
 export interface DataPolicy {
@@ -18,19 +23,36 @@ export interface DataPolicy {
   readonly sites: boolean;
   /** Whether the public API gives the workspace's text and rows, and the apps export it. */
   readonly export: boolean;
+  /** How many days the server keeps its notes' earlier states; null for NETHER_HISTORY_DAYS. */
+  readonly historyDays: number | null;
+  /** How many days its members' apps keep its vaults' trash; null for each vault's own. */
+  readonly trashDays: number | null;
+  /** Whether nothing of it is deleted for good. */
+  readonly legalHold: boolean;
 }
 
 /** The policy when none holds: nothing narrowed. */
-export const openPolicy: DataPolicy = { shareLinks: "on", sites: true, export: true };
+export const openPolicy: DataPolicy = {
+  shareLinks: "on",
+  sites: true,
+  export: true,
+  historyDays: null,
+  trashDays: null,
+  legalHold: false,
+};
 
 /** What a workspace's members' apps keep to of its policy, as /api/me gives it. */
 export interface AppsPolicy {
   /** Whether the apps offer to export the workspace's notes. */
   readonly export: boolean;
+  /** How many days a vault linked to it keeps its trash; null for the vault's own. */
+  readonly trashDays: number | null;
+  /** Whether a vault linked to it deletes nothing for good. */
+  readonly legalHold: boolean;
 }
 
 export function appsPolicy(policy: DataPolicy): AppsPolicy {
-  return { export: policy.export };
+  return { export: policy.export, trashDays: policy.trashDays, legalHold: policy.legalHold };
 }
 
 /** Why a share link cannot be made or opened, when the policy stops it. */
@@ -51,6 +73,15 @@ function isShareLinkPolicy(value: unknown): value is ShareLinkPolicy {
   return (shareLinkPolicies as readonly unknown[]).includes(value);
 }
 
+function readDays(value: unknown): number | null {
+  return typeof value === "number" &&
+    Number.isInteger(value) &&
+    value >= keptDays.min &&
+    value <= keptDays.max
+    ? value
+    : null;
+}
+
 /** A policy as it was stored: each setting it lacks, or holds in a form not known, left open. */
 export function readPolicy(value: unknown): DataPolicy {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return openPolicy;
@@ -59,6 +90,9 @@ export function readPolicy(value: unknown): DataPolicy {
     shareLinks: isShareLinkPolicy(stored.shareLinks) ? stored.shareLinks : "on",
     sites: stored.sites !== false,
     export: stored.export !== false,
+    historyDays: readDays(stored.historyDays),
+    trashDays: readDays(stored.trashDays),
+    legalHold: stored.legalHold === true,
   };
 }
 
@@ -77,7 +111,8 @@ export interface PoliciesState {
   readonly others: readonly { readonly workspace: string; readonly name: string }[];
 }
 
-interface Kept {
+/** Every workspace's policy, and each workspace's set apart, by its ID. */
+export interface Policies {
   readonly every: DataPolicy;
   readonly apart: ReadonlyMap<string, DataPolicy>;
 }
@@ -89,11 +124,18 @@ interface Kept {
  */
 export type PoliciesListener = (workspaces: readonly string[] | null) => void;
 
+/**
+ * What a change also does in its transaction, given the policy it
+ * replaces: undefined for a workspace not set apart before, or one no
+ * longer set apart after.
+ */
+export type AlsoIn = (tx: Queryable, before: DataPolicy | undefined) => Promise<void>;
+
 export class DataPolicies {
   readonly #db: Database;
   readonly #policiesOn: () => Promise<boolean>;
   readonly #listeners: PoliciesListener[] = [];
-  #kept: { readonly at: number; readonly policies: Promise<Kept> } | undefined;
+  #kept: { readonly at: number; readonly policies: Promise<Policies> } | undefined;
 
   /** `policiesOn` says whether the `policies` feature is on now. */
   constructor(db: Database, policiesOn: () => Promise<boolean>) {
@@ -101,7 +143,7 @@ export class DataPolicies {
     this.#policiesOn = policiesOn;
   }
 
-  #read(): Promise<Kept> {
+  #read(): Promise<Policies> {
     const kept = this.#kept;
     if (kept !== undefined && Date.now() - kept.at < keptFor) return kept.policies;
     const policies = Promise.all([
@@ -131,6 +173,18 @@ export class DataPolicies {
   /** Whether any policy holds: the feature is on. */
   on(): Promise<boolean> {
     return this.#policiesOn();
+  }
+
+  /** Every policy, as the purges read them; undefined while the feature is off. */
+  async all(): Promise<Policies | undefined> {
+    return (await this.#policiesOn()) ? this.#read() : undefined;
+  }
+
+  /** Whether any workspace is on legal hold now, which holds what is kept for all of them. */
+  async anyHold(): Promise<boolean> {
+    const policies = await this.all();
+    if (policies === undefined) return false;
+    return policies.every.legalHold || [...policies.apart.values()].some((p) => p.legalHold);
   }
 
   /** Every workspace's policy, each workspace set apart, and the others, by name. */
@@ -163,38 +217,57 @@ export class DataPolicies {
   }
 
   /** Keeps the policy for every workspace not set apart. */
-  async setEvery(policy: DataPolicy): Promise<void> {
-    await this.#db.query(
-      `INSERT INTO instance_settings (key, value) VALUES ($1, $2::jsonb)
-        ON CONFLICT (key) DO UPDATE SET value = excluded.value, updated_at = now()`,
-      [everyKey, JSON.stringify(policy)],
-    );
+  async setEvery(policy: DataPolicy, alsoIn?: AlsoIn): Promise<void> {
+    await this.#db.transaction(async (tx) => {
+      const { rows } = await tx.query(
+        "SELECT value FROM instance_settings WHERE key = $1 FOR UPDATE",
+        [everyKey],
+      );
+      await tx.query(
+        `INSERT INTO instance_settings (key, value) VALUES ($1, $2::jsonb)
+          ON CONFLICT (key) DO UPDATE SET value = excluded.value, updated_at = now()`,
+        [everyKey, JSON.stringify(policy)],
+      );
+      await alsoIn?.(tx, readPolicy(rows[0]?.value));
+    });
     this.#changed(null);
   }
 
   /** Sets a workspace apart with its own policy; false when there is no such workspace. */
-  async setApart(workspace: string, policy: DataPolicy): Promise<boolean> {
-    const { rows } = await this.#db.query(
-      `INSERT INTO workspace_policies (workspace_id, policy)
-         SELECT id, $2::jsonb FROM workspaces WHERE id = $1
-         ON CONFLICT (workspace_id) DO UPDATE SET policy = excluded.policy, updated_at = now()
-       RETURNING workspace_id`,
-      [workspace, JSON.stringify(policy)],
-    );
-    if (rows.length === 0) return false;
-    this.#changed([workspace]);
-    return true;
+  async setApart(workspace: string, policy: DataPolicy, alsoIn?: AlsoIn): Promise<boolean> {
+    const made = await this.#db.transaction(async (tx) => {
+      const { rows: found } = await tx.query(
+        "SELECT policy FROM workspace_policies WHERE workspace_id = $1 FOR UPDATE",
+        [workspace],
+      );
+      const { rows } = await tx.query(
+        `INSERT INTO workspace_policies (workspace_id, policy)
+           SELECT id, $2::jsonb FROM workspaces WHERE id = $1
+           ON CONFLICT (workspace_id) DO UPDATE SET policy = excluded.policy, updated_at = now()
+         RETURNING workspace_id`,
+        [workspace, JSON.stringify(policy)],
+      );
+      if (rows.length === 0) return false;
+      await alsoIn?.(tx, found[0] === undefined ? undefined : readPolicy(found[0].policy));
+      return true;
+    });
+    if (made) this.#changed([workspace]);
+    return made;
   }
 
   /** Puts a workspace back under every workspace's policy; false when it was not set apart. */
-  async removeApart(workspace: string): Promise<boolean> {
-    const { rows } = await this.#db.query(
-      "DELETE FROM workspace_policies WHERE workspace_id = $1 RETURNING workspace_id",
-      [workspace],
-    );
-    if (rows.length === 0) return false;
-    this.#changed([workspace]);
-    return true;
+  async removeApart(workspace: string, alsoIn?: AlsoIn): Promise<boolean> {
+    const removed = await this.#db.transaction(async (tx) => {
+      const { rows } = await tx.query(
+        "DELETE FROM workspace_policies WHERE workspace_id = $1 RETURNING policy",
+        [workspace],
+      );
+      if (rows.length === 0) return false;
+      await alsoIn?.(tx, readPolicy(rows[0]?.policy));
+      return true;
+    });
+    if (removed) this.#changed([workspace]);
+    return removed;
   }
 
   /** Says the feature's switch moved, which may change every workspace's policy. */

@@ -94,11 +94,50 @@ export function registerVersions(app: FastifyInstance, db: Database): void {
   );
 }
 
-/** Deletes the versions older than the server keeps them; gives how many. */
-export async function purgeVersions(db: Database, days: number): Promise<number> {
-  const { rows } = await db.query(
-    "DELETE FROM document_versions WHERE created_at < now() - make_interval(days => $1) RETURNING id",
-    [days],
-  );
-  return rows.length;
+/** How long a workspace's versions are kept, by a data policy (ADR 0088). */
+export interface VersionsKept {
+  /** Days; null for the server's own. */
+  readonly historyDays: number | null;
+  /** Whether nothing of it is deleted for good. */
+  readonly legalHold: boolean;
+}
+
+/**
+ * Deletes the versions older than they are kept, and gives how many: the
+ * server's `days`, or, under data policies, every workspace's or a
+ * workspace's own set apart; none of a workspace on legal hold.
+ */
+export async function purgeVersions(
+  db: Database,
+  days: number,
+  policies?: {
+    readonly every: VersionsKept;
+    readonly apart: ReadonlyMap<string, VersionsKept>;
+  },
+): Promise<number> {
+  const before = "created_at < now() - make_interval(days => $1)";
+  if (policies === undefined) {
+    const { rows } = await db.query(`DELETE FROM document_versions WHERE ${before} RETURNING id`, [
+      days,
+    ]);
+    return rows.length;
+  }
+  let purged = 0;
+  for (const [workspace, kept] of policies.apart) {
+    if (kept.legalHold) continue;
+    const { rows } = await db.query(
+      `DELETE FROM document_versions WHERE ${before} AND workspace_id = $2 RETURNING id`,
+      [kept.historyDays ?? days, workspace],
+    );
+    purged += rows.length;
+  }
+  if (!policies.every.legalHold) {
+    const { rows } = await db.query(
+      `DELETE FROM document_versions WHERE ${before} AND NOT (workspace_id = ANY($2::uuid[]))
+       RETURNING id`,
+      [policies.every.historyDays ?? days, [...policies.apart.keys()]],
+    );
+    purged += rows.length;
+  }
+  return purged;
 }
