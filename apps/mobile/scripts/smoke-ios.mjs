@@ -15,6 +15,7 @@ import { execFileSync, spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import { fileURLToPath } from "node:url";
 
 const app = "io.github.fzn0x.nether";
@@ -43,8 +44,12 @@ async function until(what, check) {
 // The page's marks, from the plugin's log, with the milliseconds since the app's process started.
 const marks = new Map();
 let log;
-/** Reads the vault's index, once it is found, with the system's sqlite3. */
-let sql;
+/**
+ * Reads the vault's index, once it is found, with Node's own SQLite, which
+ * has FTS5, as macOS's sqlite3 has not. Each query opens it again, read
+ * only, so it sees what the app last committed.
+ */
+let rows;
 
 try {
   simctl("terminate", device, app);
@@ -113,33 +118,42 @@ try {
     );
     return name === undefined ? undefined : join(databases, name);
   });
-  sql = (query) => execFileSync("sqlite3", ["-readonly", db, query], { encoding: "utf8" }).trim();
+  rows = (query) => {
+    const index = new DatabaseSync(db, { readOnly: true });
+    try {
+      return index.prepare(query).all();
+    } finally {
+      index.close();
+    }
+  };
   // Welcome.md is a note in the index, with the size and the time in
   // milliseconds that the plugin listed: what the file has on the disk.
-  const indexed = await until("the note in the index", () => {
-    const found = sql(
-      "SELECT size || ' ' || modified FROM files WHERE path = 'Welcome.md' AND note IS NOT NULL",
-    );
-    return found === "" ? undefined : found;
-  });
+  const indexed = await until(
+    "the note in the index",
+    () =>
+      rows(
+        "SELECT size || ' ' || modified AS found FROM files WHERE path = 'Welcome.md' AND note IS NOT NULL",
+      )[0]?.found,
+  );
   const file = statSync(join(vault, "Welcome.md"), { bigint: true });
   const listed = `${file.size} ${file.mtimeNs / 1_000_000n}`;
   if (indexed !== listed) {
     throw new Error(`The index has Welcome.md at size and time ${indexed}, not ${listed}.`);
   }
   await until("search to find the note", () =>
-    sql("SELECT count(*) FROM note_texts WHERE note_texts MATCH 'lighthouse'") === "1"
+    rows("SELECT count(*) AS found FROM note_texts WHERE note_texts MATCH 'lighthouse'")[0]
+      ?.found === 1
       ? true
       : undefined,
   );
   console.log("The vault opened, its note is in the index, and search finds it.");
 } catch (error) {
   // What the index holds, to tell a vault never listed from a note never indexed.
-  if (sql !== undefined) {
+  if (rows !== undefined) {
     try {
-      const files = sql("SELECT path, ifnull(note, '-'), size, modified FROM files");
-      const texts = sql("SELECT count(*) FROM note_texts");
-      console.error(`The index's files:\n${files || "(none)"}\nIts notes for search: ${texts}`);
+      const files = rows("SELECT path, note, size, modified FROM files");
+      const [{ texts }] = rows("SELECT count(*) AS texts FROM note_texts");
+      console.error(`The index's files: ${JSON.stringify(files)}\nIts notes for search: ${texts}`);
     } catch (reason) {
       console.error(`The index could not be read: ${reason}`);
     }
