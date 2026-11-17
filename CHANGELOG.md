@@ -8,6 +8,12 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Each release has the Android app, `nether-<version>-android.apk`, signed
+  with the project's key from the repository's secrets, so it installs
+  over the last release's with no store. The app's version and its code
+  come from `apps/mobile/package.json`, which the release check holds to
+  the tag (#238).
+
 - The admin console lists the server's nodes, each with its name, version
   and start, in every build. A node writes its heartbeat every half a
   minute; its name is `NETHER_NODE_NAME`, or its machine's. A node without

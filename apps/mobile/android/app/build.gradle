@@ -1,5 +1,18 @@
+import groovy.json.JsonSlurper
+
 apply plugin: 'com.android.application'
 apply plugin: 'app.cash.licensee'
+
+// The app's version is the mobile package's, which a release sets with the
+// others. Its code grows with each release, so a release's APK installs over
+// the one before: 0.2.0 is 2000, 1.4.12 is 1004012.
+def appVersion = new JsonSlurper().parse(file("../../package.json")).version as String
+def versionParts = appVersion.tokenize(".-").take(3).collect { it as int }
+def appVersionCode = versionParts[0] * 1000000 + versionParts[1] * 1000 + versionParts[2]
+
+// The project's release key, given by CI's secrets alone; no key is ever in
+// the repository. Without it a release build is unsigned, as before.
+def releaseKeystore = System.getenv("NETHER_ANDROID_KEYSTORE_FILE")
 
 android {
     namespace = "io.github.fzn0x.nether"
@@ -8,8 +21,8 @@ android {
         applicationId "io.github.fzn0x.nether"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 1
-        versionName "0.1.0"
+        versionCode appVersionCode
+        versionName appVersion
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
@@ -20,11 +33,26 @@ android {
     buildFeatures {
         buildConfig = true
     }
+    signingConfigs {
+        release {
+            if (releaseKeystore) {
+                storeFile file(releaseKeystore)
+                storeType "pkcs12"
+                storePassword System.getenv("NETHER_ANDROID_KEYSTORE_PASSWORD")
+                keyAlias "nether"
+                keyPassword System.getenv("NETHER_ANDROID_KEYSTORE_PASSWORD")
+            }
+        }
+    }
     buildTypes {
-        // Unsigned: the maintainer's key signs releases, and no key is ever in the repository.
+        // Signed with the project's key when CI's secrets give it, for the APK
+        // each release attaches; unsigned otherwise.
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+            if (releaseKeystore) {
+                signingConfig signingConfigs.release
+            }
         }
         // As a release, signed with the SDK's debug key, its WebView open to
         // DevTools, for tools/perf/android.mjs to measure.
