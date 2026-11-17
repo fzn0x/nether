@@ -26,6 +26,10 @@ export const serverActions = [
   "account.created",
   "account.password_changed",
   "share_link.opened",
+  // An account a directory changes, stops or starts (ADR 0085).
+  "account.changed",
+  "account.deactivated",
+  "account.reactivated",
   // Permission changes.
   "member.joined",
   "member.role_changed",
@@ -46,6 +50,21 @@ export const serverActions = [
   "workspace.changed",
   "token.created",
   "instance.feature_changed",
+  // Directories, which provision accounts and groups, and their groups (ADR 0085).
+  "directory.created",
+  "directory.changed",
+  "directory.deleted",
+  "directory.token_created",
+  "directory.synced",
+  "directory.account_linked",
+  "directory.account_unlinked",
+  "group.created",
+  "group.changed",
+  "group.deleted",
+  "group.member_added",
+  "group.member_removed",
+  "group.workspace_set",
+  "group.workspace_removed",
   // Shares.
   "share_link.created",
   "share_link.revoked",
@@ -79,7 +98,8 @@ export type ServerAction = (typeof serverActions)[number];
 /**
  * Who did it: an account, through an API token when it used one; a share
  * link's visitor; someone not signed in, by the email they typed when they
- * typed one; or the server itself. A listener reads an account's name and
+ * typed one; a directory that provisions accounts, by its ID and name
+ * (ADR 0085); or the server itself. A listener reads an account's name and
  * email as they are when it records.
  */
 export type EventActor =
@@ -90,6 +110,7 @@ export type EventActor =
     }
   | { readonly kind: "visitor"; readonly link: string; readonly name: string | null }
   | { readonly kind: "anonymous"; readonly email?: string }
+  | { readonly kind: "directory"; readonly id: string; readonly name: string }
   | { readonly kind: "system" };
 
 /** What an event acted on: a member, a unit, a link, a site, a token or a note. */
