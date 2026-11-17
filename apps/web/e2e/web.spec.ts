@@ -1511,6 +1511,30 @@ test("the admin console adds a directory, whose token, shown once, opens its SCI
     await page.reload();
     await expect(section.getByRole("textbox", { name: "The new token" })).toHaveCount(0);
     await expect(section).toContainText(`Ending in ${token.slice(-4)}`);
+
+    // A group the directory pushes is given a place in a workspace, and taken it away.
+    const pushed = await page.request.post("/api/scim/okta/v2/Groups", {
+      headers: {
+        authorization: `Bearer ${token}`,
+        "content-type": "application/scim+json",
+      },
+      data: { displayName: "Engines", members: [] },
+    });
+    expect(pushed.status()).toBe(201);
+    const oktaItem = section.getByRole("listitem").filter({ hasText: "Okta" });
+    await oktaItem.getByText("Groups and their places").click();
+    const engines = oktaItem.getByRole("listitem").filter({ hasText: "Engines" });
+    await expect(engines).toContainText("It gives no place in any workspace yet.");
+    await engines.getByRole("combobox", { name: "Workspace" }).selectOption({ label: "Team" });
+    await engines.getByRole("combobox", { name: "Role" }).selectOption("admin");
+    await engines.getByRole("button", { name: "Give a place to Engines" }).click();
+    await expect(oktaItem.getByRole("status")).toHaveText(
+      "Engines's members have a place in Team.",
+    );
+    await expect(engines).toContainText("Team, as Admin");
+    expect(await violations(page)).toEqual([]);
+    await engines.getByRole("button", { name: "Take away Engines's place in Team" }).click();
+    await expect(oktaItem.getByRole("status")).toHaveText("Engines gives no place in Team now.");
   } finally {
     const okta = section.getByRole("listitem").filter({ hasText: "Okta" });
     if ((await okta.count()) > 0) {
