@@ -98,6 +98,8 @@ const app = await buildApp(
     // Keys sealed at rest, and the admin's providers may reach the model here.
     NETHER_SECRET_KEY: Buffer.alloc(32, 3).toString("base64"),
     NETHER_AI_PRIVATE: "loopback",
+    // Ada signs in once a test, more often than an account may in 15 minutes.
+    NETHER_SIGN_IN_TRIES_ACCOUNT: "100",
     // Single sign-on's providers may be on this machine, as Keycloak is in CI.
     NETHER_SSO_PRIVATE: "loopback",
   }),
