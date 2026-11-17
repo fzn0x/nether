@@ -44,4 +44,15 @@ NETHER_TEST_LDAP="/tmp/nether-ldap" pnpm --filter @nether/enterprise-scim test
 
 Without `NETHER_TEST_LDAP`, those tests are skipped.
 
+`test/ad/` builds a Samba Active Directory domain controller, which the
+Active Directory preset's tests read. It needs `SYS_ADMIN` to provision:
+
+```sh
+docker build -t nether-ad-test enterprise/scim/test/ad
+docker run -d --name nether-ad --hostname dc1 --cap-add SYS_ADMIN -p 2389:389 -p 2636:636 -v "/tmp/nether-ad:/out" nether-ad-test
+NETHER_TEST_AD="/tmp/nether-ad" pnpm --filter @nether/enterprise-scim test
+```
+
+Without `NETHER_TEST_AD`, those tests are skipped.
+
 Roadmap: Phase 5, enterprise, mobile and scale.

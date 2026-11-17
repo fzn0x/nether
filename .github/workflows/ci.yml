@@ -75,6 +75,24 @@ jobs:
           done
           docker logs ldap
           exit 1
+      # The Active Directory preset reads a Samba domain controller (#214),
+      # built the same way. Samba sets ACLs on its sysvol as it provisions,
+      # which needs SYS_ADMIN. It writes its authority once it answers on
+      # 2389 and 2636.
+      - name: Start the test Active Directory domain
+        run: |
+          docker build -t nether-ad-test enterprise/scim/test/ad
+          mkdir -p "$RUNNER_TEMP/ad"
+          docker run -d --name ad --hostname dc1 --cap-add SYS_ADMIN -p 2389:389 -p 2636:636 \
+            -v "$RUNNER_TEMP/ad:/out" nether-ad-test
+          for i in $(seq 1 120); do
+            if test -s "$RUNNER_TEMP/ad/ca.pem"; then
+              exit 0
+            fi
+            sleep 1
+          done
+          docker logs ad
+          exit 1
       - name: Unit tests
         run: pnpm test
         env:
@@ -83,6 +101,7 @@ jobs:
           NETHER_TEST_DATABASE_URL: postgres://nether:nether@localhost:5432/nether
           NETHER_TEST_REDIS_URL: redis://localhost:6379
           NETHER_TEST_LDAP: ${{ runner.temp }}/ldap
+          NETHER_TEST_AD: ${{ runner.temp }}/ad
       - name: Build the server, the desktop page and the documentation site
         run: pnpm build
       # The Phase 0 gate: the server runs with every enterprise feature off.
