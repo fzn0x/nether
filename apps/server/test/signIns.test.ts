@@ -6,6 +6,7 @@
 import { randomUUID } from "node:crypto";
 import { afterEach, describe, expect, it } from "vitest";
 import type { EnterpriseModule } from "../src/enterprise.ts";
+import type { ServerEvent } from "../src/events.ts";
 import { type Message } from "../src/mail.ts";
 import { newToken, tokenHash } from "../src/sessions.ts";
 import type { RequiredProvider, SignInAttempt } from "../src/signIns.ts";
@@ -26,7 +27,8 @@ interface Rules {
   required: (email: string) => RequiredProvider | undefined;
 }
 
-type Test = TestServer & SetUp & { mailer: TestMailer; rules: Rules; asked: SignInAttempt[] };
+type Test = TestServer &
+  SetUp & { mailer: TestMailer; rules: Rules; asked: SignInAttempt[]; told: ServerEvent[] };
 
 let running: TestServer | undefined;
 
@@ -46,9 +48,14 @@ const onlyCorp = (attempt: SignInAttempt) =>
 async function start(): Promise<Test> {
   const rules: Rules = { refuse: () => false, required: () => undefined };
   const asked: SignInAttempt[] = [];
+  const told: ServerEvent[] = [];
   const guard: EnterpriseModule = {
     feature: "sso",
-    plugin: (app, { guards }) => {
+    plugin: (app, { guards, events }) => {
+      const stop = events.listen((event) => {
+        told.push(event);
+        return Promise.resolve();
+      });
       const remove = guards.add({
         requiredFor: (email) => Promise.resolve(rules.required(email)),
         check: (attempt) => {
@@ -60,6 +67,7 @@ async function start(): Promise<Test> {
       });
       app.addHook("onClose", (_instance, done) => {
         remove();
+        stop();
         done();
       });
       return Promise.resolve();
@@ -67,7 +75,7 @@ async function start(): Promise<Test> {
   };
   const mailer = new TestMailer();
   running = await startServer({ mailer, enterpriseModules: [guard] });
-  return { ...running, ...(await setUp(running)), mailer, rules, asked };
+  return { ...running, ...(await setUp(running)), mailer, rules, asked, told };
 }
 
 /** Bea's account, made by an invitation she accepts with a password. */
@@ -183,6 +191,14 @@ describe("a guard", () => {
     expect(unknown.json()).toMatchObject({ sso: corp });
     // Others sign in as before.
     expect((await signIn(test.server, admin.email, admin.password)).statusCode).toBe(201);
+    // The right password refused is told of as a failed sign-in, with the guard's reason.
+    expect(test.told).toContainEqual({
+      action: "session.signed_in",
+      outcome: "failure",
+      reason: "the test says no",
+      actor: { kind: "account", id: expect.any(String) as unknown },
+      details: { method: "password" },
+    });
   });
 
   it("ends a session and a token at their next use once it refuses them", async () => {
