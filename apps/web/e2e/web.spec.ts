@@ -1172,3 +1172,61 @@ test("the admin console locks AI to approved endpoints, and the AI tab says so",
   }
   expect(problems).toEqual([]);
 });
+
+test("the admin console sets data policies for every workspace, and for one set apart", async ({
+  page,
+}) => {
+  const problems = problemsOf(page);
+  await signIn(page, { email: "ada@example.org", password: "a long password" });
+  await page.goto("/admin");
+  const policies = page.getByRole("checkbox", { name: "Data policies" });
+  await policies.check();
+  const section = page.getByRole("region", { name: "Data policies" });
+  const every = section.getByRole("group", { name: "Every workspace" });
+  const team = section.getByRole("group", { name: "Team" });
+  /** The Save button of the form a policy's group is in. */
+  const save = (name: string) =>
+    section
+      .locator("form")
+      .filter({ has: page.getByRole("group", { name }) })
+      .getByRole("button", { name: "Save" });
+  try {
+    await every.getByRole("combobox", { name: "Share links" }).selectOption("View only");
+    await every.getByRole("checkbox", { name: "Allow export" }).uncheck();
+    await save("Every workspace").click();
+    await expect(section.getByRole("status")).toHaveText("Saved the policy for Every workspace.");
+
+    await section.getByRole("combobox", { name: "Set a workspace apart" }).selectOption("Team");
+    await section.getByRole("button", { name: "Set apart" }).click();
+    await expect(section.getByRole("status")).toHaveText(
+      "Team is set apart, with every workspace's policy to start from.",
+    );
+    // It starts from every workspace's.
+    await expect(team.getByRole("combobox", { name: "Share links" })).toHaveValue("view");
+    await expect(team.getByRole("checkbox", { name: "Allow export" })).not.toBeChecked();
+    await team.getByRole("combobox", { name: "Share links" }).selectOption("Off");
+    await save("Team").click();
+    await expect(section.getByRole("status")).toHaveText("Saved the policy for Team.");
+    expect(await violations(page)).toEqual([]);
+
+    // Read again, as another visit to the console finds them.
+    await page.reload();
+    await expect(team.getByRole("combobox", { name: "Share links" })).toHaveValue("off");
+    await expect(every.getByRole("combobox", { name: "Share links" })).toHaveValue("view");
+  } finally {
+    // Every workspace open again, as the other tests expect.
+    const join = section.getByRole("button", { name: "Use every workspace's" });
+    if (await join.isVisible()) {
+      await join.click();
+      await expect(section.getByRole("status")).toHaveText(
+        "Team uses every workspace's policy again.",
+      );
+    }
+    await every.getByRole("combobox", { name: "Share links" }).selectOption("Open at any level");
+    await every.getByRole("checkbox", { name: "Allow export" }).check();
+    await save("Every workspace").click();
+    await expect(section.getByRole("status")).toHaveText("Saved the policy for Every workspace.");
+    await policies.uncheck();
+  }
+  expect(problems).toEqual([]);
+});
