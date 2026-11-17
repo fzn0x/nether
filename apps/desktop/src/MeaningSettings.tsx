@@ -19,6 +19,7 @@ function statusOf(meaning: VaultMeaning, providers: readonly AiProviderEntry[]):
   if (blocked === "vaultOff") return t("aiMeaningWaitsVault");
   if (blocked === "workspaceOff") return t("aiMeaningWaitsWorkspace");
   if (blocked === "missing") return t("aiMeaningWaitsProvider");
+  if (blocked === "notApproved") return t("aiMeaningWaitsApproved");
   if (progress?.error !== undefined) return t("meaningWaiting", { error: progress.error });
   if (progress === undefined || (!progress.passed && progress.total === 0)) {
     return t("aiMeaningStarting");

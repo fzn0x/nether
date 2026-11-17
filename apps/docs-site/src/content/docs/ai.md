@@ -80,6 +80,28 @@ the next one. Others see that AI is off, and why.
 The switch tells Nether's apps not to send the workspace's text to AI; it
 cannot stop someone from copying notes elsewhere.
 
+## When your server approves the endpoints
+
+Your server's admin may lock AI to the endpoints the organization
+approves, as its own model at `https://llm.example.com/v1`. Then, for every
+workspace on that server, Nether's apps send AI requests only to a
+provider at one of those addresses, or under one:
+
+- the AI tab says so: "nether.example.org allows AI only through
+  https://llm.example.com/v1.";
+- a provider elsewhere is marked **Not allowed by** the server, and a vault
+  that syncs with it does not use it; with the default elsewhere, the
+  first provider that is allowed stands in;
+- search by meaning waits while its provider is elsewhere;
+- the apps ask the server again before every request, so a change holds
+  from the next one;
+- in the web app, the server refuses to keep or use a provider elsewhere.
+
+A vault that syncs with no server is your own: no server locks it. The
+lock keeps Nether's apps to the approved endpoints; it cannot stop another
+program from reading the vault's files. Admins set it in the
+[admin console](../admin/#ai-endpoints).
+
 ## Writing assist
 
 Select some text in a note, or put the caret in a paragraph, and press

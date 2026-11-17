@@ -360,12 +360,19 @@ export async function signInWithProvider(
   }
 }
 
-/** The account a token signs in, and the workspaces it is in. */
+/**
+ * The account a token signs in, the workspaces it is in, and the endpoints
+ * the server locks AI to: null when it locks nothing (ADR 0086).
+ */
 export async function account(
   fetcher: Fetch,
   base: string,
   token: string,
-): Promise<{ user: ServerUser; workspaces: Workspace[] }> {
+): Promise<{
+  user: ServerUser;
+  workspaces: Workspace[];
+  aiEndpoints: readonly string[] | null;
+}> {
   const answer = record(await request(fetcher, base, "/api/me", { token }));
   const workspaces = Array.isArray(answer.workspaces) ? (answer.workspaces as unknown[]) : [];
   return {
@@ -381,6 +388,12 @@ export async function account(
         ai: workspace.ai !== false,
       };
     }),
+    // A server from before the lock locks nothing.
+    aiEndpoints: Array.isArray(answer.aiEndpoints)
+      ? (answer.aiEndpoints as unknown[]).filter(
+          (endpoint): endpoint is string => typeof endpoint === "string",
+        )
+      : null,
   };
 }
 

@@ -192,6 +192,34 @@ nothing through SAML, whose answers cannot say they verified it.
 Making people sign in only through single sign-on, refusing their
 passwords and codes, comes in a later version.
 
+## AI endpoints
+
+With **Data policies** on, the console shows **AI endpoints**: the
+addresses every Nether app may send AI requests to, for every workspace on
+your server. Use it to keep your organization's text on the models you
+approve, such as your own at `https://llm.example.com/v1`.
+
+Type the approved addresses, one a line, and choose **Save**. While the
+list holds one:
+
+- the desktop and web apps use only a provider at one of these addresses,
+  or under one: `https://llm.example.com/v1` allows
+  `https://llm.example.com/v1/team`, not `https://llm.example.com/v2`;
+- people see which addresses you approved in their AI tab, and a provider
+  elsewhere marked as not allowed;
+- the server refuses to keep or relay to a provider elsewhere for the web
+  app.
+
+An empty list locks nothing, and so does turning **Data policies** off.
+Your server's settings can set the list instead, as
+`NETHER_AI_ENDPOINTS=https://llm.example.com/v1`, a comma between
+addresses; the console then shows **Set by** that variable.
+
+The lock keeps Nether's apps to your endpoints. It cannot stop another
+program on someone's computer from reading their vault's files, or an app
+older than this one, which does not know the lock. Network rules on your
+organization's devices close that gap.
+
 ## Audit logs
 
 With **Audit logs** on, the server keeps a log of every sign-in, permission

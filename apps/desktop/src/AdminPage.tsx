@@ -5,6 +5,7 @@
 // 0083) and its security settings (ADR 0084). Only its own code loads, as
 // a share link's page does.
 import { type ReactNode, useCallback, useEffect, useState } from "react";
+import { AiEndpointsPage } from "./AdminPolicies.tsx";
 import { SecurityPage } from "./AdminSecurity.tsx";
 import { SsoPage } from "./AdminSso.tsx";
 import { WorkspacesPage } from "./AdminWorkspaces.tsx";
@@ -150,6 +151,8 @@ export function AdminPage() {
     step.kind === "open" && step.features.some((state) => state.feature === "admin" && state.on);
   const ssoOn =
     step.kind === "open" && step.features.some((state) => state.feature === "sso" && state.on);
+  const policiesOn =
+    step.kind === "open" && step.features.some((state) => state.feature === "policies" && state.on);
   // The audit log shows while its feature is on (ADR 0081).
   const auditOn =
     step.kind === "open" && step.features.some((state) => state.feature === "audit" && state.on);
@@ -263,6 +266,7 @@ export function AdminPage() {
             <p className="hint">{t("adminConsoleOff")}</p>
           )}
           {ssoOn ? <SsoPage /> : null}
+          {policiesOn ? <AiEndpointsPage /> : null}
           {auditOn ? <AdminAudit /> : null}
         </>
       ) : null}

@@ -96,6 +96,8 @@ describe("the server's AI providers", () => {
       mode: "on",
       keepsKeys: true,
       manage: { own: true, instance: true },
+      // Nothing locks AI to approved endpoints here (ADR 0086).
+      endpoints: null,
       providers: [],
       default: "",
     });

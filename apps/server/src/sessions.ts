@@ -26,6 +26,7 @@ import {
 } from "./http.ts";
 import { type ServerEvents, type SessionMethod, accountActor, originOf } from "./events.ts";
 import { hashPassword, verifyPassword } from "./passwords.ts";
+import type { AiEndpoints } from "./aiEndpoints.ts";
 import { type SecuritySettings, settingSql } from "./settings.ts";
 
 /**
@@ -234,13 +235,15 @@ export const wrongPassword = "That password is not this account's.";
 
 /**
  * The routes of signing in and out, of one's sessions, and of one's
- * account. The security settings give the sign-in limits; each sign-in,
+ * account. The security settings give the sign-in limits; the account's
+ * apps read the approved AI endpoints with its workspaces. Each sign-in,
  * and each that fails, is told of (ADR 0081).
  */
 export function registerSessions(
   app: FastifyInstance,
   db: Database,
   security: SecuritySettings,
+  aiEndpoints: AiEndpoints,
   events: ServerEvents,
 ): void {
   const account = signedIn(db);
@@ -412,6 +415,8 @@ export function registerSessions(
         // Whether its members' apps offer AI in it (ADR 0068).
         ai: readBoolean(row, "ai"),
       })),
+      // The only addresses every app may send AI requests to, or null (ADR 0086).
+      aiEndpoints: await aiEndpoints.locked(),
     };
   });
 

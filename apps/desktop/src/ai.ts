@@ -4,10 +4,12 @@
 // the default; a vault uses the default, one chosen for it, or none. A vault
 // of an end-to-end encrypted workspace uses none until the user chooses one
 // for it, and in the web app none at all, since its requests go through the
-// server; a workspace whose owners or admins turned AI off uses none. With
-// no provider, nothing of AI shows. The choice and the last word from the
-// workspace's server are kept in the vault's index on this device, outside
-// its folder, so neither syncs.
+// server; a workspace whose owners or admins turned AI off uses none, and
+// a server that locks AI to approved endpoints lets it use only a provider
+// at one (ADR 0086). With no provider, nothing of AI shows. The choice and
+// the last word from the workspace's server are kept in the vault's index
+// on this device, outside its folder, so neither syncs.
+import { isApproved } from "@nether/ai";
 import type { Vault } from "@nether/storage";
 import type { AIProvider } from "./mygo.ts";
 
@@ -24,6 +26,8 @@ export interface ServerAi {
   readonly keepsKeys: boolean;
   /** Whether this account may add providers of its own, and the instance's. */
   readonly manage: { readonly own: boolean; readonly instance: boolean };
+  /** The only addresses its admin lets AI go to, or null when nothing is locked (ADR 0086). */
+  readonly endpoints?: readonly string[] | null;
 }
 
 /** The providers a vault can use, and the default; with `server` when a server keeps them. */
@@ -47,10 +51,18 @@ export type VaultAiChoice =
  * - `workspaceOff`: the workspace's owners or admins turned it off;
  * - `encrypted`: the workspace is end-to-end encrypted, and no provider was chosen for it;
  * - `encryptedRelay`: the workspace is end-to-end encrypted, and requests would go through its server;
- * - `missing`: the provider chosen for it is no longer there.
+ * - `missing`: the provider chosen for it is no longer there;
+ * - `notApproved`: the workspace's server locks AI to endpoints, and the provider is at none of them.
  */
 export type AiReason =
-  "ready" | "none" | "vaultOff" | "workspaceOff" | "encrypted" | "encryptedRelay" | "missing";
+  | "ready"
+  | "none"
+  | "vaultOff"
+  | "workspaceOff"
+  | "encrypted"
+  | "encryptedRelay"
+  | "missing"
+  | "notApproved";
 
 export interface AiResolution {
   readonly provider: AiProviderEntry | undefined;
@@ -67,9 +79,12 @@ export function resolveAi(input: {
   readonly encrypted: boolean;
   /** Whether the vault's workspace lets its members' apps offer AI; true when it has none. */
   readonly workspaceAllows: boolean;
+  /** The endpoints the workspace's server locks AI to, or null when it locks nothing. */
+  readonly endpoints: readonly string[] | null;
 }): AiResolution {
-  const { settings, choice, encrypted, workspaceAllows } = input;
+  const { settings, choice, encrypted, workspaceAllows, endpoints } = input;
   const none = (reason: AiReason): AiResolution => ({ provider: undefined, reason });
+  const allowed = (provider: AiProviderEntry) => allowedBy(endpoints, provider);
   if (settings.providers.length === 0) return none("none");
   if (!workspaceAllows) return none("workspaceOff");
   // Requests through a server would show it an encrypted workspace's text.
@@ -77,12 +92,21 @@ export function resolveAi(input: {
   if (choice.kind === "off") return none("vaultOff");
   if (choice.kind === "provider") {
     const chosen = settings.providers.find((provider) => provider.id === choice.id);
-    return chosen === undefined ? none("missing") : { provider: chosen, reason: "ready" };
+    if (chosen === undefined) return none("missing");
+    return allowed(chosen) ? { provider: chosen, reason: "ready" } : none("notApproved");
   }
   // An encrypted workspace's text goes to no provider it was not given.
   if (encrypted) return none("encrypted");
-  const fallback = settings.providers.find((provider) => provider.id === settings.default);
-  return { provider: fallback ?? settings.providers[0], reason: "ready" };
+  // The default when its endpoint is approved; else the first that is.
+  const usable = settings.providers.filter(allowed);
+  const fallback = usable.find((provider) => provider.id === settings.default);
+  const provider = fallback ?? usable[0];
+  return provider === undefined ? none("notApproved") : { provider, reason: "ready" };
+}
+
+/** Whether a provider may be used where AI is locked to `endpoints`; any may when nothing is. */
+export function allowedBy(endpoints: readonly string[] | null, provider: AIProvider): boolean {
+  return endpoints === null || isApproved(provider.url, endpoints);
 }
 
 const choiceKey = "ai.vault";
@@ -122,23 +146,38 @@ export async function setVaultAiChoice(vault: Vault, choice: VaultAiChoice): Pro
   );
 }
 
-/** What the workspace's server last said of its switch, by workspace; undefined when it has not. */
+/** What a workspace's server last said of AI: its switch, and the endpoints it locks AI to. */
+export interface KnownWorkspaceAi {
+  readonly on: boolean;
+  readonly endpoints: readonly string[] | null;
+}
+
+/** What the workspace's server last said of AI, by workspace; undefined when it has not. */
 export async function knownWorkspaceAi(
   vault: Vault,
   workspaceId: string,
-): Promise<boolean | undefined> {
+): Promise<KnownWorkspaceAi | undefined> {
   const value = readJson(await vault.settings.setting(workspaceKey)) as
-    { workspace?: unknown; ai?: unknown } | undefined;
-  return value?.workspace === workspaceId && typeof value.ai === "boolean" ? value.ai : undefined;
+    { workspace?: unknown; ai?: unknown; endpoints?: unknown } | undefined;
+  if (value?.workspace !== workspaceId || typeof value.ai !== "boolean") return undefined;
+  // A device that kept no endpoints, before servers locked any, was told of none.
+  const endpoints = Array.isArray(value.endpoints)
+    ? (value.endpoints as unknown[]).filter(
+        (endpoint): endpoint is string => typeof endpoint === "string",
+      )
+    : null;
+  return { on: value.ai, endpoints };
 }
 
 export async function keepWorkspaceAi(
   vault: Vault,
   workspaceId: string,
-  on: boolean,
+  known: KnownWorkspaceAi,
 ): Promise<void> {
   await vault.settings.setSetting(
     workspaceKey,
-    encoder.encode(JSON.stringify({ workspace: workspaceId, ai: on })),
+    encoder.encode(
+      JSON.stringify({ workspace: workspaceId, ai: known.on, endpoints: known.endpoints }),
+    ),
   );
 }

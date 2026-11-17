@@ -50,6 +50,7 @@ COPY packages/storage/package.json packages/storage/
 COPY enterprise/server/package.json enterprise/server/
 COPY enterprise/admin/package.json enterprise/admin/
 COPY enterprise/sso/package.json enterprise/sso/
+COPY enterprise/policies/package.json enterprise/policies/
 COPY enterprise/audit/package.json enterprise/audit/
 RUN --mount=type=cache,id=pnpm-store,target=/root/.local/share/pnpm/store \
     pnpm install --prod --frozen-lockfile --ignore-scripts --filter "@nether/enterprise-server..."
@@ -79,6 +80,7 @@ COPY --from=build /src/apps/server/src/ apps/server/src/
 COPY --from=build /src/enterprise/server/src/ enterprise/server/src/
 COPY --from=build /src/enterprise/admin/src/ enterprise/admin/src/
 COPY --from=build /src/enterprise/sso/src/ enterprise/sso/src/
+COPY --from=build /src/enterprise/policies/src/ enterprise/policies/src/
 COPY --from=build /src/enterprise/audit/src/ enterprise/audit/src/
 COPY --from=build /src/apps/web/dist/ apps/web/dist/
 COPY LICENSE ./

@@ -537,6 +537,10 @@ export const messages = {
   aiVaultEncrypted:
     "This vault's workspace is end-to-end encrypted, so its text goes to no provider until you choose one for it here. One on this computer keeps it here.",
   aiVaultMissing: "The provider chosen for this vault is no longer set up.",
+  aiLocked: "{server} allows AI only through {endpoints}.",
+  aiNotApproved: "Not allowed by {server}",
+  aiVaultNotApproved:
+    "{server} allows AI only through the addresses its admin approved, and this vault's provider is at none of them.",
   aiWorkspaceAllows: "Members' apps may offer AI in {workspace}",
   aiWorkspaceAllowsHint: "As its owner or admin, you choose this for everyone in the workspace.",
   aiWorkspaceOff: "The owners or admins of {workspace} turned AI off for it.",
@@ -558,6 +562,8 @@ export const messages = {
   aiMeaningWaitsWorkspace:
     "Search by meaning waits: the workspace's owners or admins turned AI off.",
   aiMeaningWaitsProvider: "Search by meaning waits: its provider is no longer set up here.",
+  aiMeaningWaitsApproved:
+    "Search by meaning waits: its provider is at an address the workspace's server does not approve.",
   aiWorkspaceUnreachable: "{server} could not be reached to check {workspace}: {error}",
   aiNoWorkspace: "This account is no longer in {workspace}.",
   aiWorkspaceOffNow: "AI is off here now, for this vault or its workspace, so nothing was sent.",
@@ -980,6 +986,14 @@ export const messages = {
   adminMethodPassword: "A password",
   adminMethodCode: "A code by email",
   adminMethodOidc: "{name}, through OpenID Connect",
+  adminEndpoints: "AI endpoints",
+  adminEndpointsIntro:
+    "While this list holds an address, every Nether app sends AI requests for this server's workspaces only to it, or to addresses under it. Leave it empty to lock nothing.",
+  adminEndpointsList: "Approved addresses, one a line",
+  adminEndpointsHint:
+    "As https://llm.example.com/v1. A provider's address must be one, or under one.",
+  adminEndpointsSaved: "Saved: AI goes only to these addresses.",
+  adminEndpointsUnlocked: "Saved: nothing is locked.",
   // The console's audit log (ADR 0081).
   adminAudit: "Audit log",
   adminAuditIntro:
