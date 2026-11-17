@@ -1,5 +1,5 @@
 // Checks that `docker compose up` gives a working server (ADR 0054): it
-// starts the compose project, finds its schema current, sets
+// starts the compose project, finds it ready and its schema current, sets
 // the server up with the code from its log, keeps an attachment, serves the
 // web app, counts its rate limits in Valkey and makes a backup; then stops
 // it all, starts it again and finds the account and the attachment kept;
@@ -98,6 +98,11 @@ try {
   check(
     Object.values(status.enterprise).every((on) => on === false),
     "every enterprise feature is off",
+  );
+  const ready = await (await call("GET", "/health/ready")).json();
+  check(
+    ready.status === "ready" && ready.database === "up" && ready.valkey === "up",
+    "/health/ready says it takes work, its database and Valkey up",
   );
   const migrated = compose(["exec", "-T", "server", "node", "dist/admin.js", "migrate"]);
   check(migrated.includes("nothing to do"), "the admin command finds the schema current");
