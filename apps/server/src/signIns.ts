@@ -45,14 +45,16 @@ export interface SignInGuard {
   check(attempt: SignInAttempt, db: Queryable): Promise<Refusal | undefined>;
 }
 
-/** A sign-in a guard refused, as `startSession` throws it. */
+/** A sign-in a guard refused, as `startSession` throws it, with what was tried. */
 export class SignInRefused extends Error {
   override readonly name = "SignInRefused";
   readonly refusal: Refusal;
+  readonly attempt: SignInAttempt;
 
-  constructor(refusal: Refusal) {
+  constructor(refusal: Refusal, attempt: SignInAttempt) {
     super(refusal.reason);
     this.refusal = refusal;
+    this.attempt = attempt;
   }
 }
 

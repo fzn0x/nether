@@ -46,6 +46,7 @@ import { registerWebApp } from "./web.ts";
 import { registerWebhooks } from "./webhooks.ts";
 import { registerWorkspaces } from "./workspaces.ts";
 import { registerWrites } from "./writes.ts";
+import { ServerEvents, fromServer } from "./events.ts";
 
 /** The server's version, from its package.json (one folder up from src/ and dist/ alike). */
 export function serverVersion(): string {
@@ -150,6 +151,8 @@ export async function buildApp(config: Config, services: Services): Promise<Fast
     return Promise.resolve(JSON.stringify({ ...rest, expiresAt }));
   });
 
+  // What the server tells of as it happens, which modules listen to (ADR 0081).
+  const events = new ServerEvents();
   const modules = services.enterpriseModules ?? [];
   const switches = new EnterpriseSwitches(
     services.db,
@@ -161,7 +164,7 @@ export async function buildApp(config: Config, services: Services): Promise<Fast
     version,
     enterprise: await switches.all(),
   }));
-  registerFeatures(app, services.db, switches);
+  registerFeatures(app, services.db, switches, events);
   // The sessions' lengths, the sign-in limits and email codes (ADR 0084):
   // the pinned ones written where every node and query reads them.
   const security = new SecuritySettings(services.db, config.security);
@@ -171,10 +174,10 @@ export async function buildApp(config: Config, services: Services): Promise<Fast
     switches.on("policies"),
   );
 
-  registerSetup(app, services.db, services.setupCode);
-  registerSessions(app, services.db, security, aiEndpoints);
-  registerInvitations(app, services.db);
-  registerWorkspaces(app, services.db);
+  registerSetup(app, services.db, services.setupCode, events);
+  registerSessions(app, services.db, security, aiEndpoints, events);
+  registerInvitations(app, services.db, events);
+  registerWorkspaces(app, services.db, events);
   registerVersions(app, services.db);
   registerNotifications(app, services.db, services.mailer);
   registerSearch(app, services.db);
@@ -203,8 +206,21 @@ export async function buildApp(config: Config, services: Services): Promise<Fast
           const target = backupTarget(backup);
           const check = () => {
             backupIfDue(services.db, services.blobs ?? noBlobs, target, backup).then(
-              (made) => {
-                if (made !== undefined) app.log.info(made, "Made a backup");
+              async (made) => {
+                if (made === undefined) return;
+                app.log.info(made, "Made a backup");
+                // A backup holds every workspace: an export, by the server itself.
+                await events.attempt(
+                  services.db,
+                  {
+                    action: "backup.made",
+                    actor: { kind: "system" },
+                    target: { type: "backup", id: made.name, name: made.name },
+                    details: { rows: made.rows, attachments: made.blobs },
+                  },
+                  fromServer,
+                  app.log,
+                );
               },
               (error: unknown) => {
                 app.log.error({ err: error }, "Could not make a backup");
@@ -231,14 +247,14 @@ export async function buildApp(config: Config, services: Services): Promise<Fast
     registerAttachments(app, services.db, services.blobs, config.attachmentLimit);
   }
   // The relay's sockets come through the WebSocket plugin sync registers.
-  const sync = await registerSync(app, services.db);
+  const sync = await registerSync(app, services.db, events);
   const relay = registerRelay(app, services.db, services.bus ?? new ProcessBus());
   const reconnect = (userId: string) => {
     sync.disconnect(userId);
     relay.disconnect(userId);
   };
-  registerMembers(app, services.db, reconnect);
-  registerUnits(app, services.db, reconnect, sync);
+  registerMembers(app, services.db, reconnect, events);
+  registerUnits(app, services.db, reconnect, sync, events);
   // Share links, which open a shared page to anyone with one (ADR 0071).
   registerLinks(app, services.db, {
     publicUrl: config.publicUrl,
@@ -246,6 +262,7 @@ export async function buildApp(config: Config, services: Services): Promise<Fast
     disconnect: (userId) => {
       sync.disconnect(userId);
     },
+    events,
   });
   // Published sites, drawn for anyone at /p/<name>/ (ADR 0076).
   // Their custom domains' requests, on any route, are theirs (ADR 0077).
@@ -257,13 +274,14 @@ export async function buildApp(config: Config, services: Services): Promise<Fast
     publicUrl: config.publicUrl,
     changed: published.changed,
     resolveTxt: services.resolveTxt,
+    events,
   });
   // The public API, for personal access tokens (ADR 0059).
-  registerTokens(app, services.db);
-  const api = registerApi(app, services.db, sync);
+  registerTokens(app, services.db, events);
+  const api = registerApi(app, services.db, sync, events);
   registerWrites(app, services.db, sync, api);
   // Webhooks, and the worker that sends their events (ADR 0060).
-  registerWebhooks(app, services.db, config.webhookPrivate, api);
+  registerWebhooks(app, services.db, config.webhookPrivate, api, events);
   if (services.webhookWorker !== false) {
     const webhooks = startWebhooks(services.db, {
       policy: config.webhookPrivate,
@@ -282,10 +300,12 @@ export async function buildApp(config: Config, services: Services): Promise<Fast
     ...(services.aiResolve === undefined ? {} : { resolve: services.aiResolve }),
   });
   if (services.mailer !== undefined) {
-    registerCodes(app, services.db, services.mailer, security, config.publicUrl);
+    registerCodes(app, services.db, services.mailer, security, events, config.publicUrl);
   }
   const { oidc, publicUrl } = config;
-  if (oidc !== null && publicUrl !== null) registerOidc(app, services.db, oidc, publicUrl);
+  if (oidc !== null && publicUrl !== null) {
+    registerOidc(app, services.db, oidc, publicUrl, events);
+  }
   // How the app may offer to sign in on this server.
   app.get("/api/sign-in-methods", async () => ({
     password: true,
@@ -301,6 +321,7 @@ export async function buildApp(config: Config, services: Services): Promise<Fast
       security,
       aiEndpoints,
       guards: signInGuards(services.db),
+      events,
     },
     switches,
     modules,

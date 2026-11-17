@@ -13,6 +13,7 @@ import { hashPassword, verifyPassword } from "./passwords.ts";
 import { accountOf, newToken, signedIn, tokenHash } from "./sessions.ts";
 import { accessible, vaultDocument } from "./units.ts";
 import { membership } from "./workspaces.ts";
+import { type ServerEvents, accountActor, originOf } from "./events.ts";
 
 export const linkPrefix = "nether_link_";
 export const visitPrefix = "nether_visit_";
@@ -190,8 +191,10 @@ export function registerLinks(
     readonly publicUrl: string | null;
     readonly webApp: boolean;
     readonly disconnect: (userId: string) => void;
+    readonly events: ServerEvents;
   },
 ): void {
+  const { events } = options;
   const account = signedIn(db);
 
   /** The page's unit, when the account has full access to it; else why not. */
@@ -286,6 +289,22 @@ export function registerLinks(
             accountOf(request).id,
           ],
         );
+        await events.emit(
+          tx,
+          {
+            action: "share_link.created",
+            actor: accountActor(accountOf(request).id),
+            workspace: found.workspace,
+            target: { type: "share_link", id },
+            details: {
+              unit: found.unit,
+              level: request.body.level,
+              password: password !== null,
+              expiresAt: expires === null ? null : expires.toISOString(),
+            },
+          },
+          originOf(request),
+        );
         return true;
       });
       if (!made) {
@@ -308,10 +327,27 @@ export function registerLinks(
       const found = await managed(request);
       if (!("unit" in found)) return fail(reply, found[0], found[1]);
       const link = request.params.link.toLowerCase();
-      const { rows } = await db.query(
-        "DELETE FROM share_links WHERE id = $1 AND unit_id = $2 RETURNING id",
-        [link, found.unit],
-      );
+      const rows = await db.transaction(async (tx) => {
+        const revoked = await tx.query(
+          "DELETE FROM share_links WHERE id = $1 AND unit_id = $2 RETURNING id, level",
+          [link, found.unit],
+        );
+        const row = revoked.rows[0];
+        if (row !== undefined) {
+          await events.emit(
+            tx,
+            {
+              action: "share_link.revoked",
+              actor: accountActor(accountOf(request).id),
+              workspace: found.workspace,
+              target: { type: "share_link", id: link },
+              details: { unit: found.unit, level: readText(row, "level") },
+            },
+            originOf(request),
+          );
+        }
+        return revoked.rows;
+      });
       if (rows.length === 0) return fail(reply, 404, "This page has no such link.");
       options.disconnect(visitor(link));
       return reply.code(204).send();
@@ -327,7 +363,27 @@ export function registerLinks(
     },
     async (request, reply) => {
       const { token, password } = request.body;
-      if (!token.startsWith(linkPrefix)) return fail(reply, 404, noPage);
+      /** A link that would not open, told as a visit refused. */
+      const refused = async (reason: string, link?: string, workspace?: string) => {
+        await events.attempt(
+          db,
+          {
+            action: "share_link.opened",
+            outcome: "failure",
+            reason,
+            actor:
+              link === undefined ? { kind: "anonymous" } : { kind: "visitor", link, name: null },
+            ...(workspace === undefined ? {} : { workspace }),
+            ...(link === undefined ? {} : { target: { type: "share_link", id: link } }),
+          },
+          originOf(request),
+          request.log,
+        );
+      };
+      if (!token.startsWith(linkPrefix)) {
+        await refused("no such link");
+        return fail(reply, 404, noPage);
+      }
       const { rows } = await db.query(
         `SELECT l.id, l.workspace_id, l.unit_id, l.level, l.password_hash, l.expires_at, u.root_note
            FROM share_links l
@@ -339,21 +395,44 @@ export function registerLinks(
       );
       const row = rows[0];
       const page = row === undefined ? null : readTextOrNull(row, "root_note");
-      if (row === undefined || page === null) return fail(reply, 404, noPage);
+      if (row === undefined || page === null) {
+        await refused("no such link, or it expired");
+        return fail(reply, 404, noPage);
+      }
       const hash = readTextOrNull(row, "password_hash");
       if (hash !== null) {
+        // Asked for the password first: not a refusal yet.
         if (password === undefined) return fail(reply, 401, needsPassword);
-        if (!(await verifyPassword(password, hash))) return fail(reply, 401, wrongLinkPassword);
+        if (!(await verifyPassword(password, hash))) {
+          await refused("wrong password", readText(row, "id"), readText(row, "workspace_id"));
+          return fail(reply, 401, wrongLinkPassword);
+        }
       }
       const link = readText(row, "id");
       const linkExpires = row.expires_at === null ? undefined : readTime(row, "expires_at");
       const longest = Date.now() + visitDays * 86_400_000;
       const ends = new Date(Math.min(linkExpires?.getTime() ?? longest, longest));
       const visit = `${visitPrefix}${newToken()}`;
-      await db.query(
-        "INSERT INTO link_visits (token_hash, link_id, expires_at) VALUES ($1, $2, $3)",
-        [tokenHash(visit), link, ends],
-      );
+      await db.transaction(async (tx) => {
+        await tx.query(
+          "INSERT INTO link_visits (token_hash, link_id, expires_at) VALUES ($1, $2, $3)",
+          [tokenHash(visit), link, ends],
+        );
+        await events.emit(
+          tx,
+          {
+            action: "share_link.opened",
+            actor: { kind: "visitor", link, name: null },
+            workspace: readText(row, "workspace_id"),
+            target: { type: "share_link", id: link },
+            details: {
+              unit: readText(row, "unit_id"),
+              level: isLinkLevel(row.level) ? row.level : "view",
+            },
+          },
+          originOf(request),
+        );
+      });
       setVisitCookie(reply, request, visit, ends);
       const unit = readText(row, "unit_id");
       return {

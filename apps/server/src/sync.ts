@@ -20,7 +20,7 @@ import { socketCookieToken } from "./cookies.ts";
 import { fail, uuidField } from "./http.ts";
 import { lockNumbers } from "./numbers.ts";
 import { hasWebhooks, keepListChanges, keepNoteChange } from "./outbox.ts";
-import { indexNote, indexPaths } from "./search.ts";
+import { indexNote, indexPaths, pathsOf, titleOf } from "./search.ts";
 import { sessionAccount, signedIn, accountOf } from "./sessions.ts";
 import {
   type VaultEditor,
@@ -32,6 +32,14 @@ import {
 } from "./units.ts";
 import { socketVisitToken, visitOf, visitPrefix, visitor } from "./links.ts";
 import { membership } from "./workspaces.ts";
+import {
+  type EventActor,
+  type EventOrigin,
+  type ServerEvents,
+  accountActor,
+  fromServer,
+  originOf,
+} from "./events.ts";
 
 const uuid = "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}";
 const namePattern = new RegExp(`^(${uuid})/(vault|vault\\.${uuid}|${uuid}(?:\\.comments)?)$`);
@@ -59,6 +67,95 @@ export function isComments(document: string): boolean {
 /** What a sync connection knows of who opened it. */
 interface SyncContext {
   readonly userId: string;
+  /** Where its connection came from, for what it changes to be told of (ADR 0081). */
+  readonly address?: string | null;
+  readonly userAgent?: string | null;
+  /** How it changes documents: an app syncing, the public API, or the server itself. */
+  readonly via?: "sync" | "api" | "server";
+  /** The API token a change through the API came with. */
+  readonly token?: { readonly id: string; readonly name: string } | null;
+}
+
+/** Where a change through the API came from: its request, and the token it came with. */
+export type EditOrigin = EventOrigin & {
+  readonly token?: { readonly id: string; readonly name: string } | null;
+};
+
+/** Who changed a vault document since it was last stored, and from where. */
+export interface Changer {
+  readonly userId: string;
+  readonly via: "sync" | "api" | "server";
+  readonly origin: EventOrigin;
+  readonly token?: { readonly id: string; readonly name: string } | null;
+}
+
+/** What storing a document tells of: the server's events, and who changed it. */
+export interface StoreTold {
+  readonly events: ServerEvents;
+  readonly changedBy: readonly Changer[];
+}
+
+/** Who did what a document's changers did: one of them, or the server when none. */
+function changedActor(changers: readonly Changer[]): {
+  readonly actor: EventActor;
+  readonly origin: EventOrigin;
+} {
+  const first = changers[0];
+  if (first === undefined || first.userId === "")
+    return { actor: { kind: "system" }, origin: fromServer };
+  const actor: EventActor = first.userId.startsWith("visit:")
+    ? { kind: "visitor", link: first.userId.slice("visit:".length), name: null }
+    : accountActor(first.userId, first.token);
+  return { actor, origin: first.origin };
+}
+
+/**
+ * Tells of the notes a unit's vault document no longer lists, as webhooks'
+ * outbox has them: gone from the unit the server's record puts them in,
+ * not moved to another (ADR 0081).
+ */
+async function tellRemoved(
+  tx: Queryable,
+  workspaceId: string,
+  unit: string,
+  listed: ReadonlyMap<string, string>,
+  listedBefore: ReadonlyMap<string, string>,
+  told: StoreTold,
+): Promise<void> {
+  const now = new Set([...listed.keys()].map((id) => id.toLowerCase()));
+  const was = new Map([...listedBefore].map(([id, path]) => [id.toLowerCase(), path]));
+  const gone = [...was.keys()].filter((id) => !now.has(id));
+  if (gone.length === 0) return;
+  const { rows } = await tx.query(
+    `SELECT n.id, COALESCE(u.unit_id::text, $3) AS unit
+       FROM unnest($2::text[]) AS n(id)
+       LEFT JOIN note_units u ON u.workspace_id = $1 AND u.note = n.id`,
+    [workspaceId, gone, general],
+  );
+  const { actor, origin } = changedActor(told.changedBy);
+  const by = [...new Set(told.changedBy.map((changer) => changer.userId))].filter(
+    (id) => id !== "",
+  );
+  for (const row of rows) {
+    if (readText(row, "unit") !== unit) continue;
+    const id = readText(row, "id");
+    const path = was.get(id) ?? "";
+    await told.events.emit(
+      tx,
+      {
+        action: "note.deleted",
+        actor,
+        workspace: workspaceId,
+        target: { type: "note", id, name: titleOf(path) },
+        details: {
+          path,
+          via: told.changedBy[0]?.via ?? "server",
+          ...(by.length > 1 ? { changedBy: by } : {}),
+        },
+      },
+      origin,
+    );
+  }
 }
 
 /** What the vault document's clients hear when a note's document is stored. */
@@ -79,6 +176,8 @@ interface Changes {
 export interface DocumentStore {
   readonly document: string;
   readonly state: Uint8Array;
+  /** What storing it tells of, and who changed it, when a module listens (ADR 0081). */
+  readonly told?: StoreTold | undefined;
 }
 
 /**
@@ -93,8 +192,9 @@ export async function storeDocument(
   workspaceId: string,
   document: string,
   state: Uint8Array,
+  told?: StoreTold,
 ): Promise<number> {
-  const [seq] = await storeDocuments(db, workspaceId, [{ document, state }]);
+  const [seq] = await storeDocuments(db, workspaceId, [{ document, state, told }]);
   if (seq === undefined) throw new Error(`${document} was not numbered.`);
   return seq;
 }
@@ -118,7 +218,9 @@ export async function storeDocuments(
     a.document < b.document ? -1 : a.document > b.document ? 1 : 0,
   );
   return db.transaction(async (tx) => {
-    for (const store of sorted) await keep(tx, workspaceId, store.document, store.state);
+    for (const store of sorted) {
+      await keep(tx, workspaceId, store.document, store.state, store.told);
+    }
     // Last, so its numbers are in the order the stores commit, and no row
     // lock comes after the workspace's.
     await lockNumbers(tx, workspaceId);
@@ -141,6 +243,7 @@ async function keep(
   workspaceId: string,
   document: string,
   state: Uint8Array,
+  told?: StoreTold,
 ): Promise<void> {
   // A vault document's paths are compared with the state it replaces (ADR 0050).
   const before = document.startsWith("vault")
@@ -177,9 +280,18 @@ async function keep(
   if (before !== undefined) {
     const unit = document === "vault" ? general : document.slice("vault.".length);
     const old = before.rows[0] === undefined ? undefined : readBytes(before.rows[0], "state");
+    // Each side's paths, parsed once for everything that reads them: a
+    // vault document lists every note of its unit.
+    const now = pathsOf(state);
+    const was = pathsOf(old);
     // Read against the index's paths before it takes the new ones.
-    if (watched) await keepListChanges(tx, workspaceId, unit, state, old);
-    await indexPaths(tx, workspaceId, unit, state, old);
+    if (watched) await keepListChanges(tx, workspaceId, unit, now, was);
+    // Only while a module wants them, as audit logs do when on (ADR 0081),
+    // here in the row work, before the workspace's lock is taken.
+    if (told !== undefined && (await told.events.wanted(tx))) {
+      await tellRemoved(tx, workspaceId, unit, now, was, told);
+    }
+    await indexPaths(tx, workspaceId, unit, now, was);
   } else if (!isComments(document)) {
     await indexNote(tx, workspaceId, document, state);
   }
@@ -217,6 +329,8 @@ export interface SyncControl extends VaultEditor {
     document: string,
     userId: string,
     change: (document: Y.Doc) => T,
+    /** Where the request that asks came from, for what it changes to be told of. */
+    origin?: EditOrigin,
   ): Promise<T>;
 }
 
@@ -225,7 +339,13 @@ function under(path: string, folder: string): boolean {
   return path.toLowerCase().startsWith(folder.toLowerCase());
 }
 
-export async function registerSync(app: FastifyInstance, db: Database): Promise<SyncControl> {
+export async function registerSync(
+  app: FastifyInstance,
+  db: Database,
+  events: ServerEvents,
+): Promise<SyncControl> {
+  /** Who changed each vault document since it was last stored, by its name. */
+  const changers = new Map<string, Changer[]>();
   // A note's update may be large, as a pasted image's data is; 16 MiB at most.
   await app.register(websocket, { options: { maxPayload: 16 * 1024 * 1024 } });
 
@@ -264,7 +384,7 @@ export async function registerSync(app: FastifyInstance, db: Database): Promise<
           // A note's comments take comments from those who may comment, and edit or more.
           const writes = isComments(name.document) ? level !== "view" : writesAt(level);
           if (!writes) connectionConfig.readOnly = true;
-          return { userId: account.id };
+          return { userId: account.id, via: "sync" };
         }
       }
       // A share link's visit opens its page's unit alone (ADR 0071): a view
@@ -288,7 +408,7 @@ export async function registerSync(app: FastifyInstance, db: Database): Promise<
           !name.document.startsWith("vault") &&
           (visit.level === "edit" || (visit.level === "comment" && isComments(name.document)));
         if (!writes) connectionConfig.readOnly = true;
-        return { userId: visitor(visit.link) };
+        return { userId: visitor(visit.link), via: "sync" };
       }
       // A document of a unit the account may not open is refused as one not there.
       throw new Error(refused);
@@ -305,14 +425,33 @@ export async function registerSync(app: FastifyInstance, db: Database): Promise<
       return document;
     },
 
+    // A vault document's changers, for the notes it no longer lists to be told of.
+    onChange({ documentName, context }) {
+      if (!/\/vault(\.|$)/.test(documentName)) return Promise.resolve();
+      const known = context as Partial<SyncContext> | undefined;
+      const changer: Changer = {
+        userId: known?.userId ?? "",
+        via: known?.via ?? "server",
+        origin: { address: known?.address ?? null, userAgent: known?.userAgent ?? null },
+        token: known?.token ?? null,
+      };
+      const list = changers.get(documentName) ?? [];
+      if (!list.some((each) => each.userId === changer.userId)) list.push(changer);
+      changers.set(documentName, list);
+      return Promise.resolve();
+    },
+
     async onStoreDocument({ documentName, document }) {
       const name = parseDocumentName(documentName);
       if (name === undefined) return;
+      const changedBy = changers.get(documentName) ?? [];
+      changers.delete(documentName);
       const seq = await storeDocument(
         db,
         name.workspaceId,
         name.document,
         Y.encodeStateAsUpdate(document),
+        { events, changedBy },
       );
       if (name.document.startsWith("vault")) return;
       const stored: Stored = { type: "stored", document: name.document, seq };
@@ -325,9 +464,12 @@ export async function registerSync(app: FastifyInstance, db: Database): Promise<
   });
 
   app.get("/api/sync", { websocket: true }, (socket, request) => {
+    const origin = originOf(request);
     const connection = hocuspocus.handleConnection(
       socket,
       new Request(new URL(request.url, "http://nether"), { headers: headersOf(request.headers) }),
+      // Where it came from, beside who it is once it signs in.
+      { userId: "", address: origin.address, userAgent: origin.userAgent },
     );
     socket.on("message", (data: Buffer) => {
       connection.handleMessage(new Uint8Array(data));
@@ -425,8 +567,20 @@ export async function registerSync(app: FastifyInstance, db: Database): Promise<
   });
 
   /** Changes a document as a member's app would: those syncing it hear at once. */
-  async function edit<T>(name: string, userId: string, change: (document: Y.Doc) => T): Promise<T> {
-    const connection = await hocuspocus.openDirectConnection(name, { userId });
+  async function edit<T>(
+    name: string,
+    userId: string,
+    change: (document: Y.Doc) => T,
+    origin?: EditOrigin,
+  ): Promise<T> {
+    const connection = await hocuspocus.openDirectConnection(name, {
+      userId,
+      // The server's own moves, or an account's through the API.
+      via: userId === "" ? "server" : "api",
+      address: origin?.address ?? null,
+      userAgent: origin?.userAgent ?? null,
+      token: origin?.token ?? null,
+    });
     try {
       let result: { readonly value: T } | undefined;
       await connection.transact((document) => {
@@ -500,8 +654,8 @@ export async function registerSync(app: FastifyInstance, db: Database): Promise<
       return rows.length === 0 ? undefined : readBytes(rows[0], "state");
     },
 
-    edit(workspaceId, document, userId, change) {
-      return edit(`${workspaceId}/${document}`, userId, change);
+    edit(workspaceId, document, userId, change, origin) {
+      return edit(`${workspaceId}/${document}`, userId, change, origin);
     },
   };
 }

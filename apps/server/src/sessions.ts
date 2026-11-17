@@ -25,10 +25,16 @@ import {
   passwordField,
   uuidField,
 } from "./http.ts";
+import {
+  type ServerEvents,
+  type SessionMethod,
+  accountActor,
+  originOf,
+  sessionMethodOf,
+} from "./events.ts";
 import { hashPassword, verifyPassword } from "./passwords.ts";
 import type { AiEndpoints } from "./aiEndpoints.ts";
 import { type SecuritySettings, settingSql } from "./settings.ts";
-import { type SessionMethod, sessionMethodOf } from "./events.ts";
 import {
   type RequiredProvider,
   type SignInGuards,
@@ -71,11 +77,12 @@ export interface Account {
   readonly provider: string | null;
 }
 
-/** How a session begins, and who may refuse it. */
+/** How a session begins, who is told of it, and who may refuse it. */
 export interface SessionStart {
   readonly method: SessionMethod;
   /** The provider of single sign-on's, for `sso`. */
-  readonly provider?: string | null;
+  readonly provider?: string;
+  readonly events: ServerEvents;
   readonly guards: SignInGuards;
 }
 
@@ -85,9 +92,12 @@ export interface NewSession {
 }
 
 /**
- * Starts a session for a user, as signing in does, keeping how it began.
- * The server's guards are asked first: a refusal throws SignInRefused, and
- * no session starts.
+ * Starts a session for a user, as signing in does, keeping how it began,
+ * and tells of it in the same transaction (ADR 0081): through a single
+ * sign-on provider, `provider` is its ID. The server's guards are asked
+ * first (ADR 0080), through the same transaction: a refusal throws
+ * SignInRefused and starts nothing, and the caller tells of it with
+ * `refusedSignIn` once its transaction is undone.
  */
 export async function startSession(
   db: Queryable,
@@ -95,19 +105,17 @@ export async function startSession(
   request: FastifyRequest,
   start: SessionStart,
 ): Promise<NewSession> {
-  const provider = start.provider ?? null;
+  const { method, provider, events, guards } = start;
   const users = await db.query("SELECT email, instance_admin FROM users WHERE id = $1", [userId]);
-  const refusal = await start.guards.check(
-    {
-      userId,
-      email: readText(users.rows[0], "email"),
-      instanceAdmin: readBoolean(users.rows[0], "instance_admin"),
-      method: start.method,
-      provider,
-    },
-    db,
-  );
-  if (refusal !== undefined) throw new SignInRefused(refusal);
+  const attempt = {
+    userId,
+    email: readText(users.rows[0], "email"),
+    instanceAdmin: readBoolean(users.rows[0], "instance_admin"),
+    method,
+    provider: provider ?? null,
+  };
+  const refusal = await guards.check(attempt, db);
+  if (refusal !== undefined) throw new SignInRefused(refusal, attempt);
   const token = newToken();
   const client = (request.headers["user-agent"] ?? "").slice(0, 200);
   // Its end as the lifetime is now; a later setting ends it sooner or later.
@@ -115,9 +123,43 @@ export async function startSession(
     `INSERT INTO sessions (id, user_id, token_hash, client, method, provider, expires_at)
      VALUES ($1, $2, $3, $4, $5, $6, now() + ${settingSql("sessionLifetimeDays")} * interval '1 day')
      RETURNING expires_at`,
-    [randomUUID(), userId, tokenHash(token), client, start.method, provider],
+    [randomUUID(), userId, tokenHash(token), client, method, provider ?? null],
+  );
+  await events.emit(
+    db,
+    {
+      action: "session.signed_in",
+      actor: accountActor(userId),
+      details: provider === undefined ? { method } : { method, provider },
+    },
+    originOf(request),
   );
   return { token, expiresAt: readTime(rows[0], "expires_at").toISOString() };
+}
+
+/**
+ * Tells the server's events of a sign-in a guard refused, as a failure
+ * with its reason (ADR 0081), through `db`, not the transaction undone.
+ */
+export async function refusedSignIn(
+  db: Queryable,
+  events: ServerEvents,
+  request: FastifyRequest,
+  refused: SignInRefused,
+): Promise<void> {
+  const { userId, method, provider } = refused.attempt;
+  await events.attempt(
+    db,
+    {
+      action: "session.signed_in",
+      outcome: "failure",
+      reason: refused.refusal.reason,
+      actor: accountActor(userId),
+      details: method === null ? {} : provider === null ? { method } : { method, provider },
+    },
+    originOf(request),
+    request.log,
+  );
 }
 
 /** The token in an `Authorization: Bearer` header. */
@@ -307,13 +349,15 @@ export const wrongPassword = "That password is not this account's.";
 /**
  * The routes of signing in and out, of one's sessions, and of one's
  * account. The security settings give the sign-in limits; the account's
- * apps read the approved AI endpoints with its workspaces.
+ * apps read the approved AI endpoints with its workspaces. Each sign-in,
+ * and each that fails, is told of (ADR 0081).
  */
 export function registerSessions(
   app: FastifyInstance,
   db: Database,
   security: SecuritySettings,
   aiEndpoints: AiEndpoints,
+  events: ServerEvents,
 ): void {
   const account = signedIn(db);
   const guards = signInGuards(db);
@@ -357,14 +401,41 @@ export function registerSessions(
         required === undefined
           ? fail(reply, 401, "That email address and password do not match an account.")
           : useProvider(reply, request.body.email, required);
-      if (row === undefined || hash === null || !matches) return refused();
+      if (row === undefined || hash === null || !matches) {
+        // The log may say which, as only instance admins read it.
+        const reason =
+          row === undefined
+            ? "no such account"
+            : hash === null
+              ? "the account has no password"
+              : "wrong password";
+        await events.attempt(
+          db,
+          {
+            action: "session.signed_in",
+            outcome: "failure",
+            reason,
+            actor:
+              row === undefined
+                ? { kind: "anonymous", email: request.body.email.slice(0, 320) }
+                : accountActor(readText(row, "id")),
+            details: { method: "password" },
+          },
+          originOf(request),
+          request.log,
+        );
+        return refused();
+      }
       const id = readText(row, "id");
       let session: NewSession;
       try {
-        session = await startSession(db, id, request, { method: "password", guards });
+        session = await db.transaction((tx) =>
+          startSession(tx, id, request, { method: "password", events, guards }),
+        );
       } catch (error) {
-        if (error instanceof SignInRefused) return refused();
-        throw error;
+        if (!(error instanceof SignInRefused)) throw error;
+        await refusedSignIn(db, events, request, error);
+        return refused();
       }
       return reply.code(201).send({
         ...session,
@@ -399,7 +470,15 @@ export function registerSessions(
 
   // Signing out.
   app.delete("/api/sessions/current", { preHandler: account }, async (request, reply) => {
-    await db.query("DELETE FROM sessions WHERE id = $1", [accountOf(request).sessionId]);
+    const me = accountOf(request);
+    await db.transaction(async (tx) => {
+      await tx.query("DELETE FROM sessions WHERE id = $1", [me.sessionId]);
+      await events.emit(
+        tx,
+        { action: "session.signed_out", actor: accountActor(me.id) },
+        originOf(request),
+      );
+    });
     if (readCookies(request.headers.cookie).has(sessionCookie)) clearSessionCookies(reply);
     return reply.code(204).send();
   });
@@ -417,18 +496,33 @@ export function registerSessions(
         return fail(reply, 403, wrongPassword);
       }
       const { session } = request.body;
-      if (session === undefined) {
-        await db.query("DELETE FROM sessions WHERE user_id = $1 AND id <> $2", [
-          me.id,
-          me.sessionId,
-        ]);
-        return reply.code(204).send();
-      }
-      const { rows } = await db.query(
-        "DELETE FROM sessions WHERE id = $1 AND user_id = $2 RETURNING id",
-        [session.toLowerCase(), me.id],
-      );
-      if (rows.length === 0) return fail(reply, 404, "This account has no such session.");
+      const ended = await db.transaction(async (tx) => {
+        const { rows } =
+          session === undefined
+            ? await tx.query("DELETE FROM sessions WHERE user_id = $1 AND id <> $2 RETURNING id", [
+                me.id,
+                me.sessionId,
+              ])
+            : await tx.query("DELETE FROM sessions WHERE id = $1 AND user_id = $2 RETURNING id", [
+                session.toLowerCase(),
+                me.id,
+              ]);
+        if (session !== undefined && rows.length === 0) return false;
+        await events.emit(
+          tx,
+          {
+            action: "session.revoked",
+            actor: accountActor(me.id),
+            details: {
+              sessions: rows.map((row) => readText(row, "id")),
+              all: session === undefined,
+            },
+          },
+          originOf(request),
+        );
+        return true;
+      });
+      if (!ended) return fail(reply, 404, "This account has no such session.");
       return reply.code(204).send();
     },
   );
@@ -478,6 +572,11 @@ export function registerSessions(
           me.id,
           me.sessionId,
         ]);
+        await events.emit(
+          tx,
+          { action: "account.password_changed", actor: accountActor(me.id) },
+          originOf(request),
+        );
       });
       return reply.code(204).send();
     },

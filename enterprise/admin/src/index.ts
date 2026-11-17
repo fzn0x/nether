@@ -6,6 +6,7 @@
 import { serverVersion } from "@nether/server/src/app.ts";
 import type { Database } from "@nether/server/src/db.ts";
 import type { EnterpriseModule } from "@nether/server/src/enterprise.ts";
+import { originOf } from "@nether/server/src/events.ts";
 import { instanceAdmin } from "@nether/server/src/features.ts";
 import { fail, uuidField } from "@nether/server/src/http.ts";
 import { type Role, roles, setRole } from "@nether/server/src/members.ts";
@@ -113,7 +114,7 @@ export async function usage(db: Database): Promise<Usage> {
 /** The `admin` feature's module: its routes answer only while it is on, and to instance admins. */
 export const adminModule: EnterpriseModule = {
   feature: "admin",
-  plugin: (app, { db, whenOn, disconnect, security }) => {
+  plugin: (app, { db, whenOn, disconnect, security, events }) => {
     const account = signedIn(db);
     app.get(
       "/api/admin/usage",
@@ -156,10 +157,14 @@ export const adminModule: EnterpriseModule = {
       async (request, reply) => {
         const user = request.params.user.toLowerCase();
         const { role } = request.body;
-        const outcome = await setRole(db, request.params.workspace.toLowerCase(), user, role, {
-          account: accountOf(request).id,
-          as: "instance-admin",
-        });
+        const outcome = await setRole(
+          db,
+          request.params.workspace.toLowerCase(),
+          user,
+          role,
+          { account: accountOf(request).id, as: "instance-admin", origin: originOf(request) },
+          events,
+        );
         if (typeof outcome !== "string") return fail(reply, outcome[0], outcome[1]);
         // As the workspace's own change does: its apps connect again, checked anew.
         if (outcome === "changed") disconnect(user);

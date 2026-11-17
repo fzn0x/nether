@@ -12,6 +12,7 @@ import type { Mailer } from "./mail.ts";
 import { type NewSession, startSession, useProvider } from "./sessions.ts";
 import type { SecuritySettings } from "./settings.ts";
 import { SignInRefused, signInGuards } from "./signIns.ts";
+import { type ServerEvents, accountActor, originOf } from "./events.ts";
 
 /** Minutes a code lasts. */
 export const codeMinutes = 15;
@@ -134,6 +135,7 @@ export function registerCodes(
   db: Database,
   mailer: Mailer,
   security: SecuritySettings,
+  events: ServerEvents,
   publicUrl: string | null = null,
 ): void {
   const guards = signInGuards(db);
@@ -202,7 +204,7 @@ export function registerCodes(
           [emailKey(request.body.email)],
         );
         const row = rows[0];
-        if (row === undefined) return undefined;
+        if (row === undefined) return { failed: "no code asked for" } as const;
         const codeId = readText(row, "code_id");
         const matches =
           digits !== undefined &&
@@ -214,15 +216,16 @@ export function registerCodes(
           await (readNumber(row, "tries") + 1 >= codeTries
             ? tx.query("DELETE FROM sign_in_codes WHERE id = $1", [codeId])
             : tx.query("UPDATE sign_in_codes SET tries = tries + 1 WHERE id = $1", [codeId]));
-          return undefined;
+          return { failed: "wrong code", userId: readText(row, "id") } as const;
         }
         await tx.query("DELETE FROM sign_in_codes WHERE id = $1", [codeId]);
         const id = readText(row, "id");
         let session: NewSession;
         try {
-          session = await startSession(tx, id, request, { method: "code", guards });
+          session = await startSession(tx, id, request, { method: "code", events, guards });
         } catch (error) {
-          if (error instanceof SignInRefused) return undefined;
+          // Spent, as any try is: the account signs in through a provider now.
+          if (error instanceof SignInRefused) return { failed: error.refusal.reason, userId: id };
           throw error;
         }
         return {
@@ -235,7 +238,22 @@ export function registerCodes(
           },
         };
       });
-      if (outcome === undefined) {
+      if ("failed" in outcome) {
+        await events.attempt(
+          db,
+          {
+            action: "session.signed_in",
+            outcome: "failure",
+            reason: outcome.failed,
+            actor:
+              "userId" in outcome
+                ? accountActor(outcome.userId)
+                : { kind: "anonymous", email: request.body.email.slice(0, 320) },
+            details: { method: "code" },
+          },
+          originOf(request),
+          request.log,
+        );
         return required === undefined
           ? fail(reply, 401, wrongCode)
           : useProvider(reply, request.body.email, required);

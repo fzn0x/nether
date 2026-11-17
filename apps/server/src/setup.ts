@@ -10,6 +10,7 @@ import type { Database } from "./db.ts";
 import { emailField, emailKey, fail, limitByAddress, nameField, newPasswordField } from "./http.ts";
 import { hashPassword } from "./passwords.ts";
 import { startSession } from "./sessions.ts";
+import { type ServerEvents, accountActor, originOf } from "./events.ts";
 import { signInGuards } from "./signIns.ts";
 
 /** Whether the server still waits for its first account. */
@@ -62,7 +63,12 @@ interface SetupBody {
  * `POST /api/setup` makes the admin and the first workspace. `code` is the
  * setup code the server logged, or undefined when it started set up.
  */
-export function registerSetup(app: FastifyInstance, db: Database, code: string | undefined): void {
+export function registerSetup(
+  app: FastifyInstance,
+  db: Database,
+  code: string | undefined,
+  events: ServerEvents,
+): void {
   app.get("/api/setup", async () => ({ needed: await setupNeeded(db) }));
 
   app.post<{ Body: SetupBody }>(
@@ -74,6 +80,18 @@ export function registerSetup(app: FastifyInstance, db: Database, code: string |
     async (request, reply) => {
       const body = request.body;
       if (code === undefined || !sameCode(body.code, code)) {
+        await events.attempt(
+          db,
+          {
+            action: "session.signed_in",
+            outcome: "failure",
+            reason: code === undefined ? "already set up" : "wrong setup code",
+            actor: { kind: "anonymous", email: body.email.slice(0, 320) },
+            details: { method: "setup" },
+          },
+          originOf(request),
+          request.log,
+        );
         return fail(reply, 403, "That is not the setup code the server wrote to its log.");
       }
       // Hashed before the lock, which a slow hash would hold.
@@ -101,11 +119,36 @@ export function registerSetup(app: FastifyInstance, db: Database, code: string |
           "INSERT INTO memberships (workspace_id, user_id, role) VALUES ($1, $2, 'owner')",
           [workspace.id, user.id],
         );
-        const session = await startSession(tx, user.id, request, {
-          method: "setup",
-          guards: signInGuards(db),
-        });
-        return { ...session, user, workspace };
+        const origin = originOf(request);
+        await events.emit(
+          tx,
+          {
+            action: "account.created",
+            actor: accountActor(user.id),
+            target: { type: "account", id: user.id, name: user.name },
+            details: { by: "setup", instanceAdmin: true },
+          },
+          origin,
+        );
+        await events.emit(
+          tx,
+          {
+            action: "workspace.created",
+            actor: accountActor(user.id),
+            workspace: workspace.id,
+            target: { type: "workspace", id: workspace.id, name: workspace.name },
+          },
+          origin,
+        );
+        return {
+          ...(await startSession(tx, user.id, request, {
+            method: "setup",
+            events,
+            guards: signInGuards(db),
+          })),
+          user,
+          workspace,
+        };
       });
       if (made === undefined) return fail(reply, 409, "The server is set up already.");
       request.log.info(

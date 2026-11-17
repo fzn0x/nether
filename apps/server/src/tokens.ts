@@ -25,6 +25,7 @@ import {
 } from "./sessions.ts";
 import { signInGuards } from "./signIns.ts";
 import { membership } from "./workspaces.ts";
+import { type EventActor, type ServerEvents, accountActor, originOf } from "./events.ts";
 
 /** What tells a token from a session's token, and lets secret scanners find one. */
 export const tokenPrefix = "nether_";
@@ -183,6 +184,14 @@ export function callerOf(request: FastifyRequest): ApiCaller {
   return caller;
 }
 
+/** An API caller as an event's actor: its account, through the token it used, if it used one. */
+export function callerActor(caller: ApiCaller): EventActor {
+  return accountActor(
+    caller.userId,
+    caller.token === null ? null : { id: caller.token.id, name: caller.token.name },
+  );
+}
+
 interface NewToken {
   readonly name: string;
   readonly access: Access;
@@ -211,7 +220,7 @@ const tokenParams = {
 } as const;
 
 /** The routes of an account's tokens: listing, making and revoking them, with a session. */
-export function registerTokens(app: FastifyInstance, db: Database): void {
+export function registerTokens(app: FastifyInstance, db: Database, events: ServerEvents): void {
   const account = signedIn(db);
 
   app.get("/api/tokens", { preHandler: account }, async (request) => {
@@ -268,6 +277,17 @@ export function registerTokens(app: FastifyInstance, db: Database): void {
             me.provider,
           ],
         );
+        await events.emit(
+          tx,
+          {
+            action: "token.created",
+            actor: accountActor(me.id),
+            workspace,
+            target: { type: "token", id, name: request.body.name.trim() },
+            details: { access: request.body.access, expiresInDays: days },
+          },
+          originOf(request),
+        );
         return true;
       });
       if (!made) {
@@ -291,10 +311,27 @@ export function registerTokens(app: FastifyInstance, db: Database): void {
     "/api/tokens/:token",
     { schema: { params: tokenParams }, preHandler: account },
     async (request, reply) => {
-      const { rows } = await db.query(
-        "DELETE FROM api_tokens WHERE id = $1 AND user_id = $2 RETURNING id",
-        [request.params.token.toLowerCase(), accountOf(request).id],
-      );
+      const me = accountOf(request).id;
+      const rows = await db.transaction(async (tx) => {
+        const revoked = await tx.query(
+          "DELETE FROM api_tokens WHERE id = $1 AND user_id = $2 RETURNING id, name, workspace_id",
+          [request.params.token.toLowerCase(), me],
+        );
+        const row = revoked.rows[0];
+        if (row !== undefined) {
+          await events.emit(
+            tx,
+            {
+              action: "token.revoked",
+              actor: accountActor(me),
+              workspace: readTextOrNull(row, "workspace_id"),
+              target: { type: "token", id: readText(row, "id"), name: readText(row, "name") },
+            },
+            originOf(request),
+          );
+        }
+        return revoked.rows;
+      });
       if (rows.length === 0) return fail(reply, 404, "This account has no such token.");
       return reply.code(204).send();
     },

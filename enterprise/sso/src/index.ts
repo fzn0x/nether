@@ -18,10 +18,10 @@ const readEvery = 86_400_000;
 
 export const ssoModule: EnterpriseModule = {
   feature: "sso",
-  plugin: (app, { db, config, isOn, whenOn, guards, disconnect, security }) => {
+  plugin: (app, { db, config, isOn, whenOn, events, guards, disconnect, security }) => {
     const enforcement = new Enforcement(db, isOn, config.ssoEnforce);
     const removeGuard = guards.add(enforcement);
-    const context = { db, config, whenOn, guards, enforcement };
+    const context = { db, config, whenOn, events, guards, enforcement };
     registerSignIn(app, context);
     registerConsole(app, { ...context, disconnect, security });
 

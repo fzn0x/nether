@@ -9,6 +9,7 @@ import type { FastifyInstance, FastifyPluginAsync, FastifyReply, FastifyRequest 
 import type { AiEndpoints } from "./aiEndpoints.ts";
 import type { Config } from "./config.ts";
 import type { Database, Queryable } from "./db.ts";
+import type { ServerEvents } from "./events.ts";
 import type { SecuritySettings } from "./settings.ts";
 import type { SignInGuards } from "./signIns.ts";
 
@@ -39,6 +40,12 @@ export interface EnterpriseServices {
    * a module adds its own, as single sign-on does to require a provider.
    */
   readonly guards: SignInGuards;
+  /**
+   * The server's events (ADR 0081): what a module listens to, as audit logs
+   * do, and tells of when it changes what the server's routes would, as the
+   * console setting a member's role does.
+   */
+  readonly events: ServerEvents;
 }
 
 /** What a module's plugin is given. */
@@ -161,9 +168,12 @@ export class EnterpriseSwitches {
     >;
   }
 
-  /** Keeps the console's choice for a feature the environment does not pin; this server sees it at once. */
-  async set(feature: EnterpriseFeature, on: boolean): Promise<void> {
-    await this.#db.query(
+  /**
+   * Keeps the console's choice for a feature the environment does not pin,
+   * in `db`'s transaction when given one; this server sees it at once.
+   */
+  async set(feature: EnterpriseFeature, on: boolean, db: Queryable = this.#db): Promise<void> {
+    await db.query(
       `INSERT INTO instance_settings (key, value) VALUES ($1, to_jsonb($2::boolean))
         ON CONFLICT (key) DO UPDATE SET value = excluded.value, updated_at = now()`,
       [settingKey(feature), on],
