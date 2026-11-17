@@ -27,6 +27,8 @@ const syncCommands: ReadonlySet<CommandId> = new Set([
   "spaces",
   "share",
   "notifications",
+  "webhooks",
+  "apiTokens",
 ]);
 
 /**

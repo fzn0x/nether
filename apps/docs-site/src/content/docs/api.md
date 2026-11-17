@@ -7,7 +7,7 @@ A Nether server has a REST API for scripts and other services. With a
 personal access token, it reads and writes the notes of the workspaces you
 belong to as Markdown, reads their databases and adds rows to them, and
 searches them. Webhooks tell other services when notes are made, changed
-or deleted. Making tokens and webhooks in the app comes next.
+or deleted. The app makes both, as below, and so does the API itself.
 
 ## Tokens
 
@@ -26,7 +26,15 @@ change your password, or make other tokens.
 
 ### Making one
 
-Making a token takes a session and your password. Sign in first:
+**In the app**, open **Servers and signing in** and choose **API tokens on**
+your server, under your account; or, in a vault that syncs, **API tokens**
+in the **Sync** menu. Name the token, choose its access, its workspace and
+when it expires, 90 days unless you change it, and type your password.
+**Make the token** shows it once, with **Copy** beside it. The list above
+shows each of your tokens, when it was last used, and **Revoke**.
+
+**Through the API**, making a token takes a session and your password.
+Sign in first:
 
 ```sh
 curl https://nether.example.org/api/sessions -H 'content-type: application/json' \
@@ -342,6 +350,16 @@ manage its webhooks; an end-to-end encrypted workspace has none, since
 the server cannot tell its notes apart.
 
 ### Making one
+
+**In the app**, in a vault that syncs with the workspace, choose
+**Workspace webhooks** in the **Sync** menu. Type the address, choose
+what to tell of, and **Add the webhook**: its secret shows once, with
+**Copy** beside it, and an address the server will not reach says why.
+Each webhook in the list shows whether it is on and why it fails, and
+has **Edit**, **Turn off** or **Turn on**, **New secret**, **Send a
+test**, **Recent events** and **Remove**.
+
+**Through the API**:
 
 ```sh
 curl https://nether.example.org/api/v1/workspaces/$WORKSPACE/webhooks \
