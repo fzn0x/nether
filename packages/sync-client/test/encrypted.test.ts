@@ -3,6 +3,7 @@
 // beside them, nothing the server keeps readable, files kept as ciphertext,
 // and a long log replaced by a snapshot.
 import { randomUUID } from "node:crypto";
+import type { Database } from "@nether/server/src/db.ts";
 import { afterEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
 import {
@@ -48,9 +49,41 @@ async function api(url: string, token: string, method: string, path: string, bod
   return response.status === 204 ? undefined : ((await response.json()) as Record<string, unknown>);
 }
 
+/**
+ * A database whose answer to one note's first push, once armed, waits until
+ * the next push of that note is answered, as PostgreSQL may answer two
+ * pushes stored at once: the first numbered, the second answered first. It
+ * waits a second at most, for a server that stores a note's pushes in turn.
+ */
+function answeringOutOfOrder() {
+  const gate = { note: "", armed: false };
+  let release: (() => void) | undefined;
+  const wrap = (database: Database): Database => ({
+    ...database,
+    async query(text, params) {
+      const result = await database.query(text, params);
+      const push =
+        gate.armed && text.includes("INSERT INTO encrypted_updates") && params?.[1] === gate.note;
+      if (!push) return result;
+      if (release === undefined) {
+        await new Promise<void>((resolve) => {
+          release = resolve;
+          setTimeout(resolve, 1000);
+        });
+        gate.armed = false;
+      } else {
+        // The second push is answered: the first's answer comes a moment after.
+        setTimeout(() => release?.(), 200);
+      }
+      return result;
+    },
+  });
+  return { gate, wrap };
+}
+
 /** A server with an account that has keys, and an encrypted workspace of its own. */
-async function encryptedServer() {
-  const served = await startServer();
+async function encryptedServer(wrap?: (database: Database) => Database) {
+  const served = await startServer({}, wrap);
   const me = (await api(served.url, served.token, "GET", "/api/me")) as { user: { id: string } };
   const pair = await newKeyPair();
   const phrase = newRecoveryPhrase();
@@ -134,6 +167,38 @@ describe("an encrypted workspace", () => {
       expect(text).not.toContain("secret");
       expect(text).not.toContain("Secret plan");
     }
+  });
+
+  it("merges two devices' edits at once, though the server answers their pushes out of order", async () => {
+    const { gate, wrap } = answeringOutOfOrder();
+    const served = await encryptedServer(wrap);
+    const laptop = new MemoryVault();
+    const plan = laptop.write("Projects/Secret plan.md", "the secret plan");
+    const encryption = { key: { version: 1, key: served.key }, keys: new Map([[1, served.key]]) };
+    await device(served, served.token, laptop, new MemoryStore(), encryption);
+    const token = await signIn(served.url);
+    const unlocked = await unlock(
+      served.url,
+      token,
+      served.workspaceId,
+      served.userId,
+      served.phrase,
+    );
+    const phone = await device(served, token, new MemoryVault(), new MemoryStore(), unlocked);
+    await until(() => phone.vault.text(plan) === "the secret plan");
+
+    // Each device's push of its edit is stored; the one numbered first is
+    // answered last, after the other device is told its own number.
+    gate.note = plan;
+    gate.armed = true;
+    laptop.edit(plan, (text) => {
+      text.insert(text.length, ", step one");
+    });
+    phone.vault.edit(plan, (text) => {
+      text.insert(0, "Step zero, ");
+    });
+    const merged = "Step zero, the secret plan, step one";
+    await until(() => laptop.text(plan) === merged && phone.vault.text(plan) === merged);
   });
 
   it("syncs a note's comments through the relay, kept as ciphertext", async () => {

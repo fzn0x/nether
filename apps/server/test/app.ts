@@ -77,6 +77,8 @@ export async function startServer(
     webhookWorker?: boolean;
     aiResolve?: Resolver;
     resolveTxt?: TxtResolver;
+    /** What the server queries instead of the test's database, as one that delays answers. */
+    wrapDb?: (db: Database) => Database;
   } = {},
 ): Promise<TestServer> {
   const db = await testDatabase();
@@ -85,7 +87,7 @@ export async function startServer(
   const config = readConfig({ ...baseEnv, ...options.env });
   const redis = options.redis ?? (await testRedis());
   const server = await buildApp(config, {
-    db,
+    db: options.wrapDb === undefined ? db : options.wrapDb(db),
     setupCode,
     ...(options.mailer === undefined ? {} : { mailer: options.mailer }),
     ...(options.blobs === undefined ? {} : { blobs: options.blobs }),

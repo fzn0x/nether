@@ -294,6 +294,15 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   50,000 notes the page's heap is 10 MB smaller, and the app idles 5 MB
   lower.
 
+### Fixed
+
+- In an encrypted workspace, two devices changing a note at once now each
+  get the other's change. Before, when the server answered their two
+  changes out of order, as PostgreSQL may, one device could miss the
+  other's change, and later syncs did not bring it. The relay now stores,
+  answers and sends a document's changes one at a time, in the order it
+  numbers them.
+
 ## [0.1.0] - 2026-11-15
 
 ### Added
