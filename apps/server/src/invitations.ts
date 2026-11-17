@@ -17,6 +17,7 @@ import {
   tokenField,
   uuidField,
 } from "./http.ts";
+import { higherRole, roleOf } from "./members.ts";
 import { hashPassword } from "./passwords.ts";
 import { type Level, accessible } from "./units.ts";
 import {
@@ -155,7 +156,9 @@ export function invites(invitation: OpenInvitation, email: string): boolean {
 
 /**
  * Accepts an invitation into an account, and gives the workspace with the
- * role the account has there: someone in it already keeps theirs.
+ * role the account has there: someone in it already keeps theirs. Someone
+ * only a group placed there gets the invitation's role as their own, so
+ * the group leaving does not take their place (ADR 0085).
  */
 export async function acceptInvitation(
   tx: Queryable,
@@ -169,6 +172,21 @@ export async function acceptInvitation(
      ON CONFLICT (workspace_id, user_id) DO NOTHING`,
     [invitation.workspaceId, userId, invitation.role],
   );
+  const { rows: placed } = await tx.query(
+    `SELECT role FROM memberships
+      WHERE workspace_id = $1 AND user_id = $2 AND own_role = 'none'
+      FOR UPDATE`,
+    [invitation.workspaceId, userId],
+  );
+  if (placed[0] !== undefined) {
+    const given = roleOf(readText(placed[0], "role"));
+    const own = roleOf(invitation.role);
+    const role = higherRole(own, given) ?? given;
+    await tx.query(
+      "UPDATE memberships SET role = $3, own_role = $4 WHERE workspace_id = $1 AND user_id = $2",
+      [invitation.workspaceId, userId, role, role === own ? null : own],
+    );
+  }
   if (invitation.unitId !== null && invitation.level !== null) {
     await tx.query(
       `INSERT INTO unit_grants (unit_id, user_id, level) VALUES ($1, $2, $3)
