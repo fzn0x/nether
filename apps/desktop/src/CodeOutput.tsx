@@ -4,11 +4,20 @@
 // loads with the first block in a language it draws.
 import type { NoteId } from "@nether/core";
 import type { LinkGraph } from "@nether/graph";
-import type { CodeBlockOutput } from "@nether/plugin-api";
+import type { CodeBlockOutput, NoteContext } from "@nether/plugin-api";
 import type { Vault } from "@nether/storage";
-import { Suspense, useCallback, useEffect, useState, useSyncExternalStore } from "react";
+import {
+  Suspense,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import type { VaultMedia } from "./backend.ts";
 import { t } from "./messages.ts";
+import { NoteDayContext } from "./noteDay.ts";
 import type {
   CodeBlockDrawing,
   CodeBlockNote,
@@ -70,7 +79,16 @@ export function CodeOutput(props: Props) {
 }
 
 function Drawn(props: Props & { readonly processor: CodeBlockProcessor }) {
-  const { processor, info, source } = props;
+  const { processor, info, source, vault } = props;
+  const dayOf = useContext(NoteDayContext);
+  const entry = props.note === undefined ? undefined : vault.note(props.note.id);
+  const { id, title, path } = entry ?? {};
+  // The note the block is in, as plugins are told of it, with its day for a daily note.
+  const note = useMemo((): NoteContext | undefined => {
+    if (id === undefined || title === undefined || path === undefined) return undefined;
+    const day = dayOf(path);
+    return { id, title, path, ...(day === undefined ? {} : { day }) };
+  }, [id, title, path, dayOf]);
   const [drawing, setDrawing] = useState<CodeBlockDrawing | undefined>();
   const [failure, setFailure] = useState<string | undefined>();
   useEffect(() => {
@@ -107,7 +125,13 @@ function Drawn(props: Props & { readonly processor: CodeBlockProcessor }) {
     );
   }
   return drawing?.render === undefined ? null : (
-    <Rendered render={drawing.render} language={processor.language} info={info} source={source} />
+    <Rendered
+      render={drawing.render}
+      language={processor.language}
+      info={info}
+      source={source}
+      note={note}
+    />
   );
 }
 
@@ -116,15 +140,22 @@ function Rendered(props: {
   readonly language: string;
   readonly info: string;
   readonly source: string;
+  readonly note: NoteContext | undefined;
 }) {
-  const { render, language, info, source } = props;
+  const { render, language, info, source, note } = props;
   const [output, setOutput] = useState<CodeBlockOutput>(null);
   useEffect(() => {
     let current = true;
     // Drawn once typing pauses, not at every key.
     const timer = setTimeout(() => {
       const theme = shownDark() ? "dark" : "light";
-      render(source, { language, info, theme, target: "editor" }).then(
+      render(source, {
+        language,
+        info,
+        theme,
+        target: "editor",
+        ...(note === undefined ? {} : { note }),
+      }).then(
         (drawn) => {
           if (current) setOutput(drawn);
         },
@@ -137,7 +168,7 @@ function Rendered(props: {
       current = false;
       clearTimeout(timer);
     };
-  }, [render, language, info, source]);
+  }, [render, language, info, source, note]);
 
   if (output === null) return null;
   if ("error" in output) return <Failed message={output.error} />;
