@@ -749,6 +749,23 @@ export const migrations: readonly Migration[] = [
   },
   {
     version: 26,
+    name: "how each session began, and the providers single sign-on requires",
+    sql: `
+      -- How a session began (ADR 0080): password, code, oidc, invitation,
+      -- setup, or sso, with single sign-on's provider beside it. A token
+      -- keeps the method of the session that made it. Those begun before
+      -- keep none, and enforcement ends them for the accounts it covers.
+      ALTER TABLE sessions ADD COLUMN method text;
+      ALTER TABLE sessions ADD COLUMN provider text;
+      ALTER TABLE api_tokens ADD COLUMN method text;
+      ALTER TABLE api_tokens ADD COLUMN provider text;
+
+      -- Whether accounts at a provider's domains sign in through it alone.
+      ALTER TABLE sso_providers ADD COLUMN required boolean NOT NULL DEFAULT false;
+    `,
+  },
+  {
+    version: 27,
     name: "deactivated accounts, and the directories that provision accounts and groups",
     sql: `
       -- When an account was deactivated (ADR 0085): it signs in no way, and

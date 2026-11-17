@@ -14,6 +14,7 @@ import {
 } from "react";
 import type { Exporter, VaultMedia } from "./backend.ts";
 import type { ExportFormat } from "./exportNotes.ts";
+import type { ExportPolicy } from "./exportPolicy.ts";
 import { t } from "./messages.ts";
 import type { CodeBlockRegistry } from "./plugins/codeBlocks.ts";
 import { useModal } from "./useModal.ts";
@@ -43,9 +44,12 @@ export function ExportDialog(props: {
   readonly codeBlocks: CodeBlockRegistry;
   readonly note: NoteEntry;
   readonly notes: readonly NoteEntry[];
+  /** The workspace's data policy, which may keep its notes from being exported (ADR 0088). */
+  readonly policy: ExportPolicy;
   readonly onClose: () => void;
 }) {
-  const { vault, vaultName, graph, media, exporter, codeBlocks, note, notes, onClose } = props;
+  const { vault, vaultName, graph, media, exporter, codeBlocks, note, notes, policy, onClose } =
+    props;
   const folder = folderOf(note.path);
   const [scope, setScope] = useState<Scope>("note");
   const [format, setFormat] = useState<ExportFormat>("markdown");
@@ -66,6 +70,12 @@ export function ExportDialog(props: {
   const dialog = useRef<HTMLFormElement>(null);
   useModal(dialog);
 
+  // The workspace's server is asked as the dialog opens, and again as an export starts.
+  const { blocked, check } = policy;
+  useEffect(() => {
+    void check();
+  }, [check]);
+
   // An export still running stops when the dialog closes.
   useEffect(
     () => () => {
@@ -77,6 +87,14 @@ export function ExportDialog(props: {
   const start = (event: SyntheticEvent) => {
     event.preventDefault();
     if (status.kind === "working") return;
+    setStatus({ kind: "working", done: 0, total: chosen.length });
+    void check().then((why) => {
+      if (why === undefined) run();
+      else setStatus({ kind: "idle" });
+    });
+  };
+
+  const run = () => {
     const controller = new AbortController();
     running.current = controller;
     setStatus({ kind: "working", done: 0, total: chosen.length });
@@ -136,6 +154,38 @@ export function ExportDialog(props: {
   };
 
   const working = status.kind === "working";
+  // The server's policy keeps the workspace's notes: the dialog says so, and offers nothing.
+  if (blocked !== undefined && !working) {
+    return (
+      <div
+        className="switcher-backdrop"
+        onMouseDown={(event) => {
+          if (event.target === event.currentTarget) onClose();
+        }}
+      >
+        <form
+          className="switcher dialog"
+          ref={dialog}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="export-title"
+          onSubmit={(event) => {
+            event.preventDefault();
+            onClose();
+          }}
+          onKeyDown={onKeyDown}
+        >
+          <h2 id="export-title">{t("exportTitle")}</h2>
+          <p role="alert">{blocked}</p>
+          <div className="dialog-actions">
+            <button type="submit" className="primary" autoFocus>
+              {t("close")}
+            </button>
+          </div>
+        </form>
+      </div>
+    );
+  }
   const scopes: readonly {
     readonly value: Scope;
     readonly label: string;

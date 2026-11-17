@@ -58,6 +58,7 @@ import { type LayoutRegistry, useLayouts } from "./plugins/layouts.ts";
 import { type PropertyChangeRegistry, useWatched } from "./plugins/propertyChanges.ts";
 import { DatabaseTriggers } from "./DatabaseTriggers.tsx";
 import { useDocumentProperties } from "./DatabaseSlot.tsx";
+import { useExportPolicyContext } from "./exportPolicy.ts";
 import { ListEditor } from "./PropertiesPanel.tsx";
 import type { Exporter, VaultMedia } from "./backend.ts";
 import {
@@ -711,6 +712,7 @@ export function DatabaseView(props: DatabaseProps) {
 function Database(props: DatabaseProps & { readonly entries: readonly PropertyEntry[] }) {
   const { vault, media, exporter, graph, document, path, onOpenNote, layouts, entries } = props;
   const { propertyChanges } = props;
+  const exportPolicy = useExportPolicyContext();
   const available = useLayouts(layouts);
   const pluginTypes = usePropertyTypes(props.propertyTypes);
   /** The view of a property of a plugin's type, when its plugin is here. */
@@ -1022,11 +1024,19 @@ function Database(props: DatabaseProps & { readonly entries: readonly PropertyEn
   const shown = withFormulas(withRollups(rows, schema, findRow), schema);
   const result = view === undefined ? undefined : runView(shown, view, schema);
 
-  /** Saves a view as CSV, its rows as it shows them, where the user chooses. */
+  /**
+   * Saves a view as CSV, its rows as it shows them, where the user chooses,
+   * unless the workspace's data policy keeps its notes (ADR 0088).
+   */
   const exportCsv = (exporting: View) => {
     setExported(undefined);
     const text = viewCsv(shown, exporting, schema, t("builtIn_title"));
     void (async () => {
+      const why = await exportPolicy.check();
+      if (why !== undefined) {
+        setExported({ failed: why });
+        return;
+      }
       const token = await exporter.choose(`${rowTitle({ path })} - ${exporting.name}`, "csv");
       if (token === undefined) return;
       try {
@@ -1315,6 +1325,8 @@ function Database(props: DatabaseProps & { readonly entries: readonly PropertyEn
             <button
               type="button"
               className="quiet"
+              disabled={exportPolicy.blocked !== undefined}
+              title={exportPolicy.blocked}
               onClick={() => {
                 exportCsv(view);
               }}

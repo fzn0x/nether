@@ -9,7 +9,8 @@
 // workspace's owner, gets no mail, and waits for no key. The server's last
 // active instance admin is never deactivated, so its console keeps a way in.
 import { type Queryable, readBoolean, readText } from "./db.ts";
-import type { EventActor, EventOrigin, ServerEvents, SessionMethod } from "./events.ts";
+import type { EventActor, EventOrigin, ServerEvents } from "./events.ts";
+import type { Refusal } from "./signIns.ts";
 
 /** Who deactivates or reactivates an account, as its events name them: a directory, at first. */
 export interface AccountChanger {
@@ -33,21 +34,12 @@ export const lastInstanceAdmin =
 export const deactivatedMessage =
   "This account is deactivated: ask your organization's admin to turn it back on.";
 
-/** A sign-in refused because its account is deactivated, as `startSession` throws it, with how it came. */
-export class AccountDeactivated extends Error {
-  override readonly name = "AccountDeactivated";
-  readonly userId: string;
-  readonly method: SessionMethod;
-  /** The provider of single sign-on's it came through, for `sso`. */
-  readonly provider: string | undefined;
-
-  constructor(userId: string, method: SessionMethod, provider?: string) {
-    super(deactivatedMessage);
-    this.userId = userId;
-    this.method = method;
-    this.provider = provider;
-  }
-}
+/**
+ * Why a deactivated account's sign-in is refused: `startSession` throws
+ * SignInRefused with it, as a guard's refusal is, and every way in answers
+ * it as it answers a guard, but a provider's, which says so.
+ */
+export const deactivatedRefusal: Refusal = { reason: "deactivated" };
 
 /** Whether an account is deactivated; false for one there is not. */
 export async function isDeactivated(db: Queryable, userId: string): Promise<boolean> {

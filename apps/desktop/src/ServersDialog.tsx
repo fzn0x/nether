@@ -8,7 +8,10 @@
 // to a workspace joins here with the invitation's link, into the account
 // they are signed in to on its server, or a new one. The web app keeps to
 // its own server (ADR 0053): it starts at signing in there, and offers no
-// other.
+// other. Where single sign-on is on (ADR 0080), signing in asks for the
+// address first, and goes straight to its domain's provider when it has
+// one; where everyone signs in through a provider, the password and the
+// code wait behind signing in as an instance admin.
 import { type KeyboardEvent, type ReactNode, useEffect, useRef, useState } from "react";
 import { backend } from "./backend.ts";
 import type { PreparedKeys } from "./encryption.ts";
@@ -19,9 +22,11 @@ import {
   type LoopbackWait,
   type SignInMethods,
   type SignedIn,
+  ServerError,
   acceptInvitation,
   accountKeys,
   askForCode,
+  findProvider,
   lookUpInvitation,
   readInvitationLink,
   redeemCode,
@@ -39,7 +44,17 @@ import { useModal } from "./useModal.ts";
 type Step =
   | { readonly kind: "list" }
   | { readonly kind: "address" }
-  | { readonly kind: "signIn"; readonly url: string; readonly methods: SignInMethods }
+  | {
+      readonly kind: "signIn";
+      readonly url: string;
+      readonly methods: SignInMethods;
+      /**
+       * The ways offered once the address is known: all of them, the
+       * providers alone, or the password and code of an instance admin.
+       * None yet asks for the address first, where single sign-on is on.
+       */
+      readonly ways?: Ways;
+    }
   /** A server with no account yet, set up with the code in its log. */
   | { readonly kind: "setup"; readonly url: string }
   | {
@@ -59,6 +74,14 @@ type Step =
       /** The account this app is signed in to on that server, which joins; none makes one. */
       readonly account: ServerAccount | undefined;
     };
+
+/** The ways a sign-in step offers, once the address is known. */
+type Ways = "all" | "providers" | "admin";
+
+/** Whether a sign-in step asks for the address before anything else. */
+function asksAddress(step: Step): boolean {
+  return step.kind === "signIn" && step.ways === undefined && step.methods.sso.length > 0;
+}
 
 /** An account's end-to-end encryption: not turned on, on but not on this device, or on here. */
 type Encryption = "off" | "locked" | "on";
@@ -142,9 +165,10 @@ export function ServersDialog(props: {
   useModal(dialog);
 
   // Each step starts at its main control: the field to fill, or Done.
+  const ways = step.kind === "signIn" ? step.ways : undefined;
   useEffect(() => {
     dialog.current?.querySelector<HTMLElement>("[data-autofocus]")?.focus();
-  }, [step.kind, accounts]);
+  }, [step.kind, ways, accounts]);
 
   useEffect(() => {
     let current = true;
@@ -236,6 +260,19 @@ export function ServersDialog(props: {
         await finish(url, signedIn);
         setStatus(t("setUpDone", { server: hostOf(url), name: signedIn.user.name }));
       });
+    } else if (step.kind === "signIn" && asksAddress(step)) {
+      const { url, methods } = step;
+      void act(async () => {
+        const found = await findProvider(backend.serverFetch, url, email);
+        const ways: Ways = found.required || methods.ssoEveryone ? "providers" : "all";
+        if (found.provider === undefined) {
+          setStep({ kind: "signIn", url, methods, ways });
+          return;
+        }
+        // Straight to its domain's provider; back here, the other ways it may use.
+        setStep({ kind: "signIn", url, methods, ways });
+        await throughProvider(url, found.provider.id);
+      });
     } else if (step.kind === "signIn") {
       void act(async () => {
         await finish(
@@ -272,11 +309,21 @@ export function ServersDialog(props: {
       void act(async () => {
         const { url, offer, account } = step;
         if (account === undefined) {
-          const signedIn = await acceptInvitation(backend.serverFetch, url, step.token, {
-            name,
-            email,
-            password,
-          });
+          let signedIn: SignedIn | undefined;
+          try {
+            signedIn = await acceptInvitation(backend.serverFetch, url, step.token, {
+              name,
+              email,
+              password,
+            });
+          } catch (reason) {
+            // Its provider makes or finds the account, which accepts the invitation.
+            if (!(reason instanceof ServerError) || reason.sso === undefined) throw reason;
+            setStatus(t("invitationThroughProvider", { name: reason.sso.name }));
+            await throughProvider(url, reason.sso.id, step.token);
+            setInvitation("");
+            return;
+          }
           if (signedIn !== undefined) await finish(url, signedIn);
         } else {
           const session = await backend.serverToken(url);
@@ -348,33 +395,37 @@ export function ServersDialog(props: {
     });
   };
 
-  const withProvider = (url: string, sso?: string) => {
-    void act(async () => {
-      const loopback = await backend.loopback();
-      waiting.current = loopback;
-      cancelled.current = false;
-      setBrowser(loopback);
-      setStatus(t("waitingForBrowser"));
-      try {
-        await finish(
+  /** Signs in through a provider in the system's browser, accepting an invitation if given one. */
+  const throughProvider = async (url: string, sso?: string, invitationToken?: string) => {
+    const loopback = await backend.loopback();
+    waiting.current = loopback;
+    cancelled.current = false;
+    setBrowser(loopback);
+    setStatus(t("waitingForBrowser"));
+    try {
+      await finish(
+        url,
+        await signInWithProvider(
+          backend.serverFetch,
           url,
-          await signInWithProvider(
-            backend.serverFetch,
-            url,
-            loopback,
-            (target) => backend.openUrl(target),
-            sso,
-          ),
-        );
-      } catch (reason) {
-        // Cancelled here, by the Cancel button: nothing went wrong.
-        if (!wasCancelled()) throw reason;
-        setStatus(undefined);
-      } finally {
-        waiting.current = undefined;
-        setBrowser(undefined);
-      }
-    });
+          loopback,
+          (target) => backend.openUrl(target),
+          sso,
+          invitationToken,
+        ),
+      );
+    } catch (reason) {
+      // Cancelled here, by the Cancel button: nothing went wrong.
+      if (!wasCancelled()) throw reason;
+      setStatus(undefined);
+    } finally {
+      waiting.current = undefined;
+      setBrowser(undefined);
+    }
+  };
+
+  const withProvider = (url: string, sso?: string) => {
+    void act(() => throughProvider(url, sso));
   };
 
   /** An account's encryption, and the way to turn it on or unlock it here. */
@@ -783,9 +834,9 @@ export function ServersDialog(props: {
         </label>
       </fieldset>
     );
-  } else if (step.kind === "signIn") {
-    const { url, methods } = step;
-    primary = t("signIn");
+  } else if (step.kind === "signIn" && asksAddress(step)) {
+    const { url } = step;
+    primary = t("continueStep");
     back =
       only === undefined
         ? { kind: "address" }
@@ -795,6 +846,88 @@ export function ServersDialog(props: {
     body = (
       <fieldset>
         <legend>{t("signInTo", { server: hostOf(url) })}</legend>
+        <label className="field">
+          {t("emailAddress")}
+          <input
+            type="email"
+            autoComplete="username"
+            required
+            data-autofocus
+            value={email}
+            aria-describedby="sign-in-address-hint"
+            onChange={(event) => {
+              setEmail(event.target.value);
+            }}
+          />
+          <span id="sign-in-address-hint" className="hint">
+            {t("signInAddressHint")}
+          </span>
+        </label>
+      </fieldset>
+    );
+  } else if (step.kind === "signIn" && step.ways === "providers") {
+    const { url, methods } = step;
+    primary = t("signIn");
+    back = { kind: "signIn", url, methods };
+    body = (
+      <fieldset>
+        <legend>{t("signInTo", { server: hostOf(url) })}</legend>
+        <p className="hint">{t("signInThroughProvider", { email: email.trim() })}</p>
+        {methods.oidc === null ? null : (
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => {
+              withProvider(url);
+            }}
+          >
+            {t("signInWith", { name: methods.oidc.name })}
+          </button>
+        )}
+        {methods.sso.map((provider, index) => (
+          <button
+            key={provider.id}
+            type="button"
+            className={index === 0 && methods.oidc === null ? "primary" : undefined}
+            disabled={busy}
+            {...(index === 0 ? { "data-autofocus": true } : {})}
+            onClick={() => {
+              withProvider(url, provider.id);
+            }}
+          >
+            {t("signInWith", { name: provider.name })}
+          </button>
+        ))}
+        {methods.password || methods.emailCode ? (
+          <button
+            type="button"
+            className="quiet"
+            disabled={busy}
+            onClick={() => {
+              setError(undefined);
+              setStep({ kind: "signIn", url, methods, ways: "admin" });
+            }}
+          >
+            {t("signInAsAdmin")}
+          </button>
+        ) : null}
+      </fieldset>
+    );
+  } else if (step.kind === "signIn") {
+    const { url, methods } = step;
+    primary = t("signIn");
+    back =
+      step.ways !== undefined
+        ? { kind: "signIn", url, methods }
+        : only === undefined
+          ? { kind: "address" }
+          : accounts === undefined || accounts.length === 0
+            ? undefined
+            : { kind: "list" };
+    body = (
+      <fieldset>
+        <legend>{t("signInTo", { server: hostOf(url) })}</legend>
+        {step.ways === "admin" ? <p className="hint">{t("signInAsAdminHint")}</p> : null}
         {methods.password || methods.emailCode ? (
           <label className="field">
             {t("emailAddress")}
@@ -802,7 +935,7 @@ export function ServersDialog(props: {
               type="email"
               autoComplete="username"
               required
-              data-autofocus
+              {...(step.ways === undefined ? { "data-autofocus": true } : {})}
               value={email}
               onChange={(event) => {
                 setEmail(event.target.value);
@@ -817,6 +950,8 @@ export function ServersDialog(props: {
               type="password"
               autoComplete="current-password"
               required
+              // With the address given already, the password is next.
+              {...(step.ways === undefined ? {} : { "data-autofocus": true })}
               value={password}
               onChange={(event) => {
                 setPassword(event.target.value);
@@ -894,9 +1029,13 @@ export function ServersDialog(props: {
       </>
     );
   }
-  // Only a password signs in with the main button; a server without one
-  // offers its other ways as their own buttons.
-  const showPrimary = step.kind !== "signIn" || step.methods.password;
+  // Only a password signs in with the main button, after the address where
+  // that comes first; a server without one offers its other ways as their
+  // own buttons, as the providers' step does.
+  const showPrimary =
+    step.kind !== "signIn" ||
+    asksAddress(step) ||
+    (step.methods.password && step.ways !== "providers");
 
   return (
     <div

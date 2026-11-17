@@ -107,4 +107,32 @@ describe("a note's versions on the server", () => {
     expect(await purgeVersions(test.db, 7)).toBe(1);
     expect(await count(test)).toBe(0);
   });
+
+  it("keeps each workspace's versions as its data policy says, and every one on hold", async () => {
+    const test = await start();
+    const made = await test.server.inject({
+      method: "POST",
+      url: "/api/workspaces",
+      headers: bearer(test.token),
+      payload: { name: "Other" },
+    });
+    const other = made.json<{ id: string }>().id;
+    for (const workspace of [test.workspaceId, other]) {
+      const note = randomUUID();
+      await storeDocument(test.db, workspace, note, stateOf("one"));
+      await storeDocument(test.db, workspace, note, stateOf("two"));
+    }
+    await age(test, 5 * 24 * 60);
+    const kept = (historyDays: number | null, legalHold = false) => ({ historyDays, legalHold });
+    // Every workspace keeps the server's 30 days; Other, set apart, keeps 3.
+    expect(
+      await purgeVersions(test.db, 30, { every: kept(null), apart: new Map([[other, kept(3)]]) }),
+    ).toBe(1);
+    expect(await count(test)).toBe(1);
+    // On hold, nothing goes, whatever the days.
+    expect(await purgeVersions(test.db, 30, { every: kept(1, true), apart: new Map() })).toBe(0);
+    expect(await count(test)).toBe(1);
+    expect(await purgeVersions(test.db, 30, { every: kept(1), apart: new Map() })).toBe(1);
+    expect(await count(test)).toBe(0);
+  });
 });

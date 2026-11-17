@@ -15,6 +15,7 @@ import websocket from "@fastify/websocket";
 import { Hocuspocus, type LocalTransactionOrigin } from "@hocuspocus/server";
 import type { FastifyInstance } from "fastify";
 import * as Y from "yjs";
+import type { Closable } from "./cluster.ts";
 import { type Database, type Queryable, readBytes, readCount, readText } from "./db.ts";
 import { socketCookieToken } from "./cookies.ts";
 import { fail, uuidField } from "./http.ts";
@@ -399,6 +400,8 @@ function headersOf(raw: Record<string, string | string[] | undefined>): Headers 
 export interface SyncControl extends VaultEditor {
   /** Closes an account's connections, so its apps connect again and are checked anew. */
   disconnect(userId: string): void;
+  /** Every socket syncing a document here, once each. */
+  sockets(): Iterable<Closable>;
   /**
    * A document's state as it is now: Hocuspocus's copy while it is open,
    * with the edits not stored yet, or else as last stored; none for one
@@ -747,6 +750,14 @@ export async function registerSync(
           if (context?.userId === userId) connection.webSocket.close(4403, "Access changed");
         }
       }
+    },
+
+    sockets() {
+      const open = new Set<Closable>();
+      for (const document of hocuspocus.documents.values()) {
+        for (const connection of document.getConnections()) open.add(connection.webSocket);
+      }
+      return open;
     },
 
     async state(workspaceId, document) {

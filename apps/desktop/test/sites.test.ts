@@ -60,6 +60,8 @@ describe("the site requests", () => {
     );
     expect(await listSites(fetcher, base, "t0k", workspace)).toEqual({
       publishing: true,
+      // A server from before data policies allows it (ADR 0088).
+      allowed: true,
       manages: false,
       sites: [
         {
@@ -79,6 +81,16 @@ describe("the site requests", () => {
     expect(sent[0]).toMatchObject({
       url: `${base}/api/workspaces/${workspace}/sites`,
       method: "GET",
+    });
+  });
+
+  it("say when the server's data policy stops the workspace's sites", async () => {
+    const { fetcher } = fakeFetch(() =>
+      Response.json({ publishing: true, policy: "off", manages: true, sites: [] }),
+    );
+    expect(await listSites(fetcher, base, "t0k", workspace)).toMatchObject({
+      publishing: true,
+      allowed: false,
     });
   });
 

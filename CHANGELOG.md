@@ -15,7 +15,11 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   log. Stores merge with what another node stored since, so two nodes, or
   an old and a new pod during a restart, never drop each other's edits;
   making a note through the API locks the workspace on every node; and
-  hourly work runs on one node at a time
+  hourly work runs on one node at a time. A change to someone's access
+  closes their sync and relay connections on every node, through the
+  cluster bus; a node whose bus comes back after it was lost closes every
+  socket it has, spread over five seconds. `NETHER_SETUP_CODE` sets the
+  first-run setup code, so every node takes the same one
   ([ADR 0082](docs/adr/0082-several-nodes-share-sync-through-valkey-take-their-order-from-postgresql-and-roll-out-one-at-a-time.md)).
 - Publishing: a page with its subpages, or the folder it is in, published
   from its Share dialog as a site anyone opens at the server's
@@ -310,6 +314,18 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `NETHER_SSO_PRIVATE` lets providers be on the server's own network. CI
   signs in through Keycloak, by SAML and by OpenID Connect
   ([ADR 0080](docs/adr/0080-single-sign-on-binds-saml-and-oidc-providers-to-email-domains-and-enforcement-refuses-other-ways-in.md)).
+- Single sign-on, second part: a provider can be required at its domains,
+  or of everyone, with instance admins exempt unless the console covers
+  them too. An account it covers signs in through its provider alone: a
+  password, a code, joining with a password, setting one and another
+  domain's provider are refused, telling nothing of accounts, and its
+  sessions and tokens that began another way end as the console saves,
+  and at their next request. Each session and token keeps how it began.
+  The apps ask for the address first and go straight to its provider.
+  `NETHER_SSO_ENFORCE=off` is the way back in when a provider breaks.
+  Okta's and Entra ID's answers are tested as they send them, and CI
+  requires Keycloak at its domain
+  ([ADR 0080](docs/adr/0080-single-sign-on-binds-saml-and-oidc-providers-to-email-domains-and-enforcement-refuses-other-ways-in.md)).
 - AI locked to approved endpoints, the `policies` feature's first part: an
   instance admin lists the addresses AI may go to, in the console's AI
   endpoints section or with `NETHER_AI_ENDPOINTS`, and for every workspace
@@ -339,6 +355,15 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   A change closes the visits it stops, and `/api/me` tells the apps each
   workspace's `export`
   ([ADR 0088](docs/adr/0088-data-policies-set-a-workspaces-retention-legal-hold-public-sharing-and-export-over-its-owners.md)).
+  The desktop and web apps keep to it: with export off, the Export dialog
+  and a database's CSV export say the server's policy keeps the
+  workspace's notes, asking the server as an export starts and holding to
+  its last answer offline, and the Share dialog offers only what links and
+  publishing may do, saying why. Retention and legal hold on the server:
+  each workspace's history is kept for its policy's days, nothing of a
+  workspace on legal hold is purged, the audit log purges nothing while
+  any workspace is on hold, `/api/me` gives the apps each workspace's
+  trash days and hold, and each change of a policy is in the audit log.
 - Provisioning, first part: an account can be deactivated, which the
   server enforces whether the `scim` feature is on or off. It signs in no
   way: a password answers as a wrong one, no email code is sent, and a

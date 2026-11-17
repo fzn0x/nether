@@ -20,7 +20,7 @@ import {
   unpublishSite,
 } from "./sites.ts";
 import { SiteDomain } from "./SiteDomain.tsx";
-import type { VaultLink } from "./sync.ts";
+import { type VaultLink, hostOf } from "./sync.ts";
 
 type Scope = "page" | "folder";
 
@@ -140,6 +140,9 @@ export function SharePublish(props: {
           ) : sites.publishing ? null : (
             <p role="status">{t("publishOff")}</p>
           )}
+          {sites.allowed ? null : (
+            <p className="hint">{t("publishPolicyOff", { server: hostOf(server) })}</p>
+          )}
           {shown.length === 0 ? null : (
             <ul className="plugin-list">
               {shown.map((site) => (
@@ -198,7 +201,7 @@ export function SharePublish(props: {
               ))}
             </ul>
           )}
-          {chosen === undefined || !sites.publishing ? null : (
+          {chosen === undefined || !sites.publishing || !sites.allowed ? null : (
             <form className="share-link-new" onSubmit={publish}>
               {scopes.length < 2 ? null : (
                 <fieldset disabled={busy}>

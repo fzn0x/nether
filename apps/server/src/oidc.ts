@@ -23,9 +23,10 @@ import { type Database, type Queryable, readBoolean, readText, readTextOrNull } 
 import { emailKey, fail, limitByAddress, tokenField } from "./http.ts";
 import { acceptInvitation, invites, openInvitation } from "./invitations.ts";
 import type { CheckedFetch } from "./outbound.ts";
-import { AccountDeactivated, deactivatedMessage, isDeactivated } from "./accounts.ts";
-import { newToken, refusedDeactivated, startSession, tokenHash } from "./sessions.ts";
+import { deactivatedMessage, deactivatedRefusal, isDeactivated } from "./accounts.ts";
+import { type NewSession, newToken, startSession, tokenHash } from "./sessions.ts";
 import { type EventOrigin, type ServerEvents, accountActor, originOf } from "./events.ts";
+import { SignInRefused, signInGuards } from "./signIns.ts";
 
 /** Minutes a flow may take at the provider. */
 export const flowMinutes = 10;
@@ -39,7 +40,9 @@ export type OidcError =
   | "email_not_verified"
   | "invitation"
   | "other_address"
-  | "provider_error";
+  | "provider_error"
+  /** The account signs in through another provider, as single sign-on requires (ADR 0080). */
+  | "sso_required";
 
 /**
  * Whether the browser may be sent back to an address: the app's loopback
@@ -242,6 +245,7 @@ export function registerOidc(
   publicUrl: string,
   events: ServerEvents,
 ): void {
+  const guards = signInGuards(db);
   const provider = oidcClient(
     {
       issuer: oidc.issuer,
@@ -421,30 +425,49 @@ export function registerOidc(
         return failed("provider_error");
       }
 
-      const outcome = await db.transaction(async (tx) => {
-        // Taken now, so a second answer with the same state finds it gone.
-        const taken = await tx.query(
-          `SELECT id FROM oidc_flows WHERE id = $1 AND handoff_hash IS NULL FOR UPDATE`,
-          [flowId],
-        );
-        if (taken.rows.length === 0) return { error: "provider_error" } as const;
-        const resolved = await resolve(
-          tx,
-          person,
-          readTextOrNull(flow, "invitation_hash"),
-          originOf(request),
-        );
-        if ("error" in resolved) return resolved;
-        const code = newToken();
-        await tx.query(
-          `UPDATE oidc_flows
+      const outcome = await db
+        .transaction(async (tx) => {
+          // Taken now, so a second answer with the same state finds it gone.
+          const taken = await tx.query(
+            `SELECT id FROM oidc_flows WHERE id = $1 AND handoff_hash IS NULL FOR UPDATE`,
+            [flowId],
+          );
+          if (taken.rows.length === 0) return { error: "provider_error" } as const;
+          const resolved = await resolve(
+            tx,
+            person,
+            readTextOrNull(flow, "invitation_hash"),
+            originOf(request),
+          );
+          if ("error" in resolved) return resolved;
+          // Told now, while the browser is still here, rather than when the app redeems.
+          const users = await tx.query("SELECT email, instance_admin FROM users WHERE id = $1", [
+            resolved.userId,
+          ]);
+          const attempt = {
+            userId: resolved.userId,
+            email: readText(users.rows[0], "email"),
+            instanceAdmin: readBoolean(users.rows[0], "instance_admin"),
+            method: "oidc" as const,
+            provider: null,
+          };
+          const refusal = await guards.check(attempt, tx);
+          // Refused, the account it made or linked and the invitation it took are not kept.
+          if (refusal !== undefined) throw new SignInRefused(refusal, attempt);
+          const code = newToken();
+          await tx.query(
+            `UPDATE oidc_flows
               SET handoff_hash = $2, user_id = $3, workspace_id = $4,
                   expires_at = now() + $5 * interval '1 second'
             WHERE id = $1`,
-          [flowId, tokenHash(code), resolved.userId, resolved.workspaceId, handoffSeconds],
-        );
-        return { code };
-      });
+            [flowId, tokenHash(code), resolved.userId, resolved.workspaceId, handoffSeconds],
+          );
+          return { code };
+        })
+        .catch((error: unknown) => {
+          if (!(error instanceof SignInRefused)) throw error;
+          return { error: "sso_required" } as const;
+        });
       if ("error" in outcome) return failed(outcome.error, person.email);
       return back(reply, redirect, { code: outcome.code });
     },
@@ -457,7 +480,7 @@ export function registerOidc(
       onRequest: limitByAddress(app, "oidc-redeem", 30, "5 minutes"),
     },
     async (request, reply) => {
-      const redeemed = db.transaction(async (tx) => {
+      const outcome = await db.transaction(async (tx) => {
         // Spent by any try, right or wrong.
         const { rows } = await tx.query(
           `DELETE FROM oidc_flows
@@ -492,8 +515,16 @@ export function registerOidc(
                 [workspaceId, userId],
               );
         const workspace = workspaces?.rows[0];
+        let session: NewSession;
+        try {
+          session = await startSession(tx, userId, request, { method: "oidc", events, guards });
+        } catch (error) {
+          // Spent, as any try is: the account signs in through another provider now.
+          if (!(error instanceof SignInRefused)) throw error;
+          return { failed: error.refusal.reason, userId, refused: true } as const;
+        }
         return {
-          ...(await startSession(tx, userId, request, "oidc", events)),
+          ...session,
           user: {
             id: userId,
             name: readText(user, "name"),
@@ -511,14 +542,6 @@ export function registerOidc(
               }),
         };
       });
-      let outcome: Awaited<typeof redeemed>;
-      try {
-        outcome = await redeemed;
-      } catch (error) {
-        if (!(error instanceof AccountDeactivated)) throw error;
-        await refusedDeactivated(db, events, request, error);
-        return fail(reply, 403, deactivatedMessage);
-      }
       if ("failed" in outcome) {
         await events.attempt(
           db,
@@ -532,6 +555,16 @@ export function registerOidc(
           originOf(request),
           request.log,
         );
+        if ("refused" in outcome) {
+          // The provider has said who it is, so it is told why (ADR 0085).
+          return fail(
+            reply,
+            403,
+            outcome.failed === deactivatedRefusal.reason
+              ? deactivatedMessage
+              : "This account signs in through another provider now.",
+          );
+        }
         return fail(reply, 401, "That sign-in code was used, has expired, or is not this app's.");
       }
       return reply.code(201).send(outcome);

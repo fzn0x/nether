@@ -153,6 +153,7 @@ describe("two nodes", () => {
     const deaf: ClusterBus = {
       publish: () => undefined,
       subscribe: () => () => undefined,
+      onReconnect: () => () => undefined,
     };
     const { first, second, workspace, token } = await cluster(deaf);
     const note = `${workspace}/${randomUUID()}`;

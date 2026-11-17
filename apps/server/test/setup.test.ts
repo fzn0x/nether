@@ -91,6 +91,29 @@ describe("migrate", () => {
     ]);
   });
 
+  it("keeps how each session and token began, and which providers are required", async () => {
+    const db = await database();
+    await migrate(db);
+    const { rows } = await db.query(
+      `SELECT table_name, column_name, data_type, is_nullable FROM information_schema.columns
+        WHERE table_schema = current_schema()
+          AND (column_name IN ('method', 'provider') OR (table_name = 'sso_providers' AND column_name = 'required'))
+        ORDER BY table_name, column_name`,
+    );
+    expect(rows).toEqual([
+      { table_name: "api_tokens", column_name: "method", data_type: "text", is_nullable: "YES" },
+      { table_name: "api_tokens", column_name: "provider", data_type: "text", is_nullable: "YES" },
+      { table_name: "sessions", column_name: "method", data_type: "text", is_nullable: "YES" },
+      { table_name: "sessions", column_name: "provider", data_type: "text", is_nullable: "YES" },
+      {
+        table_name: "sso_providers",
+        column_name: "required",
+        data_type: "boolean",
+        is_nullable: "NO",
+      },
+    ]);
+  });
+
   it("keeps when an account was deactivated, and a membership's own role beside its groups'", async () => {
     const db = await database();
     await migrate(db);
@@ -176,6 +199,25 @@ describe("first-run setup", () => {
     const code = newSetupCode();
     expect(code).toMatch(/^[A-HJ-NP-Z2-9]{5}(-[A-HJ-NP-Z2-9]{5}){3}$/);
     expect(newSetupCode()).not.toBe(code);
+  });
+
+  it("takes NETHER_SETUP_CODE, so every node accepts one code, read as a typed code is", async () => {
+    const base = { NETHER_DATABASE_URL: "postgres://nether@localhost:5432/nether" };
+    expect(readConfig(base).setupCode).toBeNull();
+    const set = readConfig({ ...base, NETHER_SETUP_CODE: " abcd-efgh-jkmn-pqrs " }).setupCode;
+    expect(set).toBe("abcd-efgh-jkmn-pqrs");
+    const { server } = await start(set ?? undefined);
+    const made = await server.inject({
+      method: "POST",
+      url: "/api/setup",
+      payload: { ...admin, code: "ABCDEFGHJKMNPQRS" },
+    });
+    expect(made.statusCode).toBe(201);
+    for (const code of ["too-short-code", "x".repeat(65)]) {
+      expect(() => readConfig({ ...base, NETHER_SETUP_CODE: code })).toThrow(
+        "NETHER_SETUP_CODE must be 16 to 64 characters",
+      );
+    }
   });
 
   it("makes the admin and the first workspace once, for the code the server logged", async () => {

@@ -194,6 +194,16 @@ provider sends people back to the **Redirect address** the page shows, as
 An issuer for every tenant at once, as Entra ID's `common`, is refused:
 give your own tenant's.
 
+- **Okta**: make an OIDC web app integration with the redirect address
+  as its sign-in redirect URI, and give Nether its issuer, as
+  `https://<your org>.okta.com`, with the client's ID and secret.
+- **Microsoft Entra ID**: register an application with the redirect
+  address as a web redirect URI, add a client secret, and give Nether
+  `https://login.microsoftonline.com/<your tenant ID>/v2.0` as its
+  issuer. Add the `email` optional claim: Entra ID says nothing of
+  whether an address is verified, so Nether trusts one only at the
+  provider's own domains.
+
 ### Who signs in
 
 A provider's first sign-in for someone finds their account by the email
@@ -203,8 +213,43 @@ the provider's sign-in finds the account by who the provider says it is,
 whatever address it gives later. An address at another domain links
 nothing through SAML, whose answers cannot say they verified it.
 
-Making people sign in only through single sign-on, refusing their
-passwords and codes, comes in a later version.
+### Requiring single sign-on
+
+A provider can be required at its domains: change it, and turn on
+**Require it: accounts at these domains sign in through it alone**.
+Under **What single sign-on requires**, the page can also require it of
+everyone:
+
+- **Everyone signs in through a provider**: every account does. One at
+  a provider's domains uses that provider; one at no provider's domain
+  may use any provider it is linked to, the server's own
+  `NETHER_OIDC_ISSUER` among them.
+- **Instance admins too**: off, as it starts, instance admins keep their
+  passwords and email codes, so one can sign in to fix a provider that
+  breaks. The page warns when no instance admin has a password and the
+  server sends no codes.
+
+An account single sign-on covers cannot sign in with a password or a
+code, join a workspace by setting a password, set one, or sign in
+through another domain's provider. A sign-in through its provider in
+the last ten minutes, not its password, lets it end its other sessions
+or make a token. Its sessions and tokens that began another way end as
+the page saves the change, its apps connect again, and any that remain
+end at their next request; turning the requirement off later brings
+none back. The page will not save a change that would end your own
+session: sign in through the provider first.
+
+The apps ask for the email address first, and go straight to its
+domain's provider. Under **Everyone**, they offer the providers, and the
+password and the code only behind **Sign in as an instance admin**. A
+password at a required domain gets an answer naming its provider; under
+**Everyone**, one elsewhere answers as a wrong password does. Neither
+tells whether an account exists.
+
+**If a provider breaks** and instance admins are covered too, set
+`NETHER_SSO_ENFORCE=off` on the server and restart it: sign-in through
+the providers goes on, and every other way in comes back until it is
+unset. `NETHER_ENTERPRISE_SSO=off` turns single sign-on off altogether.
 
 ## AI endpoints
 
@@ -237,8 +282,9 @@ organization's devices close that gap.
 ## Data policies
 
 With **Data policies** on, the console also shows a **Data policies**
-section: how far your workspaces are shared in public, and whether their
-text leaves the server by export. Set a policy for **Every workspace**,
+section: how far your workspaces are shared in public, whether their
+text leaves the server by export, how long their history is kept, and
+legal hold. Set a policy for **Every workspace**,
 then set any workspace apart with its own: pick it under **Set a
 workspace apart** and choose **Set apart**. It starts from every
 workspace's policy. **Use every workspace's** puts it back. Each form saves
@@ -249,6 +295,9 @@ on its own.
 | Share links | **Open at any level**, **View only**, or **Off** |
 | Serve published sites | Off: no site of the workspace is served or published |
 | Allow export | Off: the public API gives none of the workspace's text |
+| Keep history, in days | How long the server keeps its notes' earlier states, 1 to 3650; empty for `NETHER_HISTORY_DAYS` |
+| Keep the apps' trash, in days | How long its members' apps keep its vaults' trash, 1 to 3650; empty for each vault's own |
+| Legal hold | Nothing of the workspace is deleted for good while it is on |
 
 A workspace's owners keep their own switches, as publishing off; a policy
 only narrows them, and they cannot change it.
@@ -266,16 +315,32 @@ only narrows them, and they cannot change it.
   database's rows, and a search in the workspace, with 403. A search of
   every workspace leaves it out. Lists of notes' names and paths, and
   writes, go on.
+- **History.** The server's hourly purge keeps each workspace's earlier
+  states for its own days, longer or shorter than `NETHER_HISTORY_DAYS`.
+- **Legal hold.** The server keeps every earlier state of the workspace's
+  notes, whatever its days, and the audit log purges nothing while any
+  workspace is on hold, as its purge cuts the oldest events of all.
+  Putting a workspace on hold, and taking it off, is in the audit log, as
+  every change of a policy is. People keep writing, moving and deleting
+  notes: only deleting for good waits.
 
 A change holds at once on the server you saved it on, and within five
 seconds on the others. Turning **Data policies** off narrows nothing, and
 keeps what you set for when it is on again.
 
-The apps' own export, and the Share dialog saying why a control is gone,
-come in a later version, as do how long history and the trash are kept
-and legal hold. A desktop vault's files are on its device, the person's
-own: no policy stops another program from reading them. Device management
-on your organization's computers is the tool for that.
+The apps keep to it too. With export off, a vault linked to the
+workspace offers no export: the **Export** dialog and a database's
+**Export CSV** say that your server's policy keeps its notes. The app asks
+your server as an export starts, and holds to its last answer while the
+server cannot be reached. The **Share** dialog offers only view links
+while links may only view, and says why it offers no link or site when
+they are off.
+
+The apps' trash days, and legal hold in the apps' trash, come in the
+next version: until then the apps keep each vault's own trash days. A
+desktop vault's files are on its device, the person's own: no
+policy stops another program from reading them. Device management on your
+organization's computers is the tool for that.
 
 ## Audit logs
 
@@ -288,7 +353,7 @@ and names, never what a note says, a search, a password or a token.
 | Kind | What it records |
 | --- | --- |
 | Sign-ins | Signing in, by password, an emailed code, OpenID Connect, single sign-on, an invitation or setup, and each failure with why; signing out; sessions ended; a password changed; a share link opened, or refused |
-| Permission changes | Members joined, removed or leaving, and their roles; a space's or a page's access given or taken; teamspaces, pages shared on their own, private spaces; a note moved where others may open it; an encrypted workspace's key given to a member; workspaces made or changed; API tokens made; enterprise features turned on or off |
+| Permission changes | Members joined, removed or leaving, and their roles; a space's or a page's access given or taken; teamspaces, pages shared on their own, private spaces; a note moved where others may open it; an encrypted workspace's key given to a member; workspaces made or changed; API tokens made; enterprise features turned on or off; data policies changed, and legal hold set or taken off |
 | Shares | Share links made and revoked; sites published, changed and taken down, and their domains; publishing allowed or not; invitations made, revoked and accepted; webhooks |
 | Exports | Each request to the [REST API](../api/) that gives notes' text, rows or search results, naming up to 50 notes and counting the rest; the server's backups |
 | Deletions | Notes deleted, in the apps or through the API; API tokens revoked |

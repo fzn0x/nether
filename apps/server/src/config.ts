@@ -59,11 +59,24 @@ export interface Config {
    */
   readonly ssoPrivate: boolean | readonly string[];
   /**
+   * Whether single sign-on may require its providers, as the console says
+   * (ADR 0080); false when NETHER_SSO_ENFORCE=off pins it off, the way back
+   * in when a provider breaks: its sign-in goes on, and every other way in
+   * comes back.
+   */
+  readonly ssoEnforce: boolean;
+  /**
    * The 32 bytes that seal what the server keeps secret for its accounts,
    * AI providers' keys among them, from NETHER_SECRET_KEY in base64; none,
    * and the server keeps no such secret.
    */
   readonly secretKey: Buffer | null;
+  /**
+   * The setup code first-run setup takes while the server has no account,
+   * from NETHER_SETUP_CODE, so every node accepts the same one (ADR 0082);
+   * none, and each start makes a new code and writes it to the log.
+   */
+  readonly setupCode: string | null;
   /** The SMTP server to send email through, if any; without one the server sends none. */
   readonly mail: MailConfig | null;
   /**
@@ -291,6 +304,20 @@ function readAi(env: NodeJS.ProcessEnv): AiMode {
   if (value === "") return "on";
   if (aiModes.includes(value as AiMode)) return value as AiMode;
   throw new ConfigError("NETHER_AI", `must be on, admin or off, not "${env.NETHER_AI ?? ""}"`);
+}
+
+/** NETHER_SETUP_CODE: 16 to 64 characters, not counting the spaces and hyphens setup ignores. */
+function readSetupCode(env: NodeJS.ProcessEnv): string | null {
+  const value = env.NETHER_SETUP_CODE?.trim() ?? "";
+  if (value === "") return null;
+  const counted = value.replace(/[\s-]/g, "").length;
+  if (counted < 16 || value.length > 64) {
+    throw new ConfigError(
+      "NETHER_SETUP_CODE",
+      "must be 16 to 64 characters, not counting spaces and hyphens, as `openssl rand -hex 12` makes",
+    );
+  }
+  return value;
 }
 
 function readSecretKey(env: NodeJS.ProcessEnv): Buffer | null {
@@ -552,7 +579,9 @@ export function readConfig(env: NodeJS.ProcessEnv): Config {
     ai: readAi(env),
     aiPrivate: readPrivate(env, "NETHER_AI_PRIVATE", "the admin's AI providers"),
     ssoPrivate: readPrivate(env, "NETHER_SSO_PRIVATE", "single sign-on providers"),
+    ssoEnforce: readPin(env, "NETHER_SSO_ENFORCE") !== false,
     secretKey: readSecretKey(env),
+    setupCode: readSetupCode(env),
     mail: readMail(env),
     publicUrl,
     oidc: readOidc(env, publicUrl),

@@ -20,6 +20,15 @@
       "firstName": "Hal",
       "lastName": "Abelson",
       "credentials": [{ "type": "password", "value": "a long password", "temporary": false }]
+    },
+    {
+      "username": "ida",
+      "enabled": true,
+      "email": "ida@corp.example",
+      "emailVerified": true,
+      "firstName": "Ida",
+      "lastName": "Rhodes",
+      "credentials": [{ "type": "password", "value": "a long password", "temporary": false }]
     }
   ],
   "clients": [

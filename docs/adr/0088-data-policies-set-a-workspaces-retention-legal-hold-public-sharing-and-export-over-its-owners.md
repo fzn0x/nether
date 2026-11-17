@@ -144,7 +144,8 @@ server's own backups.
 
 `/api/me` gives, with each workspace, the policies its apps keep:
 `{ "export": true }` from part 1, with `trashDays` and `legalHold` added in
-part 3, or `null` while the feature is off. An app reads a setting it
+part 3 and kept to by the apps from part 4, or `null` while the feature is
+off. An app reads a setting it
 lacks as narrowing nothing. The server enforces everything it serves; the
 apps keep the rest, as they keep the AI switch.
 
@@ -174,9 +175,13 @@ module's own, so it does not need the `admin` feature's Workspaces page.
 2. **The apps' part of sharing and export**: no export where the policy
    keeps it, the last answer kept, and the Share dialog saying why a link
    level or publishing is gone.
-3. **Retention and legal hold**: history days in the purge, trash days and
-   the hold in the apps, and the audit log's purge held. The audit events
-   come with the first part that lands after audit logs.
+3. **Retention and legal hold on the server**: history days in the
+   purge, the audit log's purge held, the console's fields, `/api/me`'s
+   `trashDays` and `legalHold`, and the audit events, which came after
+   audit logs.
+4. **The apps' trash**: a vault linked to a workspace keeps its trash for
+   the policy's days, and deletes nothing for good while the workspace is
+   on hold.
 
 ## Alternatives
 

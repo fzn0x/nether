@@ -10,9 +10,9 @@ import type { FastifyBaseLogger, FastifyInstance, FastifyReply, FastifyRequest }
 import { type Database, readBoolean, readNumber, readText } from "./db.ts";
 import { emailField, emailKey, fail, limitBy, limitByAddress } from "./http.ts";
 import type { Mailer } from "./mail.ts";
-import { AccountDeactivated } from "./accounts.ts";
-import { refusedDeactivated, startSession } from "./sessions.ts";
+import { type NewSession, startSession, useProvider } from "./sessions.ts";
 import type { SecuritySettings } from "./settings.ts";
+import { SignInRefused, signInGuards } from "./signIns.ts";
 import { type ServerEvents, accountActor, originOf } from "./events.ts";
 
 /** Minutes a code lasts. */
@@ -71,12 +71,25 @@ async function sendCode(
   publicUrl: string | null,
 ): Promise<void> {
   const { rows } = await db.query(
-    "SELECT id, name, email FROM users WHERE email_key = $1 AND deactivated_at IS NULL",
+    "SELECT id, name, email, instance_admin FROM users WHERE email_key = $1 AND deactivated_at IS NULL",
     [emailKey(email)],
   );
   const user = rows[0];
   if (user === undefined) return;
   const userId = readText(user, "id");
+  // None for an account whose codes no longer sign it in, as single sign-on
+  // may require (ADR 0080); the answer is the same either way.
+  const refusal = await signInGuards(db).check(
+    {
+      userId,
+      email: readText(user, "email"),
+      instanceAdmin: readBoolean(user, "instance_admin"),
+      method: "code",
+      provider: null,
+    },
+    db,
+  );
+  if (refusal !== undefined) return;
   const code = newCode();
   await db.transaction(async (tx) => {
     // One code at a time, and none kept past its time.
@@ -126,6 +139,7 @@ export function registerCodes(
   events: ServerEvents,
   publicUrl: string | null = null,
 ): void {
+  const guards = signInGuards(db);
   // Off, they answer as on a server without mail, before any try is counted.
   const whenOn = async (request: FastifyRequest, reply: FastifyReply) => {
     if ((await security.values()).emailCodes) return undefined;
@@ -180,8 +194,9 @@ export function registerCodes(
       ],
     },
     async (request, reply) => {
+      const required = await guards.requiredFor(request.body.email);
       const digits = digitsOf(request.body.code);
-      const redeemed = db.transaction(async (tx) => {
+      const outcome = await db.transaction(async (tx) => {
         const { rows } = await tx.query(
           `SELECT c.id AS code_id, c.code_hash, c.tries, u.id, u.name, u.email, u.instance_admin
              FROM sign_in_codes c JOIN users u ON u.id = c.user_id
@@ -206,8 +221,16 @@ export function registerCodes(
         }
         await tx.query("DELETE FROM sign_in_codes WHERE id = $1", [codeId]);
         const id = readText(row, "id");
+        let session: NewSession;
+        try {
+          session = await startSession(tx, id, request, { method: "code", events, guards });
+        } catch (error) {
+          // Spent, as any try is: the account is deactivated, or signs in through a provider now.
+          if (error instanceof SignInRefused) return { failed: error.refusal.reason, userId: id };
+          throw error;
+        }
         return {
-          ...(await startSession(tx, id, request, "code", events)),
+          ...session,
           user: {
             id,
             name: readText(row, "name"),
@@ -216,14 +239,6 @@ export function registerCodes(
           },
         };
       });
-      let outcome: Awaited<typeof redeemed>;
-      try {
-        outcome = await redeemed;
-      } catch (error) {
-        if (!(error instanceof AccountDeactivated)) throw error;
-        await refusedDeactivated(db, events, request, error);
-        return fail(reply, 401, wrongCode);
-      }
       if ("failed" in outcome) {
         await events.attempt(
           db,
@@ -240,7 +255,9 @@ export function registerCodes(
           originOf(request),
           request.log,
         );
-        return fail(reply, 401, wrongCode);
+        return required === undefined
+          ? fail(reply, 401, wrongCode)
+          : useProvider(reply, request.body.email, required);
       }
       return reply.code(201).send(outcome);
     },

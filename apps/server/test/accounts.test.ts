@@ -424,6 +424,9 @@ describe("a deactivated account", () => {
     );
     expect((await me(test, token)).statusCode).toBe(401);
     expect((await members(test, token)).statusCode).toBe(401);
+    // Ended, as a session a guard refuses is.
+    const left = await test.db.query("SELECT 1 FROM sessions WHERE user_id = $1", [bea.id]);
+    expect(left.rows).toEqual([]);
   });
 
   it("never leaves the server without an active instance admin", async () => {

@@ -789,12 +789,19 @@ export const messages = {
   shareLinkPassword: "Password (optional)",
   shareLinkMake: "Make a link",
   shareLinkMade: "The link is made, and copied.",
+  shareLinksPolicyOff:
+    "{server}'s policy allows no share links in this workspace. The links here open nothing until it does.",
+  shareLinksPolicyView:
+    "{server}'s policy lets this workspace's links only view, whatever they were made to do.",
   publishTitle: "Publish to the web",
   publishIntro:
     "A published site is a page anyone can open at its address, with no account, drawn from your notes as they are now. It shows the notes you have full access to, and its links lead only between its pages.",
   publishEncrypted: "An encrypted workspace publishes nothing: the server cannot read its notes.",
   publishAllow: "Let {workspace} publish sites",
   publishOff: "Publishing is off in this workspace: its owners and admins turn it on.",
+  exportPolicyOff: "{server}'s policy keeps this workspace's notes from being exported.",
+  publishPolicyOff:
+    "{server}'s policy publishes nothing of this workspace. Its sites open nothing until it allows them.",
   publishNowOn: "Publishing is on in this workspace.",
   publishNowOff:
     "Publishing is off in this workspace: its sites open nothing until it is on again.",
@@ -946,6 +953,31 @@ export const messages = {
   adminSsoNetherCallback: "Redirect address",
   adminSsoCertificate:
     "Nether's certificate for this provider, which it signs its requests with and the provider can encrypt assertions to:",
+  adminSsoRequire: "Require it: accounts at these domains sign in through it alone",
+  adminSsoRequired: "Required",
+  adminSsoEnforcement: "What single sign-on requires",
+  adminSsoEnforcementIntro:
+    "A required provider takes its domains' accounts. Saving a change ends at once the sessions and tokens it refuses.",
+  adminSsoEveryone: "Everyone signs in through a provider",
+  adminSsoEveryoneHint:
+    "An account at no provider's domain may use any provider it is linked to. The apps offer a password and a code only to instance admins.",
+  adminSsoAdmins: "Instance admins too",
+  adminSsoAdminsHint:
+    "Off, instance admins keep their passwords and codes, to fix a provider that breaks.",
+  adminSsoAdminsCovered:
+    "Instance admins sign in through providers too. If one breaks, NETHER_SSO_ENFORCE=off on the server lets everyone in another way again.",
+  adminSsoNoAdminWayIn:
+    "No instance admin has a password, and the server sends no codes: if a provider breaks, only NETHER_SSO_ENFORCE=off lets an admin in.",
+  adminSsoPinned:
+    "{variable}=off on the server pins this off: nothing is required until it is unset.",
+  adminSsoEnforcementSaved: "Saved. Sessions ended: {sessions}. Tokens ended: {tokens}.",
+  signInAddressHint: "Your email address tells the server how you sign in.",
+  signInThroughProvider: "{email} signs in through a provider.",
+  signInAsAdmin: "Sign in as an instance admin",
+  signInAsAdminHint:
+    "Instance admins may keep a password or a code, to fix a provider that breaks.",
+  invitationThroughProvider: "Addresses there sign in with {name}: finish in your browser.",
+  providerSsoRequired: "This account signs in through another provider.",
   adminFind: "Find a workspace by its name, or by a member's name or email",
   adminFindButton: "Find",
   adminNoWorkspaces: "No workspace matches.",
@@ -1011,6 +1043,14 @@ export const messages = {
   adminExport: "Allow export",
   adminExportHint:
     "Off: the public API gives no notes' text, rows or search passages, and the apps offer no export. A desktop vault's files stay on its device.",
+  adminHistoryDays: "Keep history, in days",
+  adminHistoryDaysHint:
+    "Empty: as long as the server's NETHER_HISTORY_DAYS says, 30 unless set. From 1 to 3650.",
+  adminTrashDays: "Keep the apps' trash, in days",
+  adminTrashDaysHint: "Empty: as long as each vault keeps its own. From 1 to 3650.",
+  adminLegalHold: "Legal hold",
+  adminLegalHoldHint:
+    "Nothing of the workspace is deleted for good while it is on: not its history, its members' trash, or the audit log, whatever the days above.",
   adminUseEvery: "Use every workspace's",
   adminSetApartWhich: "Set a workspace apart",
   adminChooseWorkspace: "Choose a workspace",

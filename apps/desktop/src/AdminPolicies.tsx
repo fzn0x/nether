@@ -2,8 +2,8 @@
 // (ADR 0086): the addresses every Nether app sends AI requests to for this
 // server's workspaces, while the list holds one. One address a line; the
 // environment may pin the list, which then shows with no control. The data
-// policies (ADR 0088): public sharing and export, for every workspace and
-// for each one set apart.
+// policies (ADR 0088): public sharing, export, retention and legal hold,
+// for every workspace and for each one set apart.
 import { type ReactNode, type SyntheticEvent, useEffect, useState } from "react";
 import { type MessageKey, t } from "./messages.ts";
 import { messageOf, webFetch, webServer } from "./web.ts";
@@ -116,6 +116,14 @@ interface DataPolicy {
   readonly shareLinks: ShareLinks;
   readonly sites: boolean;
   readonly export: boolean;
+  readonly historyDays: number | null;
+  readonly trashDays: number | null;
+  readonly legalHold: boolean;
+}
+
+/** Days as typed: none for the default, else a whole number the server checks. */
+function daysOf(typed: string): number | null {
+  return typed.trim() === "" ? null : Math.trunc(Number(typed));
 }
 
 interface PoliciesState {
@@ -211,6 +219,61 @@ function PolicyForm(props: {
           </label>
           <span id={`${id}-export`} className="hint">
             {t("adminExportHint")}
+          </span>
+        </div>
+        <label className="field">
+          {t("adminHistoryDays")}
+          <input
+            type="number"
+            inputMode="numeric"
+            min={1}
+            max={3650}
+            step={1}
+            value={draft.historyDays === null ? "" : String(draft.historyDays)}
+            disabled={busy}
+            aria-describedby={`${id}-history`}
+            onChange={(event) => {
+              setDraft({ ...draft, historyDays: daysOf(event.target.value) });
+            }}
+          />
+          <span id={`${id}-history`} className="hint">
+            {t("adminHistoryDaysHint")}
+          </span>
+        </label>
+        <label className="field">
+          {t("adminTrashDays")}
+          <input
+            type="number"
+            inputMode="numeric"
+            min={1}
+            max={3650}
+            step={1}
+            value={draft.trashDays === null ? "" : String(draft.trashDays)}
+            disabled={busy}
+            aria-describedby={`${id}-trash`}
+            onChange={(event) => {
+              setDraft({ ...draft, trashDays: daysOf(event.target.value) });
+            }}
+          />
+          <span id={`${id}-trash`} className="hint">
+            {t("adminTrashDaysHint")}
+          </span>
+        </label>
+        <div>
+          <label className="field-check">
+            <input
+              type="checkbox"
+              checked={draft.legalHold}
+              disabled={busy}
+              aria-describedby={`${id}-hold`}
+              onChange={(event) => {
+                setDraft({ ...draft, legalHold: event.target.checked });
+              }}
+            />
+            {t("adminLegalHold")}
+          </label>
+          <span id={`${id}-hold`} className="hint">
+            {t("adminLegalHoldHint")}
           </span>
         </div>
       </fieldset>
