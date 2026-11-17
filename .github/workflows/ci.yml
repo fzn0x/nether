@@ -285,6 +285,75 @@ jobs:
             apps/clipper/playwright-report/
           retention-days: 7
 
+  # The Android app (ADR 0087): the page built for it, its debug APK, signed
+  # with the SDK's debug key, the plugin's tests on the JVM, and a check of
+  # every library the app ships against ADR 0001's licenses. No key is ever
+  # in the repository; releases are signed apart.
+  android:
+    name: Android app
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      # Capacitor 8 builds with JDK 21.
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "21"
+      - run: pnpm install --frozen-lockfile
+      - name: Build the page and copy it into the app
+        run: pnpm --filter @nether/mobile build
+      - name: Build the debug APK, test the plugin, and check the licenses
+        working-directory: apps/mobile/android
+        run: ./gradlew assembleDebug testDebugUnitTest licensee --console=plain
+      - uses: actions/upload-artifact@v7
+        with:
+          name: nether-android-debug
+          path: apps/mobile/android/app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 7
+
+  # The debug APK on an Android 15 emulator: a vault and a note made through
+  # the page, and what was typed still there after the app is ended, from
+  # the home screen and on screen (apps/mobile/scripts/smoke.mjs).
+  android-emulator:
+    name: Android app on an emulator
+    needs: android
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - uses: actions/download-artifact@v7
+        with:
+          name: nether-android-debug
+          path: apk
+      - name: Let the emulator use KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - uses: ReactiveCircus/android-emulator-runner@v2.38.0
+        with:
+          api-level: 35
+          arch: x86_64
+          target: google_apis
+          disable-animations: true
+          script: pnpm --filter @nether/mobile smoke "$GITHUB_WORKSPACE/apk/app-debug.apk"
+      - uses: actions/upload-artifact@v7
+        if: failure()
+        with:
+          name: android-smoke-failure
+          path: apps/mobile/smoke-failure.png
+          retention-days: 7
+
   commits:
     name: Commit messages and sign-offs
     # Dependabot's updates carry no sign-off: the DCO is for contributions.
