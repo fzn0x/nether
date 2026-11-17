@@ -70,6 +70,7 @@ token as `Authorization: Bearer <token>`. Every error is
 | `GET /health` | | The server's version, and which enterprise features are on |
 | `GET /api/instance/features` | instance admin | Each enterprise feature: `on`, `pinned` (`on` or `off` when its variable sets it, else `null`) and `available` (this build has its module) (ADR 0079) |
 | `PUT /api/instance/features/:feature` | instance admin | Turns a feature `on` or off, at once; 409 when its variable pins it, or the build has no module for it |
+| `GET /api/instance/nodes` | instance admin | The server's nodes seen in the last two minutes, each with its `name`, `version`, `startedAt`, `seenAt`, and `current` for the one answering (ADR 0082) |
 | `GET /api/admin/usage` | instance admin | With the `admin` feature on: accounts, those signed in in the last 30 days, workspaces and the encrypted ones, notes the server can read, attachments and their bytes, and the version |
 | `GET /api/admin/workspaces` | instance admin | With the `admin` feature on: 50 workspaces by name after the `after` cursor, found by `search` in their names or their members' names and emails; each with its owners, members by role, notes the server can read (`null` when encrypted), bytes of documents, history and attachments, and last change; and `next`, the cursor of the page after, or `null` (ADR 0083) |
 | `GET /api/admin/workspaces/:id` | instance admin | One workspace as the list has it, with its `members`: name, email, role and when each joined |
@@ -179,8 +180,8 @@ The app that sends the comment names the people it mentions; the server
 checks that the sender may comment on the note, and tells only those who
 may open it. In an encrypted workspace, a notification says who mentioned
 whom in which note, and nothing of the note or the comment. The server
-keeps notifications for 90 days, and deletes older ones when it starts and
-every hour.
+keeps notifications for 90 days, and deletes older ones once an hour, in a
+job one node runs (ADR 0082).
 
 ## Members
 
@@ -233,7 +234,11 @@ The server stores a document two seconds after it stops changing, and at
 least every ten seconds, as its merged state numbered from one sequence. A
 workspace's stores draw their numbers in the order they commit, under a
 lock for the workspace held to the commit (ADR 0082), so a listing that
-shows a number shows every smaller one. A client back from being away asks
+shows a number shows every smaller one. A node keeps the number it read
+or stored each open document at; when another node or process stored it
+since, its store merges with what is stored rather than replacing it,
+and its open document gets what it lacked. A store of a document no one else
+changed reads nothing more than it did. A client back from being away asks
 `GET /api/workspaces/:id/documents?since=<the last number it saw>` and
 syncs only those. A client syncing the vault document hears of every note
 as it is stored, as the stateless message
@@ -287,9 +292,9 @@ When sync stores a note whose last version is ten minutes old, the server
 keeps the state the store replaces as a version, so a note's history has
 it as it was before each spell of editing
 ([ADR 0041](../../docs/adr/0041-a-notes-history-is-its-earlier-texts-kept-before-each-spell-of-editing.md)). It keeps versions for
-`NETHER_HISTORY_DAYS`, 30 days unless set, and deletes older ones when it
-starts and every hour. An encrypted workspace has no versions here: its
-devices keep their own.
+`NETHER_HISTORY_DAYS`, 30 days unless set, and deletes older ones once
+an hour, in a job one node runs (ADR 0082). An encrypted workspace has no
+versions here: its devices keep their own.
 
 ## Email
 
@@ -457,6 +462,7 @@ machine.
 | `NETHER_PORT` | `3000` | The port; `0` picks a free one |
 | `NETHER_LOG_LEVEL` | `info` | `fatal`, `error`, `warn`, `info`, `debug`, `trace` or `silent` |
 | `NETHER_DATABASE_URL` | none, required | The PostgreSQL database, as `postgres://user:password@host:5432/nether` |
+| `NETHER_NODE_NAME` | the machine's name | This node's name among the server's nodes, as the console lists them (ADR 0082) |
 | `NETHER_REDIS_URL` | none | The Redis or Valkey server the rate limits count in, as `redis://valkey:6379` or `rediss://` for TLS; without one, each node counts in its memory |
 | `NETHER_SMTP_URL` | none | The SMTP server email goes through, as `smtp://user:password@host:587` or `smtps://user:password@host:465` |
 | `NETHER_MAIL_FROM` | none, required with `NETHER_SMTP_URL` | The sender, as `Nether <nether@example.org>` |

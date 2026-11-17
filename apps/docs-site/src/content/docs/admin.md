@@ -31,6 +31,17 @@ server's settings to fix it there, or remove it to leave the switch to the
 console. A feature this server's build of Nether does not have yet shows
 **Not in this server's build of Nether yet.**
 
+## Nodes
+
+**Nodes** lists the server's nodes that wrote their heartbeat in the last
+two minutes: each one's name, its version, and when it started, the one
+that answered the page marked. A node's name is `NETHER_NODE_NAME`, or
+its machine's, as a pod's is. It is in every server, beside the features.
+
+A server running more than one node without high availability says so in
+its log: their clients do not see each other's edits until they are
+stored.
+
 ## Usage
 
 With **The console's usage, workspaces and security pages** on, the
