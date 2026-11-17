@@ -28,6 +28,13 @@ It gives the server:
   connection of its own, which takes another node's open copy.
 
 Its tests run two nodes in one process over one database and one Valkey,
-when `NETHER_TEST_REDIS_URL` names one, as CI does.
+when `NETHER_TEST_REDIS_URL` names one, as CI does. The failover test,
+`test/failover.test.ts`, runs two server processes (`test/node.ts`) over a
+PostgreSQL and a Valkey every process reaches, when
+`NETHER_TEST_DATABASE_URL` names one too. Behind TCP proxies that send each
+connection to a node that is up, a laptop and a phone edit a plain note
+and push to an encrypted one. One node is killed with SIGKILL, then
+started again, and the other is stopped with SIGTERM; no edit and no push
+is lost.
 
 Roadmap: Phase 5, enterprise, mobile and scale.

@@ -445,6 +445,13 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- The server takes no note into a page's unit while the page stops being
+  shared on its own. A move asked meanwhile, as an app asks that sees the
+  page's notes listed where it sits while its unit is still there, waits
+  until the unit is gone and is refused. Before, an app up to 0.1.0 could
+  move them back into the unit, and once it was gone they went to the
+  trash on every device. A move into a unit removed while it was asked is
+  refused with 403, where it failed with 500.
 - A device back from being away could skip a note stored at the same
   moment as another, when the server's database numbered the two in one
   order and committed them in the other. A workspace's stores now take
