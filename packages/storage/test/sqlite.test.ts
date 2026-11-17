@@ -132,6 +132,19 @@ describe("SqliteStore", () => {
     ]);
   });
 
+  it("gives every record as it was kept, whatever its path holds, and none when empty", async () => {
+    const store = await SqliteStore.open(nodeDatabase());
+    expect(await store.files()).toEqual([]);
+    const records = [
+      { path: 'Quotes "and" \\ back\\slashes.md', note: note(1), size: 0, modified: 1 },
+      { path: "Tab\tand\u001fcontrol.md", size: 5, modified: 1_731_800_000_123, hash: "h" },
+      { path: "Ünïcode/日本語 😀.md", note: note(2), size: 2 ** 40, modified: 3, hash: "x" },
+    ];
+    await store.apply({ upsert: records });
+    expect(await store.files()).toEqual(expect.arrayContaining(records));
+    expect(await store.files()).toHaveLength(3);
+  });
+
   it("applies large changes in parts", async () => {
     const store = await SqliteStore.open(nodeDatabase());
     const upsert = Array.from({ length: 4500 }, (_, index) => ({
