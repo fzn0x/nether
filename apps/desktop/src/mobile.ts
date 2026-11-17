@@ -6,10 +6,13 @@
 // the file is still what the page read, moves, and makes and removes
 // folders. Paths are the vault's, separated by slashes; bytes cross the
 // bridge as base64. On iOS it also opens a provider's sign-in in the
-// system's sheet.
-import { registerPlugin } from "@capacitor/core";
+// system's sheet. It writes exports' ZIPs from the vault's files, and moves
+// a capture's files in from the plugin's inbox, `NetherInbox`, which keeps
+// what the share sheet hands the app.
+import { type PluginListenerHandle, registerPlugin } from "@capacitor/core";
 import type { FileHash, FileInfo, FileText } from "@nether/storage";
-import type { ServerAccount } from "./mygo.ts";
+import type { SharedFile } from "./capture.ts";
+import type { ExportEntry, ServerAccount } from "./mygo.ts";
 
 /** A vault on the phone: its ID, from its `.nether/vault.json`, its name, and its folder's name. */
 export interface PhoneVault {
@@ -97,6 +100,67 @@ export interface NetherVaultsPlugin {
     readonly url: string;
     readonly scheme: string;
   }): Promise<{ readonly url?: string }>;
+  /**
+   * Moves a file the app keeps for a capture, at `from`, into the vault at
+   * `path`, unless a file is there: the capture's own files never cross the
+   * bridge. `from` must be in the app's inbox.
+   */
+  adopt(options: {
+    readonly id: string;
+    readonly path: string;
+    readonly from: string;
+  }): Promise<{ readonly result: "written" | "exists"; readonly file?: FileInfo }>;
+  /** Starts an export's ZIP in the app's cache, as `name.zip`; gives its token. */
+  exportStart(options: { readonly name: string }): Promise<{ readonly token: string }>;
+  /** Adds to an export's ZIP text the page made, or a file of the vault by its path, `source`. */
+  exportAdd(options: {
+    readonly token: string;
+    readonly id: string;
+    readonly entries: readonly ExportEntry[];
+  }): Promise<void>;
+  /** Completes an export's ZIP; gives where its file is, for the share sheet. */
+  exportFinish(options: { readonly token: string }): Promise<{ readonly path: string }>;
+  /** Drops an export's ZIP, unfinished. */
+  exportCancel(options: { readonly token: string }): Promise<void>;
+  /** Writes a text the page made into the app's cache as a file named `name`, for the share sheet; gives where. */
+  exportText(options: {
+    readonly name: string;
+    readonly text: string;
+  }): Promise<{ readonly path: string }>;
 }
 
 export const NetherVaults = registerPlugin<NetherVaultsPlugin>("NetherVaults");
+
+/** What another app shared to Nether, kept by the app's inbox until it is filed. */
+export interface InboxCapture {
+  readonly id: string;
+  /** When it was shared, in milliseconds since 1970. */
+  readonly at: number;
+  readonly text?: string;
+  readonly title?: string;
+  readonly url?: string;
+  /** Each file shared, kept in the inbox, by its path on the phone. */
+  readonly files: readonly SharedFile[];
+  /** The vault iOS's share extension chose. */
+  readonly vault?: string;
+  /** A vault for the share extension to make, by its name, when the phone had none. */
+  readonly newVault?: string;
+}
+
+/**
+ * The plugin's `NetherInbox`: what the share sheet hands the app. On
+ * Android, shares come to the app's activity, which copies their files
+ * into its cache and tells the page; on iOS, the share extension writes
+ * them to the App Group's inbox, which the page reads as the app opens or
+ * comes back.
+ */
+export interface NetherInboxPlugin {
+  /** What was shared and is not filed or dropped yet, the oldest first. */
+  pending(): Promise<{ readonly captures: readonly InboxCapture[] }>;
+  /** Forgets a capture, with the files kept for it. */
+  drop(options: { readonly id: string }): Promise<void>;
+  /** On Android, a share came in, which `pending` now gives. */
+  addListener(event: "shared", listener: () => void): Promise<PluginListenerHandle>;
+}
+
+export const NetherInbox = registerPlugin<NetherInboxPlugin>("NetherInbox");

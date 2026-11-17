@@ -12,16 +12,22 @@
 // Servers are reached natively (mobileHttp.ts), signed in to with a bearer
 // token kept in the system's secure storage (mobileServers.ts), and a
 // provider's sign-in comes back to the app's own scheme (mobileSignIn.ts).
-// Exports through the share sheet come with the apps' fifth part: until then
-// the build leaves them out (features.ts).
+//
+// The app icon's shortcuts and the share sheet hand the page captures
+// (mobileCapture.ts); exports, and a note's copy, go out through the share
+// sheet (mobileExports.ts).
 import { App } from "@capacitor/app";
 import { Browser } from "@capacitor/browser";
 import { Capacitor, CapacitorHttp } from "@capacitor/core";
+import { Share } from "@capacitor/share";
+import { AppShortcuts } from "@capawesome/capacitor-app-shortcuts";
 import { BackgroundTask } from "@capawesome/capacitor-background-task";
 import { DeviceFiles, SqliteStore } from "@nether/storage";
-import type { Backend, Connection, Exporter, VaultMedia } from "./backend.ts";
+import type { Backend, Connection, VaultMedia } from "./backend.ts";
 import { t } from "./messages.ts";
-import { NetherVaults, type PhoneVault } from "./mobile.ts";
+import { NetherInbox, NetherVaults, type PhoneVault } from "./mobile.ts";
+import { phoneCaptures } from "./mobileCapture.ts";
+import { phoneExporter, sendNoteCopy } from "./mobileExports.ts";
 import { phoneFolder } from "./mobileFiles.ts";
 import { nativeFetch } from "./mobileHttp.ts";
 import { openMobileIndex, pluginConnections } from "./mobileIndex.ts";
@@ -40,18 +46,8 @@ function escapePath(path: string): string {
   return path.split("/").map(encodeURIComponent).join("/");
 }
 
-/** Exports come with the share sheet, in the apps' fifth part; until then they say so. */
-const laterExporter: Exporter = {
-  choose: () => Promise.reject(new Error(t("mobileExportLater"))),
-  add: () => Promise.reject(new Error(t("mobileExportLater"))),
-  finish: () => Promise.reject(new Error(t("mobileExportLater"))),
-  printPdf: () => Promise.reject(new Error(t("mobileExportLater"))),
-  saveText: () => Promise.reject(new Error(t("mobileExportLater"))),
-  cancel: () => Promise.resolve(),
-};
-
-/** The vaults open now, each told to look again as the app comes back. */
-const open = new Set<DeviceFiles>();
+/** The vaults open now, by their IDs, each told to look again as the app comes back. */
+const open = new Map<string, DeviceFiles>();
 /** What the page saves before the app leaves the screen. */
 const leaving = new Set<() => Promise<void>>();
 /** What runs as the app comes back on screen, or the network comes back. */
@@ -71,7 +67,7 @@ function followTheApp(): void {
   listening = true;
   void App.addListener("appStateChange", ({ isActive }) => {
     if (isActive) {
-      for (const files of open) files.rescan();
+      for (const files of open.values()) files.rescan();
       resume();
       return;
     }
@@ -143,6 +139,31 @@ const handoff: Handoff = {
 
 const servers = phoneServers(NetherVaults, secureSecrets());
 
+/** Runs `listener` as the app comes back on screen, and as the network comes back. */
+function onResume(listener: () => void): () => void {
+  followTheApp();
+  resuming.add(listener);
+  return () => {
+    resuming.delete(listener);
+  };
+}
+
+// Made as the page loads, before any vault opens, so the shortcut that
+// started the app reaches the page at once.
+const captures = phoneCaptures({
+  inbox: NetherInbox,
+  vaults: NetherVaults,
+  shortcuts: AppShortcuts,
+  platform: Capacitor.getPlatform(),
+  onResume,
+  rescan(vault) {
+    open.get(vault)?.rescan();
+  },
+  minimize() {
+    void App.minimizeApp();
+  },
+});
+
 export const mobile: Backend = {
   kind: "mobile",
   async startup() {
@@ -184,12 +205,12 @@ export const mobile: Backend = {
     const { path: root } = await NetherVaults.root({ id: vault.id });
     const base = `${Capacitor.convertFileSrc(root).replace(/\/$/, "")}/`;
     const media: VaultMedia = { url: (path) => base + escapePath(path) };
-    open.add(files);
+    open.set(vault.id, files);
     return {
       files,
       store,
       media,
-      exporter: laterExporter,
+      exporter: phoneExporter(NetherVaults, vault.id, (options) => Share.share(options)),
       importer: webImporter(async (dest, data) => (await files.attach(dest, data)).path),
     };
   },
@@ -200,13 +221,9 @@ export const mobile: Backend = {
       leaving.delete(save);
     };
   },
-  onResume(listener) {
-    followTheApp();
-    resuming.add(listener);
-    return () => {
-      resuming.delete(listener);
-    };
-  },
+  onResume,
+  captures,
+  sendCopy: (copy) => sendNoteCopy(NetherVaults, (options) => Share.share(options), copy),
   fetchPreview: () => Promise.reject(new Error(t("previewNeedsApp"))),
   // In the system's browser view, over the app: a Custom Tab, or Safari's.
   openUrl: (url) => Browser.open({ url }),

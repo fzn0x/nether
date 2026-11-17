@@ -90,6 +90,12 @@ importers:
       '@capacitor/core':
         specifier: 8.6.0
         version: 8.6.0
+      '@capacitor/share':
+        specifier: 8.0.3
+        version: 8.0.3(@capacitor/core@8.6.0)
+      '@capawesome/capacitor-app-shortcuts':
+        specifier: 8.0.3
+        version: 8.0.3(@capacitor/core@8.6.0)
       '@capawesome/capacitor-background-task':
         specifier: 8.0.3
         version: 8.0.3(@capacitor/core@8.6.0)
@@ -257,6 +263,12 @@ importers:
       '@capacitor/ios':
         specifier: 8.6.0
         version: 8.6.0(@capacitor/core@8.6.0)
+      '@capacitor/share':
+        specifier: 8.0.3
+        version: 8.0.3(@capacitor/core@8.6.0)
+      '@capawesome/capacitor-app-shortcuts':
+        specifier: 8.0.3
+        version: 8.0.3(@capacitor/core@8.6.0)
       '@capawesome/capacitor-background-task':
         specifier: 8.0.3
         version: 8.0.3(@capacitor/core@8.6.0)
@@ -1233,6 +1245,16 @@ packages:
 
   '@capacitor/keyboard@8.0.6':
     resolution: {integrity: sha512-Bbe+9V0qaT6dzEFJEK7BUWR01l2+vZE8FM5ITF/WgKtx+G6eGZ6d5+YiSMRJBAK0VGjdO59v8yiQ10Doa5KyvQ==}
+    peerDependencies:
+      '@capacitor/core': '>=8.0.0'
+
+  '@capacitor/share@8.0.3':
+    resolution: {integrity: sha512-gnvZBV1NPu2B8vd1UKncR56G15ueHd0aZLqgDov++t3SmTBG9Q0VrAZ1VnHn5stxlmglVaTb4RwopMgbpLzroA==}
+    peerDependencies:
+      '@capacitor/core': '>=8.0.0'
+
+  '@capawesome/capacitor-app-shortcuts@8.0.3':
+    resolution: {integrity: sha512-2g93l0J6Cxm4fGQ+vhEO1W44a73WcYD69SZ8mbq3DgWqZRjshB2QSbeba9BdG98sDvkLdYk2ipY65UWVBFVXsw==}
     peerDependencies:
       '@capacitor/core': '>=8.0.0'
 
@@ -5688,6 +5710,14 @@ snapshots:
       '@capacitor/core': 8.6.0
 
   '@capacitor/keyboard@8.0.6(@capacitor/core@8.6.0)':
+    dependencies:
+      '@capacitor/core': 8.6.0
+
+  '@capacitor/share@8.0.3(@capacitor/core@8.6.0)':
+    dependencies:
+      '@capacitor/core': 8.6.0
+
+  '@capawesome/capacitor-app-shortcuts@8.0.3(@capacitor/core@8.6.0)':
     dependencies:
       '@capacitor/core': 8.6.0
 
