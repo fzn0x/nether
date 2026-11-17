@@ -39,6 +39,7 @@ import type { ImportSource } from "@nether/markdown";
 import { t } from "./messages.ts";
 import { sampleVault } from "./sample.ts";
 import type { LoopbackWait } from "./server.ts";
+import type { AiSettingsView } from "./ai.ts";
 
 /** Where the page loads a vault's files from, and how it hands them to the system's apps. */
 export interface VaultMedia {
@@ -120,6 +121,13 @@ function base64(data: Uint8Array): string {
   return btoa(binary);
 }
 
+/** Where a provider's requests go, how, and with which key; none where the way there adds it. */
+export interface AiAccess {
+  readonly url: string;
+  readonly fetch: typeof fetch;
+  readonly key: string | undefined;
+}
+
 export interface Backend {
   /** The desktop app, the web app, or a browser showing the sample vault. */
   readonly kind: "desktop" | "web" | "preview";
@@ -154,22 +162,28 @@ export interface Backend {
   saveServerKey(url: string, key: Uint8Array): Promise<void>;
   /** Waits on a loopback address for the browser to come back from a provider. */
   loopback(): Promise<LoopbackWait>;
-  /** The AI providers set up on this device, without their keys (ADR 0068). */
-  aiSettings(): Promise<AISettings>;
-  /** Adds an AI provider, or changes one with its ID; gives it as kept. */
-  saveAiProvider(provider: AIProvider): Promise<AIProvider>;
-  /** Keeps an AI provider's key in the system's keychain; an empty key removes it. */
+  /**
+   * The AI providers a vault can use, without their keys: this device's in
+   * the desktop app (ADR 0068), its server's in the web app (ADR 0070).
+   */
+  aiSettings(): Promise<AiSettingsView>;
+  /**
+   * Adds an AI provider, or changes one with its ID; gives it as kept. In the
+   * web app a new one is the account's own, or with `instance` everyone's.
+   */
+  saveAiProvider(provider: AIProvider, scope?: "own" | "instance"): Promise<AIProvider>;
+  /** Keeps an AI provider's key, in the keychain or sealed on the server; an empty key removes it. */
   setAiKey(id: string, key: string): Promise<void>;
-  /** An AI provider's key, read when a request is sent; undefined when it has none. */
-  aiKey(id: string): Promise<string | undefined>;
   removeAiProvider(id: string): Promise<void>;
   setDefaultAiProvider(id: string): Promise<void>;
   /**
-   * fetch for AI providers: Go makes the request in the desktop app, so any
-   * address works, a local model's included, and the browser does in the
-   * preview.
+   * How to send a provider's requests, when one is sent: in the desktop app
+   * to its address through Go, with its key from the keychain, so any
+   * address works, a local model's included; in the web app to the server's
+   * relay for the workspace, which adds the key; in the preview through the
+   * browser.
    */
-  readonly aiFetch: typeof fetch;
+  aiAccess(provider: AIProvider, workspaceId: string | undefined): Promise<AiAccess>;
   /**
    * The WebSocket class sync opens its connection with: Go's in the desktop
    * app, outside the page's mixed-content rules, and the browser's in the
@@ -303,13 +317,12 @@ const desktop: Backend = {
   aiSettings: () => AI.list(),
   saveAiProvider: (provider) => AI.save(provider),
   setAiKey: (id, key) => AI.setKey(id, key),
-  async aiKey(id) {
-    const key = await AI.key(id);
-    return key === "" ? undefined : key;
+  async aiAccess(provider) {
+    const key = await AI.key(provider.id);
+    return { url: provider.url, fetch: goFetch, key: key === "" ? undefined : key };
   },
   removeAiProvider: (id) => AI.remove(id),
   setDefaultAiProvider: (id) => AI.setDefault(id),
-  aiFetch: goFetch,
   updateSettings: () => Updates.settings(),
   mark(name) {
     void Desktop.mark(name);
@@ -503,7 +516,7 @@ function memoryAi(): Pick<
   | "aiSettings"
   | "saveAiProvider"
   | "setAiKey"
-  | "aiKey"
+  | "aiAccess"
   | "removeAiProvider"
   | "setDefaultAiProvider"
 > {
@@ -559,7 +572,13 @@ function memoryAi(): Pick<
       };
       return Promise.resolve();
     },
-    aiKey: (id) => Promise.resolve(keys.get(id)),
+    // The end-to-end tests stand in for providers with routes of the page.
+    aiAccess: (provider) =>
+      Promise.resolve({
+        url: provider.url,
+        fetch: (input, init) => fetch(input, init),
+        key: keys.get(provider.id),
+      }),
     removeAiProvider(id) {
       keys.delete(id);
       const providers = settings.providers.filter((each) => each.id !== id);
@@ -618,8 +637,6 @@ const preview: Backend = {
       : Promise.resolve(loopback);
   },
   ...memoryAi(),
-  // The end-to-end tests stand in for providers with routes of the page.
-  aiFetch: (input, init) => fetch(input, init),
   // A page in a browser updates with its server.
   updateSettings: () => Promise.resolve({ available: false, automatic: false }),
   setAutomaticUpdates: () => Promise.resolve(),

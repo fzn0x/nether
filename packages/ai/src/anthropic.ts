@@ -7,12 +7,10 @@
 // fails midway. Text comes as `text_delta`s; thinking and other blocks are
 // not the reply's text, and event types it does not know are passed over,
 // as Anthropic's documentation asks. Anthropic has no embeddings API.
+import { apiBase, callPath, requestHeaders } from "./endpoints.ts";
 import { AiError, errorMessage, isJson, parseJson, record, send } from "./errors.ts";
 import { serverSentEvents } from "./sse.ts";
 import type { ChatRequest, Provider, ProviderAccess, ProviderConfig } from "./types.ts";
-
-/** The version of the API these requests are written for. */
-export const anthropicVersion = "2026-10-21";
 
 /** The reply's limit when the request sets none: room for a model that thinks first. */
 export const defaultMaxTokens = 16_000;
@@ -34,17 +32,13 @@ function messageText(body: unknown): string {
 
 export function anthropic(config: ProviderConfig, access: ProviderAccess): Provider {
   // Anthropic's SDKs take the address without the version; one typed with it works too.
-  const base = config.url.replace(/\/+$/, "").replace(/\/v1$/, "");
+  const base = apiBase("anthropic", config.url);
 
   return {
     async *chat(request: ChatRequest) {
-      const response = await send(access.fetch, `${base}/v1/messages`, {
+      const response = await send(access.fetch, `${base}${callPath("anthropic", "chat") ?? ""}`, {
         method: "POST",
-        headers: {
-          "content-type": "application/json",
-          "anthropic-version": anthropicVersion,
-          ...(access.key === undefined || access.key === "" ? {} : { "x-api-key": access.key }),
-        },
+        headers: requestHeaders("anthropic", access.key),
         body: JSON.stringify({
           model: config.model,
           max_tokens: request.maxTokens ?? defaultMaxTokens,

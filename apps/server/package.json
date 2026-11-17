@@ -17,6 +17,7 @@
     "@fastify/rate-limit": "^11.2.1",
     "@fastify/websocket": "^11.3.4",
     "@hocuspocus/server": "~4.7.1",
+    "@nether/ai": "workspace:*",
     "@nether/core": "workspace:*",
     "@nether/editor": "workspace:*",
     "@nether/markdown": "workspace:*",

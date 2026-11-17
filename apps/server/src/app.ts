@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import rateLimit from "@fastify/rate-limit";
 import Fastify, { type FastifyInstance } from "fastify";
 import type { Redis } from "ioredis";
+import { registerAi } from "./ai.ts";
 import { registerApi } from "./api.ts";
 import { registerAttachments } from "./attachments.ts";
 import { purgeDeliveries, startWebhooks } from "./deliveries.ts";
@@ -29,6 +30,7 @@ import { purgeVersions, registerVersions } from "./versions.ts";
 import { backfillSearch, registerSearch } from "./search.ts";
 import { setSessionCookies, signInRoutes, wantsCookie } from "./cookies.ts";
 import { backupIfDue, backupTarget, noBlobs } from "./backups.ts";
+import type { Resolver } from "./outbound.ts";
 import { registerWebApp } from "./web.ts";
 import { registerWebhooks } from "./webhooks.ts";
 import { registerWorkspaces } from "./workspaces.ts";
@@ -83,6 +85,8 @@ export interface Services {
    * unless a test turns it off to run its rounds by hand.
    */
   readonly webhookWorker?: boolean;
+  /** What resolves AI providers' hosts, for the relay's checks; the system's unless a test gives another. */
+  readonly aiResolve?: Resolver;
 }
 
 /** Builds the server: its routes, and the modules of the enterprise features that are switched on. */
@@ -228,6 +232,13 @@ export async function buildApp(config: Config, services: Services): Promise<Fast
     // Its round ends before the database closes.
     app.addHook("onClose", () => webhooks.stop());
   }
+  // AI for the web app, through this server (ADR 0070).
+  registerAi(app, services.db, {
+    mode: config.ai,
+    privatePolicy: config.aiPrivate,
+    secretKey: config.secretKey,
+    ...(services.aiResolve === undefined ? {} : { resolve: services.aiResolve }),
+  });
   if (services.mailer !== undefined) {
     registerCodes(app, services.db, services.mailer, config.publicUrl);
   }

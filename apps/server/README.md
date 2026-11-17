@@ -444,6 +444,9 @@ machine.
 | `NETHER_WEB_APP` | `apps/web/dist`, when built | The web app's build to serve at `/`, or `off` |
 | `NETHER_TRUST_PROXY` | `off` | Behind a reverse proxy, whose `X-Forwarded-For` to believe: `on` for any, or addresses and ranges such as `10.0.0.2, 172.16.0.0/12` or `uniquelocal` |
 | `NETHER_WEBHOOK_PRIVATE` | `off` | Addresses that are not public which webhooks may reach, for services on your own network: `on` for any, or addresses and ranges such as `192.168.1.20, 10.0.0.0/8`; those may use `http://` |
+| `NETHER_AI` | `on` | AI for the web app through this server (ADR 0070): `on` with each account's providers and the admin's, `admin` with the admin's alone, or `off` |
+| `NETHER_AI_PRIVATE` | `off` | Addresses that are not public which the admin's AI providers may reach, as a model on your own network: `on` for any, or addresses and ranges such as `192.168.1.20, 10.0.0.0/8`; those may use `http://`. An account's own providers reach public addresses only |
+| `NETHER_SECRET_KEY` | none | 32 random bytes in base64, as `openssl rand -base64 32` makes them, which seal AI providers' keys at rest; without it the server keeps no keys. Keep it with your backups' secrets: a restore needs the same key to open them |
 | `NETHER_ENTERPRISE_SSO` | `off` | Single sign-on |
 | `NETHER_ENTERPRISE_SCIM` | `off` | Provisioning through SCIM and LDAP |
 | `NETHER_ENTERPRISE_AUDIT` | `off` | Audit logs |

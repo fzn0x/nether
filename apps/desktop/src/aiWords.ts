@@ -4,9 +4,16 @@ import { hostOf, isLocal } from "@nether/ai";
 import { t } from "./messages.ts";
 import type { AIProvider } from "./mygo.ts";
 
-/** A provider's model and where it runs: on this computer, or at a host. */
-export function providerWhere(provider: Pick<AIProvider, "model" | "url">): string {
-  return isLocal(provider.url)
+/**
+ * A provider's model and where it runs: on this computer, or at a host. A
+ * provider the server reaches for the web app is at its host, as the
+ * server's own computer is not the one the page runs on.
+ */
+export function providerWhere(
+  provider: Pick<AIProvider, "model" | "url">,
+  throughServer = false,
+): string {
+  return !throughServer && isLocal(provider.url)
     ? t("aiWhereLocal", { model: provider.model })
     : t("aiWhere", { model: provider.model, host: hostOf(provider.url) });
 }

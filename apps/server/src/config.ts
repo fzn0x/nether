@@ -6,6 +6,9 @@ import { type EnterpriseSwitches, enterpriseFeatures, switchVariable } from "./e
 export const logLevels = ["fatal", "error", "warn", "info", "debug", "trace", "silent"] as const;
 export type LogLevel = (typeof logLevels)[number];
 
+export const aiModes = ["on", "admin", "off"] as const;
+export type AiMode = (typeof aiModes)[number];
+
 export interface Config {
   /** The address to listen on. The Docker image sets 0.0.0.0. */
   readonly host: string;
@@ -29,6 +32,24 @@ export interface Config {
    * all, or these addresses and ranges, for services on the admin's network.
    */
   readonly webhookPrivate: boolean | readonly string[];
+  /**
+   * Whether the web app's AI goes through this server (ADR 0070): `on`, with
+   * each account's providers and the admin's; `admin`, with the admin's
+   * alone; or `off`.
+   */
+  readonly ai: AiMode;
+  /**
+   * Which addresses that are not public the admin's AI providers may reach,
+   * as a model on the server's own network: none, all, or these addresses
+   * and ranges. An account's own providers reach public addresses only.
+   */
+  readonly aiPrivate: boolean | readonly string[];
+  /**
+   * The 32 bytes that seal what the server keeps secret for its accounts,
+   * AI providers' keys among them, from NETHER_SECRET_KEY in base64; none,
+   * and the server keeps no such secret.
+   */
+  readonly secretKey: Buffer | null;
   /** The SMTP server to send email through, if any; without one the server sends none. */
   readonly mail: MailConfig | null;
   /**
@@ -178,18 +199,43 @@ function readTrustProxy(env: NodeJS.ProcessEnv): boolean | readonly string[] {
   return proxies;
 }
 
-function readWebhookPrivate(env: NodeJS.ProcessEnv): boolean | readonly string[] {
-  const value = env.NETHER_WEBHOOK_PRIVATE?.trim() ?? "";
+/** Which addresses that are not public a kind of request may reach: none, all, or these. */
+function readPrivate(
+  env: NodeJS.ProcessEnv,
+  variable: string,
+  what: string,
+): boolean | readonly string[] {
+  const value = env[variable]?.trim() ?? "";
   if (off.includes(value.toLowerCase())) return false;
   if (on.includes(value.toLowerCase())) return true;
   const ranges = value.split(",").map((item) => item.trim());
   if (!ranges.every(isProxy)) {
     throw new ConfigError(
-      "NETHER_WEBHOOK_PRIVATE",
-      `must be on, off, or the addresses and ranges webhooks may reach separated by commas, not "${value}"`,
+      variable,
+      `must be on, off, or the addresses and ranges ${what} may reach separated by commas, not "${value}"`,
     );
   }
   return ranges;
+}
+
+function readAi(env: NodeJS.ProcessEnv): AiMode {
+  const value = (env.NETHER_AI ?? "").trim().toLowerCase();
+  if (value === "") return "on";
+  if (aiModes.includes(value as AiMode)) return value as AiMode;
+  throw new ConfigError("NETHER_AI", `must be on, admin or off, not "${env.NETHER_AI ?? ""}"`);
+}
+
+function readSecretKey(env: NodeJS.ProcessEnv): Buffer | null {
+  const value = env.NETHER_SECRET_KEY?.trim() ?? "";
+  if (value === "") return null;
+  const key = /^[A-Za-z0-9+/]+={0,2}$/.test(value) ? Buffer.from(value, "base64") : undefined;
+  if (key?.length !== 32) {
+    throw new ConfigError(
+      "NETHER_SECRET_KEY",
+      "must be 32 random bytes in base64, as `openssl rand -base64 32` makes them",
+    );
+  }
+  return key;
 }
 
 function readMail(env: NodeJS.ProcessEnv): MailConfig | null {
@@ -433,7 +479,10 @@ export function readConfig(env: NodeJS.ProcessEnv): Config {
     databaseUrl: readDatabaseUrl(env),
     redisUrl: readRedisUrl(env),
     trustProxy: readTrustProxy(env),
-    webhookPrivate: readWebhookPrivate(env),
+    webhookPrivate: readPrivate(env, "NETHER_WEBHOOK_PRIVATE", "webhooks"),
+    ai: readAi(env),
+    aiPrivate: readPrivate(env, "NETHER_AI_PRIVATE", "the admin's AI providers"),
+    secretKey: readSecretKey(env),
     mail: readMail(env),
     publicUrl,
     oidc: readOidc(env, publicUrl),
