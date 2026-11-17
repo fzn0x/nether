@@ -13,9 +13,13 @@ and LDAP
 - `src/users.ts`: the accounts a directory makes, takes over, changes,
   deactivates and removes.
 - `src/groups.ts`: a directory's groups, read, with their members.
+- `src/groupDoc.ts`: a group as Nether keeps it, and `PATCH` in the
+  forms Okta and Entra ID send.
+- `src/groupWrites.ts`: groups made, changed and removed, and mapped to
+  workspaces, each change settling the places it touches.
 - `src/discovery.ts`: what a directory's address says of itself.
 - `src/scim.ts`: the SCIM server at `/api/scim/<directory>/v2`.
 
-Making and changing groups, and the LDAP pull, come next.
+The LDAP pull comes next.
 
 Roadmap: Phase 5, enterprise, mobile and scale.
