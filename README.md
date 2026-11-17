@@ -38,8 +38,11 @@ Notion exports. Self-hosting is available for enterprise.
 > notes, databases and search with personal access tokens, and its webhooks
 > tell other services when notes change; PDFs are annotated, words or
 > areas highlighted in PDF++'s colors and commented on, each highlight
-> Markdown that Obsidian reads, and drawn in the notes that embed them; and
-> the [roadmap](docs/roadmap.md#phase-4-platform) ticks off the rest as it
+> Markdown that Obsidian reads, and drawn in the notes that embed them;
+> the desktop app's [writing assist](https://fzn0x.github.io/nether/ai/)
+> works with an AI provider you bring, OpenAI-compatible or Anthropic, its
+> key in the system's keychain; and the
+> [roadmap](docs/roadmap.md#phase-4-platform) ticks off the rest as it
 > lands.
 
 [Documentation](https://fzn0x.github.io/nether/) ·

@@ -483,6 +483,15 @@ export const migrations: readonly Migration[] = [
       CREATE INDEX link_visits_by_link ON link_visits (link_id);
     `,
   },
+  {
+    version: 17,
+    name: "the switch that turns AI off for a workspace",
+    sql: `
+      -- Whether its members' apps offer AI in it (ADR 0068): on until an
+      -- owner or admin turns it off.
+      ALTER TABLE workspaces ADD COLUMN ai boolean NOT NULL DEFAULT true;
+    `,
+  },
 ];
 
 /** The schema version this server writes and reads. */

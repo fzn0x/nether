@@ -184,7 +184,35 @@ export function registerWorkspaces(app: FastifyInstance, db: Database): void {
       }
       return reply
         .code(201)
-        .send({ id: outcome, name: request.body.name.trim(), role: "owner", encryption });
+        .send({ id: outcome, name: request.body.name.trim(), role: "owner", encryption, ai: true });
+    },
+  );
+
+  // A workspace's settings, which its owners and admins change: for now,
+  // whether its members' apps offer AI in it (ADR 0068).
+  app.patch<{ Params: { workspace: string }; Body: { readonly ai: boolean } }>(
+    "/api/workspaces/:workspace",
+    {
+      schema: {
+        params: workspaceParams,
+        body: {
+          type: "object",
+          required: ["ai"],
+          additionalProperties: false,
+          properties: { ai: { type: "boolean" } },
+        },
+      },
+      preHandler: account,
+    },
+    async (request, reply) => {
+      const workspace = request.params.workspace.toLowerCase();
+      const place = await membership(db, accountOf(request).id, workspace);
+      if (place === undefined) return fail(reply, 404, "This account is in no such workspace.");
+      if (place.role !== "owner" && place.role !== "admin") {
+        return fail(reply, 403, "Only the workspace's owners and admins change its settings.");
+      }
+      await db.query("UPDATE workspaces SET ai = $2 WHERE id = $1", [workspace, request.body.ai]);
+      return { id: workspace, ai: request.body.ai };
     },
   );
 
