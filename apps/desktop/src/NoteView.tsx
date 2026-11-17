@@ -199,27 +199,44 @@ export default function NoteView(props: {
       request: commentRequest,
     };
   }, [comments, draft, activeThread, canComment, commentRequest]);
-  // What writing assist works on while it shows, and the round it shows for.
+  // What writing assist works on while it shows, the round it shows for, and
+  // the provider it was asked with. It stays open if AI goes off meanwhile,
+  // to say so, and sends nothing more.
   const [assisting, setAssisting] = useState<
-    { readonly selection: AssistSelection | undefined; readonly round: number } | undefined
+    | {
+        readonly selection: AssistSelection | undefined;
+        readonly round: number;
+        readonly ai: NoteAi;
+      }
+    | undefined
   >();
-  const aiOn = ai !== undefined;
   useEffect(() => {
     setAssisting(undefined);
-  }, [id, aiOn, mode]);
-  const assistRequest = ai?.request;
+  }, [id, mode]);
+  const latestAi = useRef(ai);
+  latestAi.current = ai;
+  // The command's count, kept while AI is off, so its coming back asks for nothing.
+  const assistRequest = useRef(ai?.request ?? 0);
+  if (ai !== undefined) assistRequest.current = ai.request;
+  const assistOn = ai !== undefined || assisting !== undefined;
   const assistView = useMemo(
     (): NoteAssistView | undefined =>
-      assistRequest === undefined
-        ? undefined
-        : {
-            request: assistRequest,
+      assistOn
+        ? {
+            request: assistRequest.current,
             onAssist: (selection) => {
-              setAssisting((current) => ({ selection, round: (current?.round ?? 0) + 1 }));
+              const asked = latestAi.current;
+              if (asked === undefined) return;
+              setAssisting((current) => ({
+                selection,
+                round: (current?.round ?? 0) + 1,
+                ai: asked,
+              }));
             },
             active: assisting?.selection?.anchor,
-          },
-    [assistRequest, assisting],
+          }
+        : undefined,
+    [assistOn, assistRequest.current, assisting],
   );
   // What plugins add to the slash menu.
   const slashEntries = useSlashEntries(plugins.codeBlocks, plugins.blocks);
@@ -460,15 +477,20 @@ export default function NoteView(props: {
         onOpenNote={onOpenNote}
         onOpenTag={onOpenTag}
       >
-        {assisting === undefined || ai === undefined ? null : (
+        {assisting === undefined ? null : (
           <Suspense fallback={null}>
             <WritingAssist
               // Each request starts afresh.
               key={assisting.round}
-              provider={ai.provider}
+              provider={assisting.ai.provider}
               selection={assisting.selection}
               noteTitle={(note) => vault.note(note)?.title}
-              allowedNow={ai.allowedNow}
+              // Nothing is sent once AI is off here, for the vault or its workspace.
+              allowedNow={() =>
+                latestAi.current === undefined
+                  ? Promise.resolve(false)
+                  : latestAi.current.allowedNow()
+              }
               onClose={() => {
                 setAssisting(undefined);
               }}

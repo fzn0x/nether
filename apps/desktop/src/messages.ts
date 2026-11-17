@@ -533,7 +533,7 @@ export const messages = {
   aiWorkspaceOff: "The owners or admins of {workspace} turned AI off for it.",
   aiWorkspaceUnreachable: "{server} could not be reached to check {workspace}: {error}",
   aiNoWorkspace: "This account is no longer in {workspace}.",
-  aiWorkspaceOffNow: "The workspace's owners or admins have turned AI off for it.",
+  aiWorkspaceOffNow: "AI is off here now, for this vault or its workspace, so nothing was sent.",
   aiNotOnTheWeb: "AI comes to the web app through its server, in a later version.",
   aiAssistCommand: "Writing assist",
   aiAssist: "Writing assist",
