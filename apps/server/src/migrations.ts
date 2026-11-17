@@ -587,6 +587,66 @@ export const migrations: readonly Migration[] = [
       );
     `,
   },
+  {
+    version: 22,
+    name: "single sign-on's providers, their domains and their sign-ins",
+    sql: `
+      -- Single sign-on's providers (ADR 0080), set in the admin console:
+      -- each SAML 2.0 or OpenID Connect, by a short name of the admin's,
+      -- which its addresses carry, as /api/sso/<id>/saml/acs. The tables
+      -- are in every schema, as the module is in every image (ADR 0079).
+      CREATE TABLE sso_providers (
+        id text PRIMARY KEY,
+        kind text NOT NULL CHECK (kind IN ('saml', 'oidc')),
+        -- For the apps' button.
+        name text NOT NULL,
+        -- Whether a first sign-in at one of its domains makes an account.
+        make_accounts boolean NOT NULL DEFAULT true,
+        -- What reaching and reading it takes, as the module keeps it.
+        settings jsonb NOT NULL,
+        -- Its secrets, sealed with NETHER_SECRET_KEY: SAML's key, OIDC's client secret.
+        secrets bytea NOT NULL,
+        created_at timestamptz NOT NULL DEFAULT now(),
+        updated_at timestamptz NOT NULL DEFAULT now()
+      );
+
+      -- The email domains a provider is trusted for: one provider at most each.
+      CREATE TABLE sso_domains (
+        domain text PRIMARY KEY,
+        provider_id text NOT NULL REFERENCES sso_providers (id) ON DELETE CASCADE
+      );
+
+      CREATE INDEX sso_domains_by_provider ON sso_domains (provider_id);
+
+      -- A sign-in through a provider, from the app's start to the app's
+      -- redeeming it, as oidc_flows are: only hashes of the state and the
+      -- handoff code are kept.
+      CREATE TABLE sso_flows (
+        id uuid PRIMARY KEY,
+        provider_id text NOT NULL REFERENCES sso_providers (id) ON DELETE CASCADE,
+        state_hash text NOT NULL UNIQUE,
+        -- OpenID Connect's nonce and the server's PKCE verifier; none for SAML.
+        nonce text,
+        verifier text,
+        redirect text NOT NULL,
+        challenge text NOT NULL,
+        invitation_hash text,
+        handoff_hash text UNIQUE,
+        user_id uuid REFERENCES users (id) ON DELETE CASCADE,
+        workspace_id uuid REFERENCES workspaces (id) ON DELETE CASCADE,
+        created_at timestamptz NOT NULL DEFAULT now(),
+        expires_at timestamptz NOT NULL
+      );
+
+      -- SAML's request IDs until answered, and the assertions received
+      -- until they could no longer be accepted, so none counts twice.
+      CREATE TABLE sso_kept (
+        key text PRIMARY KEY,
+        value text NOT NULL,
+        expires_at timestamptz NOT NULL
+      );
+    `,
+  },
 ];
 
 /** The schema version this server writes and reads. */
