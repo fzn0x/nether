@@ -31,6 +31,14 @@ test("an owner changes a role, removes a member, and invites by a link", async (
     { id: "u2", name: "Bea", email: "bea@example.org", role: "member" },
     // Deactivated by the organization's directory (ADR 0085).
     { id: "u3", name: "Cal", email: "cal@example.org", role: "member", deactivated: true },
+    // A group of the directory's gives Dee her place, as an admin.
+    {
+      id: "u4",
+      name: "Dee",
+      email: "dee@example.org",
+      role: "admin",
+      groups: [{ id: "g1", name: "Staff", role: "admin" }],
+    },
   ];
   let waiting: object[] = [];
   const sent = await fakeServer(page, {
@@ -71,8 +79,16 @@ test("an owner changes a role, removes a member, and invites by a link", async (
   await command(page, "workspace members");
   const dialog = page.getByRole("dialog", { name: "Members of Team" });
   const list = dialog.getByRole("list", { name: "Members" });
-  await expect(list.getByRole("listitem")).toHaveCount(3);
+  await expect(list.getByRole("listitem")).toHaveCount(4);
   await expect(list.getByRole("listitem").filter({ hasText: "Cal" })).toContainText("Deactivated");
+  // Her place is the group's: not removed here, nor lowered below it.
+  const dee = list.getByRole("listitem").filter({ hasText: "Dee" });
+  await expect(dee).toContainText("Through Staff");
+  await expect(dee.getByRole("button", { name: "Remove Dee" })).toHaveCount(0);
+  await expect(dee.getByRole("combobox", { name: "Role of Dee" }).getByRole("option")).toHaveText([
+    "Owner",
+    "Admin",
+  ]);
   await expect(list.getByRole("listitem").filter({ hasText: "Bea" })).not.toContainText(
     "Deactivated",
   );
@@ -82,7 +98,7 @@ test("an owner changes a role, removes a member, and invites by a link", async (
   await expect(dialog.getByRole("status")).toHaveText("Bea's role is now Guest.");
   await dialog.getByRole("button", { name: "Remove Cal" }).click();
   await expect(dialog.getByRole("status")).toHaveText("Cal is no longer in the workspace.");
-  await expect(list.getByRole("listitem")).toHaveCount(2);
+  await expect(list.getByRole("listitem")).toHaveCount(3);
 
   await dialog.getByRole("button", { name: "Make an invitation link" }).click();
   await expect(dialog.getByRole("textbox", { name: "Invitation link" })).toHaveValue(
