@@ -11,6 +11,7 @@ import { describe, expect, it } from "vitest";
 import {
   askLimits,
   choosePassages,
+  conversationNote,
   findNotes,
   keywordsOf,
   passagesOf,
@@ -137,6 +138,52 @@ describe("asking your notes", () => {
         new Map([["m" as NoteId, { note: "m" as NoteId, heading: "Here" }]]),
       )[0]?.part,
     ).toEqual({ block: "m-here" });
+  });
+
+  it("writes a conversation as a note, each citation a link, the unverified as they came", () => {
+    const passages = [
+      {
+        note: "n1" as NoteId,
+        title: "Launch plan",
+        heading: "Party",
+        part: { block: "b1" },
+        text: "A party after the launch.",
+      },
+      {
+        note: "n2" as NoteId,
+        title: "Party ideas",
+        heading: undefined,
+        part: { block: "b2" },
+        text: "Balloons.",
+      },
+    ];
+    const titles: Record<string, string> = { n1: "Launch plan", n2: "Party ideas" };
+    const text = conversationNote(
+      [
+        {
+          question: "What about the party?",
+          answer:
+            "A party after the launch [1], with balloons [2], in [[Party ideas]]; and cake [5] from [[Nowhere]].",
+          passages,
+          status: "done",
+        },
+        { question: "Nothing here?", answer: "", passages: [], status: "empty" },
+      ],
+      (note) => titles[note],
+    );
+    expect(text).toBe(
+      [
+        "## What about the party?",
+        "",
+        "A party after the launch [[Launch plan#Party|1]], with balloons [[Party ideas|2]], in [[Party ideas]]; and cake [5] from Nowhere.",
+        "",
+        "### Sources",
+        "",
+        "1. [[Launch plan#Party]]",
+        "2. [[Party ideas]]",
+        "",
+      ].join("\n"),
+    );
   });
 
   it("retrieves passages whose blocks are the note's document's own", async () => {

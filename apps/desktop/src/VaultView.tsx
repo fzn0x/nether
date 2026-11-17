@@ -25,7 +25,7 @@ import { CommandPalette } from "./CommandPalette.tsx";
 import { ContextMenu, type MenuEntry, type MenuPoint } from "./ContextMenu.tsx";
 import { type Menu, MenuBar } from "./MenuBar.tsx";
 import { IconButton } from "./IconButton.tsx";
-import { assistIcon, commandIcons, itemIcons, menuIcons } from "./icons.ts";
+import { askIcon, assistIcon, commandIcons, itemIcons, menuIcons } from "./icons.ts";
 import { NewFolderDialog } from "./NewFolderDialog.tsx";
 import { TextPromptDialog } from "./TextPromptDialog.tsx";
 import { myName, setMyName } from "./people.ts";
@@ -99,6 +99,7 @@ import { useBookmarks } from "./useBookmarks.ts";
 import { TrashPanel } from "./TrashPanel.tsx";
 import type { NotePart } from "./noteLinks.ts";
 import type { NoteMode } from "./NoteView.tsx";
+import type { AskedTurn } from "./AskPanel.tsx";
 import { findTemplate, nameOf, periodicNote, periods, templateChoices } from "./templates.ts";
 import { useGraph } from "./useGraph.ts";
 import { hostOf, syncSummary } from "./sync.ts";
@@ -193,6 +194,10 @@ const AppearanceSettings = lazy(() =>
 // So does the AI tab, with the providers' code (ADR 0068).
 const AiSettings = lazy(() =>
   import("./AiSettings.tsx").then(({ AiSettings: tab }) => ({ default: tab })),
+);
+// And asking your notes, the first time its tab opens (ADR 0075).
+const AskPanel = lazy(() =>
+  import("./AskPanel.tsx").then(({ AskPanel: panel }) => ({ default: panel })),
 );
 const ServersDialog = lazy(() =>
   import("./ServersDialog.tsx").then(({ ServersDialog: dialog }) => ({ default: dialog })),
@@ -322,6 +327,10 @@ export function VaultView(props: {
   const sync = useSync(vault);
   // The AI provider the vault uses, if any: with none, nothing of AI shows (ADR 0068).
   const ai = useAi(vault, sync.link);
+  // The questions asked of the vault's notes, kept while it is open, and
+  // the count that asks the question's box for focus.
+  const [askTurns, setAskTurns] = useState<readonly AskedTurn[]>([]);
+  const [askFocus, setAskFocus] = useState(0);
   const notifications = useNotifications(vault, sync.link);
   const people = usePeople(sync.link);
   // The vault's light or dark, theme and snippets, on the page while it is open.
@@ -1663,6 +1672,26 @@ export function VaultView(props: {
       },
     });
   }, [registry, aiReady]);
+  // Asking your notes, a tab of the sidebar while the vault has a provider.
+  useEffect(() => {
+    if (!aiReady) return;
+    return registry.add({
+      id: "ask",
+      name: () => t("askCommand"),
+      menu: "view",
+      keys: [],
+      icon: askIcon,
+      enabled: () => true,
+      run: () => {
+        setTag(undefined);
+        setPanel("ask");
+        setAskFocus((count) => count + 1);
+      },
+    });
+  }, [registry, aiReady]);
+  useEffect(() => {
+    if (!aiReady && panel === "ask") setPanel("notes");
+  }, [aiReady, panel]);
 
   /**
    * The menus' items, each a command; one that cannot run now shows, but
@@ -1860,6 +1889,17 @@ export function VaultView(props: {
               >
                 {t("trash")}
               </button>
+              {aiReady ? (
+                <button
+                  type="button"
+                  aria-pressed={panel === "ask"}
+                  onClick={() => {
+                    setPanel("ask");
+                  }}
+                >
+                  {t("askTab")}
+                </button>
+              ) : null}
               {sidebarPanels.map((each) => (
                 <button
                   key={each.id}
@@ -1889,6 +1929,24 @@ export function VaultView(props: {
               />
             ) : panel === "trash" ? (
               <TrashPanel vault={state.vault} onRestored={openRestored} />
+            ) : panel === "ask" && ai.resolution.provider !== undefined ? (
+              <Suspense fallback={null}>
+                <AskPanel
+                  vault={state.vault}
+                  provider={ai.resolution.provider}
+                  workspaceId={sync.link?.workspaceId}
+                  through={
+                    ai.settings.server === undefined || sync.link === undefined
+                      ? undefined
+                      : hostOf(sync.link.server)
+                  }
+                  allowedNow={ai.allowedNow}
+                  turns={askTurns}
+                  onTurns={setAskTurns}
+                  onOpen={openNote}
+                  focusRequest={askFocus}
+                />
+              </Suspense>
             ) : panel === "search" ? (
               <SearchPanel
                 vault={state.vault}

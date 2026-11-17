@@ -6,11 +6,16 @@
 // else is found. Each note found is read as the editor holds it, cut into
 // passages under its headings, each opening at its first block; the best of
 // them go with the question, within a limit of passages and characters.
+// And a conversation written as a note, its citations links that Obsidian
+// reads too.
+import { cleanReply, readAnswer } from "@nether/ai";
 import { type ContentBlock, type NoteId, newBlockId } from "@nether/core";
 import { documentBlocks } from "@nether/editor";
 import { plainText } from "@nether/graph";
+import { wikiLinkText } from "@nether/markdown";
 import { type SearchQuery, foldText } from "@nether/search";
 import type { Vault } from "@nether/storage";
+import { t } from "./messages.ts";
 import type { NotePart } from "./noteLinks.ts";
 import { noteDocuments, whenLoaded } from "./noteDocuments.ts";
 
@@ -230,4 +235,57 @@ export async function retrieve(
     read.push(passagesOf(note, entry.title, await blocksOf(vault, note)));
   }
   return choosePassages(read, question, found.meaning);
+}
+
+/** A question asked, its answer, and the passages it went with. */
+export interface AskedTurn {
+  readonly question: string;
+  readonly answer: string;
+  readonly passages: readonly Passage[];
+  /** `done`; `stopped` by the user; `failed`, with why; or `empty`, when no note was found and nothing sent. */
+  readonly status: "done" | "stopped" | "failed" | "empty";
+  readonly error?: string;
+}
+
+/** The passage a note named in an answer is, when it is among those sent. */
+export function namedPassage(passages: readonly Passage[], name: string): Passage | undefined {
+  const wanted = name.toLowerCase();
+  return passages.find((passage) => passage.title.toLowerCase() === wanted);
+}
+
+/** A conversation as a note: each question a section, its citations links to the passages, as Obsidian reads them. */
+export function conversationNote(
+  turns: readonly AskedTurn[],
+  noteTitle: (note: NoteId) => string | undefined,
+): string {
+  const link = (passage: Passage, alias?: string) =>
+    `[[${wikiLinkText(
+      passage.heading === undefined || passage.heading === passage.title
+        ? { note: passage.note }
+        : { note: passage.note, heading: passage.heading },
+      alias,
+      noteTitle,
+    )}]]`;
+  const sections = turns
+    .filter((turn) => turn.status === "done" || turn.status === "stopped")
+    .map((turn) => {
+      const answer = readAnswer(cleanReply(turn.answer))
+        .map((part) => {
+          if (part.kind === "text") return part.text;
+          const passage =
+            part.kind === "cite"
+              ? turn.passages[part.passage - 1]
+              : namedPassage(turn.passages, part.name);
+          if (passage === undefined) {
+            return part.kind === "cite" ? `[${String(part.passage)}]` : part.name;
+          }
+          return part.kind === "cite" ? link(passage, String(part.passage)) : link(passage);
+        })
+        .join("");
+      const sources = turn.passages
+        .map((passage, index) => `${String(index + 1)}. ${link(passage)}`)
+        .join("\n");
+      return `## ${turn.question}\n\n${answer}\n\n### ${t("askSourcesHeading")}\n\n${sources}\n`;
+    });
+  return sections.join("\n");
 }
