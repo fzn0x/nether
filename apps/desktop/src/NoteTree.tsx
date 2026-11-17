@@ -11,6 +11,7 @@ import { type NoteEntry, folderOf } from "@nether/storage";
 import { type DragEvent, type KeyboardEvent, useEffect, useMemo, useRef, useState } from "react";
 import { type MenuPoint, isMenuKey, pointBelow } from "./ContextMenu.tsx";
 import { t } from "./messages.ts";
+import { coarseQuery, useMedia } from "./phone.ts";
 import {
   type TreeNode,
   type TreeRow,
@@ -21,7 +22,9 @@ import {
   visibleRows,
 } from "./tree.ts";
 
-const rowHeight = 28;
+const fineRow = 28;
+/** A row a finger can hit, on a coarse pointer (ADR 0087). */
+const coarseRow = 48;
 const overscan = 8;
 const indent = 14;
 const dragType = "application/x-nether-path";
@@ -128,6 +131,7 @@ export function NoteTree(props: {
     label,
     storageKey,
   } = props;
+  const rowHeight = useMedia(coarseQuery) ? coarseRow : fineRow;
   const scroller = useRef<HTMLDivElement>(null);
   const [view, setView] = useState({ top: 0, height: 600 });
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => readStored(storageKey));

@@ -6,8 +6,11 @@ import type { NoteId } from "@nether/core";
 import { type NoteEntry, folderOf } from "@nether/storage";
 import { type KeyboardEvent, useEffect, useRef, useState } from "react";
 import { type MenuPoint, isMenuKey, pointBelow } from "./ContextMenu.tsx";
+import { coarseQuery, useMedia } from "./phone.ts";
 
-const rowHeight = 30;
+const fineRow = 30;
+/** A row a finger can hit, on a coarse pointer (ADR 0087). */
+const coarseRow = 48;
 const overscan = 8;
 
 export function NoteList(props: {
@@ -23,6 +26,7 @@ export function NoteList(props: {
   readonly label: string;
 }) {
   const { notes, selected, onSelect, onMenu, onOpenInNewTab, menuFor, label } = props;
+  const rowHeight = useMedia(coarseQuery) ? coarseRow : fineRow;
   const scroller = useRef<HTMLDivElement>(null);
   const [view, setView] = useState({ top: 0, height: 600 });
 

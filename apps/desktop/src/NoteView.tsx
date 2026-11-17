@@ -139,6 +139,8 @@ export default function NoteView(props: {
   readonly titleId?: string;
   /** Writing assist, while the vault has an AI provider; nothing of it shows otherwise. */
   readonly ai?: NoteAi;
+  /** On a phone, the editor's bar of formatting and block actions above the keyboard (ADR 0087). */
+  readonly keyboardBar?: boolean;
 }) {
   const {
     vault,
@@ -171,6 +173,7 @@ export default function NoteView(props: {
     threadRequest,
     titleId = "note-title",
     ai,
+    keyboardBar = false,
   } = props;
   const note = vault.note(id);
   const { state, saveError, editText, refresh } = useNote(vault, id);
@@ -491,6 +494,7 @@ export default function NoteView(props: {
               slashEntries={slashEntries}
               previews={linkPreviews(vault)}
               autofocus={switched}
+              keyboardBar={keyboardBar}
               {...(focus === undefined ? {} : { focus })}
               {...(collaboration === undefined ? {} : { collaboration })}
               {...(commentsView === undefined ? {} : { comments: commentsView })}
