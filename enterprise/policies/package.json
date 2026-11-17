@@ -1,0 +1,22 @@
+{
+  "name": "@nether/enterprise-policies",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Data policies, beginning with the approved AI endpoints every Nether app keeps to (ADR 0086).",
+  "license": "AGPL-3.0-or-later",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@nether/server": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^24.19.2",
+    "vitest": "^5.0.5"
+  }
+}
