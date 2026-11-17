@@ -489,7 +489,8 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   keeping their own places. A run changes nothing on any error, the first
   is a preview to apply, and one that would deactivate more than a tenth
   of the accounts, and more than five, waits for Run anyway. CI reads a
-  real OpenLDAP built from Alpine's packages.
+  real OpenLDAP and a Samba Active Directory domain controller, both
+  built from Alpine's packages.
 - Advanced permissions, first part: what a role may do is ten settings,
   which each built-in role fixes to what it has always given, and every
   check of the server reads them in place of a role's name. `/api/me`

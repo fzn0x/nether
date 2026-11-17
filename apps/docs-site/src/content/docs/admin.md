@@ -281,7 +281,8 @@ needs `NETHER_SECRET_KEY`, which seals its bind password.
 The directory is yours: you bring your own Okta, Microsoft Entra ID,
 Active Directory, OpenLDAP or other directory, and Nether has no account
 at any of them. CI sends SCIM requests shaped as Okta's and Entra ID's
-documents describe them, and reads a real OpenLDAP. If you run one of
+documents describe them, and reads a real OpenLDAP and a Samba Active
+Directory domain controller. If you run one of
 those, or another directory, tell how it went with the
 [identity provider report](https://github.com/fzn0x/nether/issues/new?template=provider_report.yml),
 so the steps below hold for everyone.
@@ -471,6 +472,13 @@ Nether never checks a directory password.
   them. It reads `objectGUID` as the ID, `userPrincipalName` as the
   userName, and membership from `memberOf`. Pages hold 500 entries,
   under Active Directory's `MaxPageSize`.
+- Keep membership on `memberOf`. Windows sends a group's `member` past
+  1,500 values in ranges, and a run that reads groups' member lists stops
+  at such a group, naming it, rather than read it in part.
+- CI reads a Samba domain controller with this preset. Samba is not
+  Windows in two ways that matter here: it sends a large group's `member`
+  whole, and it caps no page at `MaxPageSize`. What else you find on
+  Windows, tell in the identity provider report above.
 
 #### OpenLDAP
 

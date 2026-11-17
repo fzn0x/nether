@@ -704,6 +704,16 @@ In ADR 0081's style, added to core's list of actions:
   `objectGUID`'s bytes, and the filter's text. A follow-up issue asks the
   maintainer to check Okta, Entra ID and Active Directory live, with the
   guide's steps and Microsoft's SCIM validator.
+  - As built (#214): CI reads a Samba domain controller with the preset,
+    from Alpine 3.24's `samba-dc` 4.23, under the GPL-3.0 and only run in
+    CI: an organizational unit over ldaps and StartTLS, `objectGUID`
+    across a rename and a move, a disabled account, nesting through a
+    group the filter does not read, 1,600 members through `memberOf`, the
+    hold, and the referrals the domain's root sends. Samba sends a large
+    group's `member` whole, where Windows sends ranges of 1,500, and caps
+    no page at `MaxPageSize`; ranges stay tested on fixtures. Okta and
+    Entra ID are their admins' to report, through the identity provider
+    report form.
 
 ### Parts
 
