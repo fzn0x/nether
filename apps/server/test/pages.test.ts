@@ -5,7 +5,7 @@
 import { randomUUID } from "node:crypto";
 import { afterEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
-import { readBytes } from "../src/db.ts";
+import { type Database, readBytes } from "../src/db.ts";
 import { storeDocument } from "../src/sync.ts";
 import { type SetUp, type TestServer, bearer, setUp, startServer } from "./app.ts";
 
@@ -18,8 +18,8 @@ afterEach(async () => {
 
 type Test = TestServer & SetUp;
 
-async function start(): Promise<Test> {
-  running = await startServer();
+async function start(options: Parameters<typeof startServer>[0] = {}): Promise<Test> {
+  running = await startServer(options);
   return { ...running, ...(await setUp(running)) };
 }
 
@@ -88,6 +88,58 @@ async function listed(test: Test, name: string) {
   };
 }
 
+/**
+ * A database that, once armed, holds the first transaction whose first
+ * statement `holds` picks, until released: rolled back before it changes
+ * anything, and run again after. The request it is in waits there.
+ */
+function holding(holds: (text: string) => boolean) {
+  const stop = new Error("Held");
+  const held = Promise.withResolvers<undefined>();
+  const released = Promise.withResolvers<undefined>();
+  const gate = {
+    armed: false,
+    held: held.promise,
+    release: () => {
+      released.resolve(undefined);
+    },
+  };
+  const wrap = (database: Database): Database => ({
+    ...database,
+    transaction: async (work) => {
+      try {
+        return await database.transaction((tx) =>
+          work({
+            query: (text, params) => {
+              if (gate.armed && holds(text)) {
+                gate.armed = false;
+                throw stop;
+              }
+              return tx.query(text, params);
+            },
+          }),
+        );
+      } catch (error) {
+        if (error !== stop) throw error;
+        held.resolve(undefined);
+        await released.promise;
+        return database.transaction(work);
+      }
+    },
+  });
+  return { gate, wrap };
+}
+
+/** What a request has come to after a moment: its answer's status, or none yet. */
+async function soon(request: PromiseLike<{ statusCode: number }>): Promise<number | "waiting"> {
+  const moment = new Promise<"waiting">((resolve) => {
+    setTimeout(() => {
+      resolve("waiting");
+    }, 300);
+  });
+  return Promise.race([Promise.resolve(request).then((answer) => answer.statusCode), moment]);
+}
+
 describe("shared pages", () => {
   it("keep the people where the page sits, unless restricted to their own", async () => {
     const test = await start();
@@ -143,6 +195,36 @@ describe("shared pages", () => {
     const { rows } = await test.db.query("SELECT note, unit_id FROM note_units ORDER BY note");
     expect(rows).toEqual([{ note: inner, unit_id: child.id }]);
     expect((await levels(test, bea.token))[child.id]).toBe("full");
+  });
+
+  it("take no note moved into them while they stop being shared on their own", async () => {
+    // Held after the page's list joins General's, before its unit goes: an
+    // app that hears of that list then asks to move the page's notes back
+    // into its unit, as 0.1.0 does. Taken, the notes would be listed
+    // nowhere once the unit goes (#179).
+    const { gate, wrap } = holding((text) => text.startsWith("DELETE FROM note_units"));
+    const test = await start({ wrapDb: wrap });
+    const launch = randomUUID();
+    const page = await share(test, test.token, launch);
+    await storeDocument(
+      test.db,
+      test.workspaceId,
+      `vault.${page.id}`,
+      listing({ [launch]: "Projects/Launch.md" }),
+    );
+    gate.armed = true;
+    const unsharing = call(test, "DELETE", `/pages/${page.id}`, test.token);
+    await gate.held;
+    expect((await listed(test, "vault")).notes).toEqual({ [launch]: "Projects/Launch.md" });
+
+    // The move waits for the unit's drop, then finds it gone.
+    const moving = call(test, "PUT", `/notes/${launch}/unit`, test.token, { unit: page.id });
+    expect(await soon(moving)).toBe("waiting");
+    gate.release();
+    expect((await unsharing).statusCode).toBe(204);
+    expect((await moving).statusCode).toBe(403);
+    const { rows } = await test.db.query("SELECT note FROM note_units");
+    expect(rows).toEqual([]);
   });
 
   it("list their notes where they sit before they stop being shared on their own", async () => {
