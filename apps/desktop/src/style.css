@@ -2623,6 +2623,12 @@ button {
   margin-bottom: 0.75rem;
 }
 
+/* The server's nodes, in every build (ADR 0082). */
+.admin-nodes {
+  margin: 0;
+  padding-inline-start: 1.2em;
+}
+
 .admin-usage {
   display: grid;
   grid-template-columns: max-content 1fr;

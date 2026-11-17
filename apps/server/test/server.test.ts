@@ -1,3 +1,4 @@
+import { hostname } from "node:os";
 import type { FastifyInstance } from "fastify";
 import { afterEach, describe, expect, it } from "vitest";
 import { buildApp, serverVersion } from "../src/app.ts";
@@ -37,6 +38,8 @@ describe("readConfig", () => {
       port: 3000,
       logLevel: "info",
       databaseUrl: database.NETHER_DATABASE_URL,
+      // The machine's own name, as a pod's is.
+      nodeName: hostname(),
       redisUrl: null,
       trustProxy: false,
       webhookPrivate: false,
