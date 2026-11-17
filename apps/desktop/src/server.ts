@@ -41,7 +41,12 @@ export interface Workspace {
   readonly encrypted: boolean;
   /** Whether its members' apps offer AI in it, as its owners and admins choose (ADR 0068). */
   readonly ai: boolean;
+  /** Whether its server's data policy lets its notes be exported (ADR 0088). */
+  readonly exportAllowed: boolean;
 }
+
+/** What a page's share links may do under its workspace's data policy (ADR 0088). */
+export type LinksPolicy = "on" | "view" | "off";
 
 /** Where the browser comes back to after a provider, and the wait for it. */
 export interface LoopbackWait {
@@ -386,6 +391,8 @@ export async function account(
         encrypted: workspace.encryption === "end-to-end",
         // A server from before the switch offers it always.
         ai: workspace.ai !== false,
+        // A server from before data policies, or with none, keeps nothing.
+        exportAllowed: record(workspace.policies).export !== false,
       };
     }),
     // A server from before the lock locks nothing.
@@ -468,6 +475,8 @@ export async function makeWorkspace(
     role: text(answer.role, base),
     encrypted: answer.encryption === "end-to-end",
     ai: answer.ai !== false,
+    // Its data policy comes in /api/me, which a vault linked to it asks.
+    exportAllowed: true,
   };
 }
 
@@ -942,18 +951,23 @@ function shareLinkOf(value: unknown, base: string): ShareLink {
   };
 }
 
-/** A page's share links. */
+/** A page's share links, and what its workspace's data policy lets them do. */
 export async function shareLinks(
   fetcher: Fetch,
   base: string,
   token: string,
   workspaceId: string,
   unit: string,
-): Promise<ShareLink[]> {
+): Promise<{ readonly links: ShareLink[]; readonly policy: LinksPolicy }> {
   const answer = record(
     await workspaceRequest(fetcher, base, token, workspaceId, `/units/${unit}/links`),
   );
-  return (Array.isArray(answer.links) ? answer.links : []).map((each) => shareLinkOf(each, base));
+  const policy = answer.policy;
+  return {
+    links: (Array.isArray(answer.links) ? answer.links : []).map((each) => shareLinkOf(each, base)),
+    // A server from before data policies lets them do anything.
+    policy: policy === "view" || policy === "off" ? policy : "on",
+  };
 }
 
 /** Makes a share link to a page shared on its own. */
