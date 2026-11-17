@@ -2,9 +2,11 @@
 // instance admins. Its Features page is in every build: each enterprise
 // feature's switch, with why it is set as it is. The `admin` feature adds
 // the server's usage, counted when the page asks, its workspaces (ADR
-// 0083) and its security settings (ADR 0084). Only its own code loads, as
-// a share link's page does.
+// 0083) and its security settings (ADR 0084). The server's nodes are listed
+// in every build (ADR 0082). Only its own code loads, as a share link's
+// page does.
 import { type ReactNode, useCallback, useEffect, useState } from "react";
+import { NodesSection } from "./AdminNodes.tsx";
 import { AiEndpointsPage } from "./AdminPolicies.tsx";
 import { SecurityPage } from "./AdminSecurity.tsx";
 import { SsoPage } from "./AdminSso.tsx";
@@ -252,6 +254,7 @@ export function AdminPage() {
               })}
             </ul>
           </section>
+          <NodesSection />
           {consoleOn ? (
             <>
               <UsagePage usage={usage} onCount={count} />
