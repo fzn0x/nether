@@ -1,15 +1,17 @@
 // Stores across nodes (ADR 0082): a store merges with what is stored only
 // when another node stored the document since this one read it, and its
 // open document then gets what it lacked; a store of a row no one else
-// changed reads no stored state.
+// changed reads no stored state. Making a note through the API takes a
+// lock every node shares, so two makes of one path go one after the other.
 import { randomUUID } from "node:crypto";
 import type { AddressInfo } from "node:net";
 import { HocuspocusProvider } from "@hocuspocus/provider";
 import { afterEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
-import { type Database, type Queryable, readBytes } from "../src/db.ts";
+import { type Database, type Queryable, connectPostgres, readBytes } from "../src/db.ts";
 import { storeDocuments } from "../src/sync.ts";
-import { type SetUp, type TestServer, setUp, signIn, startServer } from "./app.ts";
+import { type SetUp, type TestServer, bearer, setUp, signIn, startServer } from "./app.ts";
+import { testDatabase } from "./database.ts";
 import { freePort } from "./ports.ts";
 
 const running: TestServer[] = [];
@@ -155,5 +157,81 @@ describe("stores across nodes", () => {
     const text = (await storedText(first.db, setup.workspaceId, note)) ?? "";
     expect(text).toContain("Replaced.");
     expect(text).toContain("Also.");
+  });
+});
+
+describe("making notes on two nodes", () => {
+  it("takes one path once, the second make refused", async () => {
+    const first = await startServer();
+    running.push(first);
+    const setup: SetUp = await setUp(first);
+    const second = await startServer({ nodeOf: first });
+    running.push(second);
+    const made = await first.server.inject({
+      method: "POST",
+      url: "/api/tokens",
+      headers: bearer(setup.token),
+      payload: { name: "Script", access: "write", password: "a long password" },
+    });
+    const secret = made.json<{ token: string }>().token;
+    const make = (node: TestServer, words: string) =>
+      node.server.inject({
+        method: "POST",
+        url: `/api/v1/workspaces/${setup.workspaceId}/notes`,
+        headers: bearer(secret),
+        payload: { path: "Plans.md", markdown: `${words}\n` },
+      });
+    const answers = await Promise.all([make(first, "One"), make(second, "Two")]);
+    expect(answers.map((answer) => answer.statusCode).sort()).toEqual([201, 409]);
+  }, 30_000);
+});
+
+describe("a lock every node shares", () => {
+  const url = process.env.NETHER_TEST_DATABASE_URL ?? "";
+
+  /** Two works, each under its key, each saying when it starts and ends. */
+  async function twoWorks(
+    first: Database,
+    second: Database,
+    keys: readonly [string, string],
+  ): Promise<string[]> {
+    const said: string[] = [];
+    const work = (name: string) => async () => {
+      said.push(`${name} in`);
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      said.push(`${name} out`);
+    };
+    await Promise.all([first.lock(keys[0], work("a")), second.lock(keys[1], work("b"))]);
+    return said;
+  }
+
+  /** Whether one work ended before the other started. */
+  function apart(said: readonly string[]): boolean {
+    return said[0]?.slice(0, 1) === said[1]?.slice(0, 1) && said[1]?.endsWith("out") === true;
+  }
+
+  it("runs works of one key one after the other, of two keys at once, and lets go when one throws", async () => {
+    const db = await testDatabase();
+    try {
+      expect(apart(await twoWorks(db, db, ["one", "one"]))).toBe(true);
+      const both = await twoWorks(db, db, ["one", "two"]);
+      expect(both.slice(0, 2).every((each) => each.endsWith("in"))).toBe(true);
+      await expect(db.lock("one", () => Promise.reject(new Error("No")))).rejects.toThrow("No");
+      expect(await db.lock("one", () => Promise.resolve("after"))).toBe("after");
+    } finally {
+      await db.close();
+    }
+  });
+
+  it.skipIf(url === "")("holds across two nodes' connections to PostgreSQL", async () => {
+    const first = connectPostgres(url);
+    const second = connectPostgres(url);
+    const key = `test.${randomUUID()}`;
+    try {
+      expect(apart(await twoWorks(first, second, [key, key]))).toBe(true);
+    } finally {
+      await first.close();
+      await second.close();
+    }
   });
 });

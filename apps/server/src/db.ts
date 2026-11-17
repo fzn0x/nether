@@ -76,12 +76,43 @@ export interface Queryable {
 export interface Database extends Queryable {
   /** Runs `work` in a transaction: committed when it returns, rolled back when it throws. */
   transaction<T>(work: (tx: Queryable) => Promise<T>): Promise<T>;
+  /**
+   * Runs `work` while holding a lock named `key`, which no other work of
+   * any node holds meanwhile (ADR 0082). The work runs outside any
+   * transaction, and may take its own.
+   */
+  lock<T>(key: string, work: () => Promise<T>): Promise<T>;
   close(): Promise<void>;
+}
+
+/**
+ * Locks by name within one process: each key's work after the one before
+ * it, as a database with one connection, PGlite, has them.
+ */
+export function processLocks(): Database["lock"] {
+  const turns = new Map<string, Promise<unknown>>();
+  return <T>(key: string, work: () => Promise<T>): Promise<T> => {
+    const run = (turns.get(key) ?? Promise.resolve()).then(work, work);
+    const done = run.then(
+      () => undefined,
+      () => undefined,
+    );
+    turns.set(key, done);
+    void done.then(() => {
+      if (turns.get(key) === done) turns.delete(key);
+    });
+    return run;
+  };
 }
 
 /** A pool of connections to the PostgreSQL database at `url`. */
 export function connectPostgres(url: string): Database {
   const pool = new pg.Pool({ connectionString: url, max: 10 });
+  // Locks hold a connection of their own while their work uses the pool's,
+  // so work waiting on a lock never takes every connection its holder needs.
+  let lockPool: pg.Pool | undefined;
+  // Work of this process for one key waits here, not on a connection each.
+  const inProcess = processLocks();
   return {
     async query(text, params) {
       const result = await pool.query<Row>(text, params === undefined ? undefined : [...params]);
@@ -109,6 +140,32 @@ export function connectPostgres(url: string): Database {
         client.release();
       }
     },
-    close: () => pool.end(),
+    lock: <T>(key: string, work: () => Promise<T>): Promise<T> =>
+      inProcess(key, async () => {
+        lockPool ??= new pg.Pool({ connectionString: url, max: 4 });
+        const client = await lockPool.connect();
+        const name = `nether.lock.${key}`;
+        let broken: Error | undefined;
+        try {
+          // A session's lock, held until it is let go or the connection ends.
+          await client.query("SELECT pg_advisory_lock(hashtextextended($1, 0))", [name]);
+          try {
+            return await work();
+          } finally {
+            await client
+              .query("SELECT pg_advisory_unlock(hashtextextended($1, 0))", [name])
+              .catch((error: unknown) => {
+                // A connection that could not let go is closed, and its lock with it.
+                broken = error instanceof Error ? error : new Error(String(error));
+              });
+          }
+        } finally {
+          client.release(broken);
+        }
+      }),
+    async close() {
+      await pool.end();
+      await lockPool?.end();
+    },
   };
 }
