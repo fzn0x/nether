@@ -410,10 +410,17 @@ function ProviderDetails(props: { readonly provider: ProviderView }) {
             ))}
           </dl>
           {provider.saml?.nether == null ? null : (
-            <>
-              <p className="hint">{t("adminSsoCertificate")}</p>
-              <pre className="admin-sso-certificate">{provider.saml.nether.certificate}</pre>
-            </>
+            <div className="field">
+              <label htmlFor={`sso-${provider.id}-certificate`}>{t("adminSsoCertificate")}</label>
+              {/* Read only, to select and copy; it scrolls, and takes the focus to. */}
+              <textarea
+                id={`sso-${provider.id}-certificate`}
+                className="admin-sso-certificate"
+                readOnly
+                rows={8}
+                value={provider.saml.nether.certificate}
+              />
+            </div>
           )}
         </details>
       )}

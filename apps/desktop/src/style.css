@@ -2666,8 +2666,7 @@ button {
 }
 
 .admin-sso-certificate {
-  max-height: 12rem;
-  overflow: auto;
+  font-family: ui-monospace, "Cascadia Mono", Menlo, Consolas, monospace;
   font-size: 0.75rem;
 }
 
