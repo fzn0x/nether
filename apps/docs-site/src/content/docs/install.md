@@ -71,8 +71,10 @@ with no account. Opening the same name again finds its notes, and the
 app opens to the vault it had open last. Each note is saved as you leave
 the app, so nothing typed is lost when the phone ends it.
 
-Signing in to a server and sync, and exports through the share sheet,
-come to the app next.
+To sync, choose **Sign in to a server** on the first screen, then tap one
+of your workspaces: it opens as a vault on the phone, which syncs while
+Nether is open ([On a phone](../servers/#on-a-phone)). Exports through the
+share sheet come to the app next.
 
 ## On iPhone and iPad
 
@@ -85,7 +87,8 @@ and run it on your phone. Give a vault a name: it is a folder of Markdown
 notes in the app's Documents, which the Files app shows under On My
 iPhone, Nether, and which works with no account. Notes another app
 changes there show when you come back to Nether. Each note is saved as
-you leave the app.
+you leave the app. Signing in to a server and opening its workspaces works
+as on Android.
 
 ## From the source
 
