@@ -84,3 +84,4 @@ record supersedes it and says so. Start a new one from
 | [0075](0075-asking-your-notes-answers-from-passages-the-vaults-search-finds-each-citation-checked.md) | Asking your notes answers from passages the vault's search finds, each citation checked | Accepted |
 | [0076](0076-a-published-site-is-a-note-or-a-folder-drawn-by-the-server-as-it-is-now-linking-only-to-its-own-pages.md) | A published site is a note or a folder, drawn by the server as it is now, linking only to its own pages | Accepted |
 | [0077](0077-a-site-holds-a-custom-domain-its-dns-proves-and-tells-search-engines-what-each-page-is.md) | A site holds a custom domain its DNS proves, and tells search engines what each page is | Accepted |
+| [0078](0078-building-with-ai-reads-a-checked-json-reply-into-an-import-plan-the-user-previews.md) | Building with AI reads a checked JSON reply into an import plan the user previews | Accepted |

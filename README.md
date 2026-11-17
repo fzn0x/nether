@@ -42,8 +42,10 @@ Notion exports. Self-hosting is available for enterprise.
 > [writing assist](https://fzn0x.github.io/nether/ai/) works with an AI
 > provider you bring, OpenAI-compatible or Anthropic, its key in the
 > desktop's keychain or sealed on your server for the web app; asking
-> your notes answers from their passages, each citation a link, and the
-> desktop app searches notes by meaning with its embedding model; share links
+> your notes answers from their passages, each citation a link; building
+> with AI makes databases, templates and plans from a description,
+> previewed first; the desktop app searches notes by meaning with its
+> embedding model; share links
 > open a page to anyone with one, with no account, to read, comment on or
 > edit; [buttons](https://fzn0x.github.io/nether/buttons/) in a note, as
 > Meta Bind writes them, run commands, make notes from templates and set
@@ -86,7 +88,7 @@ Notion exports. Self-hosting is available for enterprise.
 | 1. Local-first notes | The desktop app: a vault on disk, the block and Markdown editor, links and backlinks, tags, search, templates, export | ✅ |
 | 2. Databases and structure | Databases with six views, relations, rollups, formulas, synced blocks, the graph view, importers from Obsidian and Notion | ✅ |
 | 3. Sync and collaboration | The first public release: the server, end-to-end encrypted sync, co-editing, comments, permissions, the web app, the canvas, backups | ✅ |
-| 4. Platform | Plugins in a sandbox, bring-your-own AI, publishing, the REST API, the web clipper, automations | 🚧 9 of 11 |
+| 4. Platform | Plugins in a sandbox, bring-your-own AI, publishing, the REST API, the web clipper, automations | 🚧 10 of 11 |
 | 5. Enterprise, mobile and scale | Single sign-on, SCIM, audit logs, data policies, high availability, the Helm chart, mobile apps | ❌ |
 
 Each phase ends with a gate it must pass before the next one starts; the

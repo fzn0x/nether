@@ -1,6 +1,6 @@
 ---
 title: AI
-description: How to bring your own AI provider to Nether, an OpenAI-compatible endpoint such as Ollama or OpenAI, or Anthropic, use writing assist on what you select, and search notes by meaning.
+description: How to bring your own AI provider to Nether, an OpenAI-compatible endpoint such as Ollama or OpenAI, or Anthropic, use writing assist on what you select, ask your notes, search them by meaning, and build databases, templates and plans from a description.
 ---
 
 Nether's AI uses a provider you choose, with your own key: any
@@ -161,3 +161,28 @@ was embedded, for turning it on again. While AI is off in the vault, or
 its workspace's owners and admins turned it off, search by meaning is off
 too. In a vault of an end-to-end encrypted workspace, choosing a provider
 here gives it the vault's text, as choosing one for AI in this vault does.
+
+## Building with AI
+
+With a provider, the **File** menu has **Build with AI**. Choose what to
+build, describe it, and choose **Build**:
+
+- **A database**: its properties and views; tick **With a few sample
+  rows** for a few rows to start from.
+- **A template**: a note in the templates folder, to start others from.
+- **A project plan**: a folder of notes, the first its outline, and a
+  database of its tasks.
+
+The dialog says first where the description goes. The model answers in a
+form Nether checks as it checks a database you make by hand: when the
+answer does not read, as a board with no property to group by, Nether says
+why and makes nothing, and you can try again or describe it another way.
+Relations and rollups to other databases are added once the database is
+made.
+
+What it would make shows before anything is written: every note, at its
+path, a database with its properties and views, a template or a note with
+its first lines. Change the **Name** and the paths follow; untick rows or
+notes to leave them out. Names the vault has already get a number, as
+imports do. **Make it** writes them and opens what was built; **Cancel**
+makes nothing.

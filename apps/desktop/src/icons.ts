@@ -59,6 +59,7 @@ import {
   Trash2,
   UserRound,
   UserRoundCheck,
+  WandSparkles,
   Users,
   Webhook,
 } from "lucide-react";
@@ -117,6 +118,9 @@ export const assistIcon: LucideIcon = Sparkles;
 
 /** Asking your notes' command, which shows only once AI is set up (ADR 0075). */
 export const askIcon: LucideIcon = MessageCircleQuestionMark;
+
+/** Building with AI's command, which shows only once AI is set up (ADR 0078). */
+export const buildIcon: LucideIcon = WandSparkles;
 
 /** The menu bar's menus. */
 export const menuIcons = {

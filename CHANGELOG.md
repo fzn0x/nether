@@ -242,6 +242,16 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   citations links by heading. It runs through the server's relay in the
   web app, and on the desktop alone for an encrypted workspace
   ([ADR 0075](docs/adr/0075-asking-your-notes-answers-from-passages-the-vaults-search-finds-each-citation-checked.md)).
+- Building with AI, in the File menu while the vault has an AI provider:
+  a database, with sample rows only if asked, a template, or a project
+  plan, a folder of notes with a database of its tasks, from a
+  description. The model answers in JSON, read against the app's own
+  types: a database's schema as core checks it, and each row's values. A
+  reply that does not read is refused, saying why. What reads is an import
+  plan: the dialog lists every note it would make, at a name the vault
+  does not have, numbered as imports number them, lets the name change
+  and rows and notes be left out, and writes nothing until Make it
+  ([ADR 0078](docs/adr/0078-building-with-ai-reads-a-checked-json-reply-into-an-import-plan-the-user-previews.md)).
 
 ### Changed
 
