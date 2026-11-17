@@ -202,7 +202,19 @@ export const policiesModule: EnterpriseModule = {
       },
       async (request, reply) => {
         try {
-          await aiEndpoints.set(request.body.endpoints);
+          // Recorded when the list changes (ADR 0081).
+          await aiEndpoints.set(request.body.endpoints, async (tx, before, after) => {
+            if (JSON.stringify(before) === JSON.stringify(after)) return;
+            await events.emit(
+              tx,
+              {
+                action: "instance.ai_endpoints_changed",
+                actor: accountActor(accountOf(request).id),
+                details: { from: [...before], to: [...after] },
+              },
+              originOf(request),
+            );
+          });
         } catch (error) {
           if (error instanceof SettingRefused) return fail(reply, error.status, error.message);
           throw error;
