@@ -49,6 +49,18 @@ export type NoteDocuments = Pick<
 /** What this device keeps for a vault outside its folder. */
 export type VaultSettings = Pick<IndexStore, "setting" | "setSetting">;
 
+/** Where a vault keeps its notes' passages for search by meaning (ADR 0074). */
+export type MeaningIndex = Pick<
+  IndexStore,
+  | "meaningFiles"
+  | "notePassages"
+  | "putPassages"
+  | "deletePassages"
+  | "clearPassages"
+  | "passageSigns"
+  | "passagesById"
+>;
+
 /** Where a vault keeps what the link index and search read of its notes. */
 export type NoteIndexes = Pick<
   IndexStore,
@@ -204,6 +216,11 @@ export class Vault {
 
   /** Where the vault keeps what the link index and search read of its notes. */
   get indexes(): NoteIndexes {
+    return this.#store;
+  }
+
+  /** Where the vault keeps its notes' passages for search by meaning. */
+  get meaning(): MeaningIndex {
     return this.#store;
   }
 

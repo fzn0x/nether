@@ -1,6 +1,6 @@
 ---
 title: Finding notes
-description: How to open a note by its name with the quick switcher, and search the vault's notes by their words, tags, folders and properties.
+description: How to open a note by its name with the quick switcher, and search the vault's notes by their words, tags, folders and properties, or by meaning.
 ---
 
 ## The quick switcher
@@ -32,3 +32,7 @@ Filters go together with words, and each can be excluded with `-`:
 `plan tag:project -path:Archive` finds notes about plans, tagged project,
 outside the archive. Search works offline, from the index Nether keeps of
 your vault on your computer.
+
+With an AI provider, search can also go by meaning, for notes about what
+you type rather than with its words: see
+[search by meaning](../ai/#search-by-meaning).
