@@ -3,7 +3,8 @@
 // which keeps the people of where it sits unless it is restricted to its
 // own. Those with full access to it give members a level, invite guests by
 // a link, make links anyone may open it with (ADR 0071), and stop sharing
-// it on its own, when it goes back where it sits.
+// it on its own, when it goes back where it sits. Publishing it, or its
+// folder, as a site for anyone is here too (ADR 0076).
 import type { NoteEntry } from "@nether/storage";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { backend } from "./backend.ts";
@@ -18,6 +19,7 @@ import {
 } from "./server.ts";
 import type { VaultLink } from "./sync.ts";
 import { ShareLinks } from "./ShareLinks.tsx";
+import { SharePublish } from "./SharePublish.tsx";
 import { UnitPeople } from "./UnitPeople.tsx";
 import { useModal } from "./useModal.ts";
 
@@ -169,6 +171,7 @@ export function ShareDialog(props: {
             ) : null}
           </>
         )}
+        <SharePublish link={link} note={note} onStatus={setStatus} onError={setError} />
         {status === undefined ? null : <p role="status">{status}</p>}
         {error === undefined ? null : <p role="alert">{error}</p>}
         <div className="dialog-actions">
