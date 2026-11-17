@@ -3,7 +3,7 @@
 // vaults kept in the browser and synced, invitations, offline, one tab per
 // workspace, and its content security policy kept throughout.
 import AxeBuilder from "@axe-core/playwright";
-import { type BrowserContext, type Page, expect, test } from "@playwright/test";
+import { type BrowserContext, type Locator, type Page, expect, test } from "@playwright/test";
 import { reading } from "../../desktop/e2e/pdfs.ts";
 
 const control = "http://127.0.0.1:4176";
@@ -473,6 +473,218 @@ test("a share link opens its page to someone with no account, until it is revoke
     expect(readerProblems).toEqual([]);
   } finally {
     await visitor.close();
+  }
+  expect(problems).toEqual([]);
+});
+
+/** Opens the settings at their AI tab, through the palette. */
+async function aiTab(page: Page) {
+  await page.keyboard.press("Control+p");
+  await page.keyboard.type("Plugins");
+  await page.keyboard.press("Enter");
+  const settings = page.getByRole("dialog", { name: "Settings" });
+  await settings.getByRole("tab", { name: "AI" }).click();
+  return { settings, tab: settings.getByRole("tabpanel", { name: "AI" }) };
+}
+
+test("the admin's provider for everyone, kept on the server, and writing assist through its relay", async ({
+  page,
+}) => {
+  const problems = problemsOf(page);
+  // Ada set the server up, so she is its admin.
+  await signIn(page, { email: "ada@example.org", password: "a long password" });
+  await openTeam(page);
+  await newNote(page, "Typo", "Teh cat sat.");
+  await expect.poll(() => fileText(page, "Typo.md")).toBe("Teh cat sat.\n");
+
+  const { settings, tab } = await aiTab(page);
+  await expect(tab.getByRole("heading", { name: "Providers on 127.0.0.1:4175" })).toBeVisible();
+  await expect(tab.getByText("No provider is set up yet.")).toBeVisible();
+  await tab.getByRole("button", { name: "Add a provider" }).click();
+  await tab.getByLabel("For").selectOption("instance");
+  await tab.getByLabel("Name", { exact: true }).fill("Team model");
+  await tab.getByLabel("Address").fill("http://127.0.0.1:4178/v1");
+  await tab.getByLabel("Model").fill("test-model");
+  await tab.getByLabel("Key", { exact: true }).fill("sk-team");
+  expect(await violations(page)).toEqual([]);
+  await tab.getByRole("button", { name: "Save" }).click();
+  const listed = tab.getByRole("listitem").filter({ hasText: "Team model" });
+  await expect(listed).toContainText("Everyone's");
+  await expect(listed).toContainText("test-model at 127.0.0.1:4178");
+  expect(await violations(page)).toEqual([]);
+  await settings.getByRole("button", { name: "Close" }).click();
+
+  const editor = page.getByRole("textbox", { name: "Typo, note text" });
+  await editor.locator("p").first().click();
+  await page.keyboard.press("End");
+  await page.keyboard.press("Shift+Home");
+  await page.keyboard.press("Control+j");
+  const assist = page.getByRole("region", { name: "Writing assist" });
+  await expect(assist).toContainText(
+    "Sends the text through 127.0.0.1:4175 to Team model, test-model at 127.0.0.1:4178.",
+  );
+  await assist.getByRole("button", { name: "Fix grammar" }).click();
+  await expect(assist.getByRole("region", { name: "What came back" })).toHaveText(
+    "Fixed: The cat sat.",
+  );
+  await assist.getByRole("button", { name: "Replace" }).click();
+  await expect(editor.locator("p").first()).toHaveText("Fixed: The cat sat.");
+  await expect.poll(() => fileText(page, "Typo.md")).toBe("Fixed: The cat sat.\n");
+
+  // The server added the key and the provider's model; the page sent neither.
+  const heard =
+    await ask<{ path: string; authorization?: string; body: { model: string } }[]>("/model");
+  expect(heard.at(-1)).toMatchObject({
+    path: "/v1/chat/completions",
+    authorization: "Bearer sk-team",
+    body: { model: "test-model" },
+  });
+
+  // Gone again, so the other tests see no AI.
+  const again = await aiTab(page);
+  await again.tab.getByRole("button", { name: "Remove Team model" }).click();
+  await expect(again.tab.getByText("No provider is set up yet.")).toBeVisible();
+  await again.settings.getByRole("button", { name: "Close" }).click();
+  expect(problems).toEqual([]);
+});
+
+test("a member's own provider is reached at public addresses only", async ({ page }) => {
+  const problems = problemsOf(page);
+  const mia = await person("Mia");
+  await signIn(page, mia);
+  await openTeam(page);
+  const { settings, tab } = await aiTab(page);
+  await tab.getByRole("button", { name: "Add a provider" }).click();
+  // A member's provider is the member's own: no choice of whose it is.
+  await expect(tab.getByLabel("For")).toHaveCount(0);
+  await tab.getByLabel("Name", { exact: true }).fill("Sneaky");
+  await tab.getByLabel("Address").fill("https://127.0.0.1:4178/v1");
+  await tab.getByLabel("Model").fill("test-model");
+  await tab.getByRole("button", { name: "Save" }).click();
+  await expect(tab.getByRole("alert")).toHaveText("An account's provider is at a public address.");
+  await tab.getByRole("button", { name: "Cancel" }).click();
+  await expect(tab.getByText("No provider is set up yet.")).toBeVisible();
+  await settings.getByRole("button", { name: "Close" }).click();
+  expect(problems).toEqual([]);
+});
+
+/** Selects a passage of an editor's first paragraph, as a mouse would. */
+async function selectText(page: Page, editor: Locator, passage: string) {
+  await editor.evaluate((element, wanted) => {
+    const text = element.querySelector("p")?.firstChild;
+    if (text?.nodeType !== Node.TEXT_NODE) throw new Error("No text to select.");
+    const at = (text.textContent ?? "").indexOf(wanted);
+    if (at < 0) throw new Error(`No "${wanted}" to select.`);
+    const range = document.createRange();
+    range.setStart(text, at);
+    range.setEnd(text, at + wanted.length);
+    getSelection()?.removeAllRanges();
+    getSelection()?.addRange(range);
+  }, passage);
+  // The editor reads the selection when the browser reports it, a frame later.
+  await page.evaluate(
+    () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))),
+  );
+}
+
+test("comment and edit links let someone with no account comment and edit, as the name they give", async ({
+  page,
+  browser,
+}) => {
+  const problems = problemsOf(page);
+  const owner = await person("Owner");
+  await signIn(page, owner);
+  await openTeam(page);
+  await newNote(page, "Field notes", "Owner wrote this.");
+  await expect.poll(() => fileText(page, "Field notes.md")).toBe("Owner wrote this.\n");
+
+  await page.keyboard.press("Control+p");
+  await page.keyboard.type("Share this page");
+  await page.keyboard.press("Enter");
+  const share = page.getByRole("dialog", { name: "Share Field notes" });
+  await share.getByRole("button", { name: "Share it on its own, with its subpages" }).click();
+  await expect(share.getByRole("status")).toHaveText("Field notes is shared on its own.");
+  const links = share.getByRole("region", { name: "Anyone with the link" });
+  const access = links.getByRole("combobox", { name: "Access" });
+  await access.selectOption("edit");
+  await links.getByRole("button", { name: "Make a link" }).click();
+  await expect(share.getByRole("status")).toHaveText("The link is made, and copied.");
+  await access.selectOption("comment");
+  await links.getByRole("button", { name: "Make a link" }).click();
+  await expect(links.getByRole("textbox", { name: "Link" })).toHaveCount(2);
+  const linkThat = (lets: string) =>
+    links
+      .getByRole("listitem")
+      .filter({ hasText: lets })
+      .getByRole("textbox", { name: "Link" })
+      .inputValue();
+  const toEdit = await linkThat("Anyone with this link can edit and comment.");
+  const toComment = await linkThat("Anyone with this link can read and comment.");
+  expect(await violations(page)).toEqual([]);
+  await share.getByRole("button", { name: "Close" }).click();
+  const owned = page.getByRole("textbox", { name: "Field notes, note text" });
+
+  // Two people with no account, each in a browser of their own.
+  const contexts: BrowserContext[] = [];
+  try {
+    contexts.push(await browser.newContext(), await browser.newContext());
+    const [editing, commenting] = await Promise.all(contexts.map((context) => context.newPage()));
+    if (editing === undefined || commenting === undefined) throw new Error("No pages.");
+    const visitorProblems = [...problemsOf(editing), ...problemsOf(commenting)];
+
+    // An edit link asks for a name, then edits the note live, beside its owner.
+    await editing.goto(toEdit);
+    await editing.getByRole("textbox", { name: "Your name" }).fill("Robin");
+    await editing.getByRole("button", { name: "Open" }).click();
+    const editor = editing.getByRole("textbox", { name: "Field notes", exact: true });
+    await expect(editor).toHaveAttribute("contenteditable", "true", { timeout: 20_000 });
+    await expect(editor).toHaveText("Owner wrote this.");
+    await expect(
+      editing.getByText("Shared by a link, to edit and comment on, as Robin."),
+    ).toBeVisible();
+    await editor.click();
+    await editing.keyboard.press("Control+End");
+    await editing.keyboard.type(" Robin added this.");
+    await editing.keyboard.press("Home");
+    // The owner's editor holds Robin's caret too, named.
+    await expect(owned).toContainText("Owner wrote this. Robin added this.", { timeout: 20_000 });
+    await expect(owned.locator(".collaboration-carets__label")).toHaveText("Robin");
+    await expect
+      .poll(() => fileText(page, "Field notes.md"))
+      .toBe("Owner wrote this. Robin added this.\n");
+    expect(await violations(editing)).toEqual([]);
+
+    // A comment link reads the note live, and comments on a passage of it.
+    await commenting.goto(toComment);
+    await commenting.getByRole("textbox", { name: "Your name" }).fill("Sam");
+    await commenting.getByRole("button", { name: "Open" }).click();
+    const reader = commenting.getByRole("textbox", { name: "Field notes", exact: true });
+    await expect(reader).toHaveAttribute("contenteditable", "false", { timeout: 20_000 });
+    await expect(reader).toHaveText("Owner wrote this. Robin added this.");
+    await selectText(commenting, reader, "Robin added this.");
+    await commenting.getByRole("button", { name: "Comment on the selection" }).click();
+    const comments = commenting.getByRole("region", { name: "Comments" });
+    const draft = comments.getByRole("group", { name: "New comment" });
+    await expect(draft).toContainText("Robin added this.");
+    await draft.getByRole("textbox", { name: "Write a comment" }).fill("Thanks, Robin.");
+    await draft.getByRole("button", { name: "Comment", exact: true }).click();
+    const thread = comments.getByRole("listitem", { name: "Comments on “Robin added this.”" });
+    await expect(thread).toContainText("Sam");
+    await expect(thread).toContainText("Thanks, Robin.");
+    expect(await violations(commenting)).toEqual([]);
+
+    // The owner and the other visitor see it, on the passage it is on, as a visitor's.
+    for (const seen of [page, editing]) {
+      const shown = seen
+        .getByRole("region", { name: "Comments" })
+        .getByRole("listitem", { name: "Comments on “Robin added this.”" });
+      await expect(shown).toContainText("Thanks, Robin.", { timeout: 20_000 });
+      await expect(shown).toContainText("Sam (by a link)");
+    }
+    await expect(owned.locator(".comment-highlight")).toHaveText("Robin added this.");
+    expect(visitorProblems).toEqual([]);
+  } finally {
+    for (const context of contexts) await context.close();
   }
   expect(problems).toEqual([]);
 });

@@ -35,9 +35,10 @@ WORKDIR /app
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY tools/stubs/elkjs/ tools/stubs/elkjs/
 COPY apps/server/package.json apps/server/
-# The workspace packages the server runs: @nether/search, and the editor's
+# The workspace packages the server runs: @nether/search, the editor's
 # document code with @nether/core and @nether/markdown for the public API
-# (ADR 0059).
+# (ADR 0059), and @nether/ai's paths and headers for the AI relay (ADR 0070).
+COPY packages/ai/package.json packages/ai/
 COPY packages/core/package.json packages/core/
 COPY packages/editor/package.json packages/editor/
 COPY packages/markdown/package.json packages/markdown/
@@ -57,6 +58,7 @@ ENV NODE_ENV=production \
     NETHER_BACKUP_PATH=/data/backups
 WORKDIR /app
 COPY --from=dependencies /app/ ./
+COPY --from=build /src/packages/ai/src/ packages/ai/src/
 COPY --from=build /src/packages/core/src/ packages/core/src/
 COPY --from=build /src/packages/editor/src/ packages/editor/src/
 COPY --from=build /src/packages/markdown/src/ packages/markdown/src/

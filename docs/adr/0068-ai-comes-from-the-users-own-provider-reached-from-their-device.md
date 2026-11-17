@@ -1,6 +1,6 @@
 # 0068. AI comes from the user's own provider, reached from their device, and shows nothing until there is one
 
-- Status: Accepted
+- Status: Accepted; the web app's part is settled in [0070](0070-the-web-apps-ai-goes-through-its-server-which-seals-the-keys-and-reaches-only-what-it-may.md)
 - Date: 2026-11-17
 
 ## Context

@@ -135,6 +135,12 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   password; those with full access make, copy and revoke them in the
   Share dialog, and revoking one ends what it opened
   ([ADR 0071](docs/adr/0071-a-share-link-opens-one-shared-page-to-anyone-with-it-through-the-web-app.md)).
+- Share links to comment and to edit, which completes them. A visitor
+  who writes gives a name first, kept in their browser: their comments
+  carry it, marked as by a link, and an edit link's visitor's caret
+  shows it to the others. The page is live for both. A comment link
+  writes only the page's comments; an edit link writes its notes' text
+  and comments, never which pages there are.
 - API tokens and webhooks in the app, which completes the REST API: API
   tokens on a server, under each account in Servers and signing in and in
   the Sync menu, list, make with the password again, show once to copy,
@@ -174,6 +180,18 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   storage, and reaches the person's server alone
   ([ADR 0066](docs/adr/0066-the-web-clipper-is-a-manifest-v3-extension-that-sends-clips-to-the-users-own-server-alone.md)).
   The build makes a ZIP of each for its store.
+- AI in the web app, through its server: the server keeps providers, each
+  account's own and those its admins set for everyone, with each key
+  sealed by the admin's `NETHER_SECRET_KEY` and never given back. The web
+  app's requests go to the server's relay, which sends only a provider's
+  chat and embedding calls, with its model and key, and streams the answer
+  back; it refuses an end-to-end encrypted workspace and one whose owners
+  turned AI off. An account's own provider is reached at public addresses
+  only; the admin's may reach the server's own network where
+  `NETHER_AI_PRIVATE` allows. `NETHER_AI` is `on`, `admin` or `off`. The
+  web app's settings have the AI tab, and writing assist names the server
+  the text goes through
+  ([ADR 0070](docs/adr/0070-the-web-apps-ai-goes-through-its-server-which-seals-the-keys-and-reaches-only-what-it-may.md)).
 
 ### Changed
 

@@ -492,6 +492,35 @@ export const migrations: readonly Migration[] = [
       ALTER TABLE workspaces ADD COLUMN ai boolean NOT NULL DEFAULT true;
     `,
   },
+  {
+    version: 18,
+    name: "AI providers kept by the server for the web app",
+    sql: `
+      -- A provider the web app's requests go to through the server (ADR
+      -- 0070): an account's own, or with no account the instance's, which
+      -- its admins set for everyone. Its key is sealed with the server's
+      -- NETHER_SECRET_KEY, bound to the provider's ID; none for a model that
+      -- needs none.
+      CREATE TABLE ai_providers (
+        id uuid PRIMARY KEY,
+        user_id uuid REFERENCES users (id) ON DELETE CASCADE,
+        name text NOT NULL,
+        kind text NOT NULL CHECK (kind IN ('openai', 'anthropic')),
+        url text NOT NULL,
+        model text NOT NULL,
+        key_box bytea,
+        created_at timestamptz NOT NULL DEFAULT now()
+      );
+
+      CREATE INDEX ai_providers_by_user ON ai_providers (user_id, created_at);
+
+      -- The provider an account's vaults use unless they choose another.
+      CREATE TABLE ai_defaults (
+        user_id uuid PRIMARY KEY REFERENCES users (id) ON DELETE CASCADE,
+        provider_id uuid NOT NULL REFERENCES ai_providers (id) ON DELETE CASCADE
+      );
+    `,
+  },
 ];
 
 /** The schema version this server writes and reads. */

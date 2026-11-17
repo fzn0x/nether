@@ -170,6 +170,7 @@ export const messages = {
   resolvedBy: "Resolved by {name}",
   resolvedThreads: "Resolved ({count})",
   commentEdited: "(edited)",
+  commentByLink: "(by a link)",
   edit: "Edit",
   editComment: "Edit the comment",
   deleteComment: "Delete",
@@ -542,7 +543,27 @@ export const messages = {
   aiWorkspaceUnreachable: "{server} could not be reached to check {workspace}: {error}",
   aiNoWorkspace: "This account is no longer in {workspace}.",
   aiWorkspaceOffNow: "AI is off here now, for this vault or its workspace, so nothing was sent.",
-  aiNotOnTheWeb: "AI comes to the web app through its server, in a later version.",
+  aiIntroServer:
+    "Writing assist uses a provider {server} keeps: one of your own, or one its admins set for everyone. Your requests go through {server}, which adds the provider's key. Until there is one, nothing of AI shows in the app, and nothing is ever sent until you ask.",
+  aiServerOff: "AI is off on {server}: its admin has turned it off.",
+  aiProvidersServer: "Providers on {server}",
+  aiForEveryoneShort: "Everyone's",
+  aiProviderFor: "For",
+  aiForMe: "Me only",
+  aiForEveryone: "Everyone on {server}",
+  aiAdminSets: "Only the admins of {server} set providers here.",
+  aiProviderUrlHintOwn:
+    "https://, as https://api.openai.com/v1: {server} reaches public addresses for you.",
+  aiProviderUrlHintInstance:
+    "https://, as https://api.openai.com/v1, or a model on the server's own network, such as http://ollama:11434/v1, where NETHER_AI_PRIVATE allows it.",
+  aiProviderKeyHintServer:
+    "Kept on {server}, sealed with its secret key, and never shown again. Leave it empty for a model that needs none.",
+  aiProviderKeyNone:
+    "{server} keeps no keys until its admin sets NETHER_SECRET_KEY: a provider that needs none still works.",
+  aiVaultEncryptedServer:
+    "This workspace is end-to-end encrypted, so the web app offers no AI in it: its requests would go through {server}, which must never read its text. The desktop app offers AI here, with a provider you choose.",
+  aiAssistSendsThrough: "Sends the text through {server} to {name}, {where}.",
+  aiRelayNeedsWorkspace: "AI in the web app goes through one of your workspaces.",
   aiAssistCommand: "Writing assist",
   aiAssist: "Writing assist",
   aiAssistSends: "Sends the text to {name}, {where}.",
@@ -670,8 +691,10 @@ export const messages = {
   password: "Password",
   shareLinks: "Anyone with the link",
   shareLinksIntro:
-    "A link opens this page and its subpages to anyone who has it, in the web app, to read. It needs no account.",
+    "A link opens this page and its subpages to anyone who has it, in the web app, to read, to comment on or to edit. It needs no account.",
   shareLinkToRead: "Anyone with this link can read.",
+  shareLinkToComment: "Anyone with this link can read and comment.",
+  shareLinkToEdit: "Anyone with this link can edit and comment.",
   shareLinkUntil: "Until {date}.",
   shareLinkWithPassword: "With a password.",
   shareLinkAddress: "Link",
@@ -691,6 +714,12 @@ export const messages = {
   sharedOpen: "Open",
   sharedPages: "Shared pages",
   sharedReadOnly: "Shared by a link, to read.",
+  sharedCanComment: "Shared by a link, to read and comment on, as {name}.",
+  sharedCanEdit: "Shared by a link, to edit and comment on, as {name}.",
+  sharedNameToComment: "Give a name for your comments. The others on this page see it.",
+  sharedNameToEdit:
+    "Give a name for your edits and comments. The others on this page see it beside your caret.",
+  sharedYourName: "Your name",
   signIn: "Sign in",
   emailMeCode: "Email me a code",
   signInWith: "Sign in with {name}",

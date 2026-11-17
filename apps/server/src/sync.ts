@@ -214,8 +214,10 @@ export async function registerSync(app: FastifyInstance, db: Database): Promise<
           return { userId: account.id };
         }
       }
-      // A share link's visit opens its page's unit alone, read-only for a
-      // view link, and not its comments (ADR 0071).
+      // A share link's visit opens its page's unit alone (ADR 0071): a view
+      // link reads its notes but not their comments; a comment link writes
+      // only comments; an edit link writes notes and comments. No visit
+      // writes the unit's vault document, which says what notes it has.
       const visit = await visitOf(
         db,
         token === ""
@@ -229,7 +231,10 @@ export async function registerSync(app: FastifyInstance, db: Database): Promise<
         visit.unit === unit &&
         !(isComments(name.document) && visit.level === "view")
       ) {
-        connectionConfig.readOnly = true;
+        const writes =
+          !name.document.startsWith("vault") &&
+          (visit.level === "edit" || (visit.level === "comment" && isComments(name.document)));
+        if (!writes) connectionConfig.readOnly = true;
         return { userId: visitor(visit.link) };
       }
       // A document of a unit the account may not open is refused as one not there.

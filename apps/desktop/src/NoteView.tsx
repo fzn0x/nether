@@ -45,6 +45,10 @@ export interface NoteAi {
   readonly request: number;
   /** Whether AI may run now, as the workspace's server says before text is sent. */
   readonly allowedNow: () => Promise<boolean>;
+  /** The workspace the vault syncs with, whose relay the web app sends through (ADR 0070). */
+  readonly workspaceId?: string | undefined;
+  /** The server the text goes through first, by its host, as in the web app. */
+  readonly through?: string | undefined;
 }
 
 // CodeMirror loads the first time a note shows its source.
@@ -489,6 +493,8 @@ export default function NoteView(props: {
               // Each request starts afresh.
               key={assisting.round}
               provider={assisting.ai.provider}
+              workspaceId={assisting.ai.workspaceId}
+              through={assisting.ai.through}
               selection={assisting.selection}
               noteTitle={(note) => vault.note(note)?.title}
               // Nothing is sent once AI is off here, for the vault or its workspace.

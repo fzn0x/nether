@@ -234,6 +234,8 @@ function CommentItem(props: {
     <li className="comment-item">
       <p className="comment-meta">
         <span className="comment-author">{comment.author.name}</span>{" "}
+        {/* A share link's visitor names themselves: no account vouches for it. */}
+        {comment.author.id.startsWith("visitor-") ? `${t("commentByLink")} ` : null}
         <time dateTime={new Date(comment.created).toISOString()}>
           {when.format(comment.created)}
         </time>

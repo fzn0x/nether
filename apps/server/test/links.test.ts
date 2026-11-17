@@ -147,7 +147,7 @@ describe("share links", () => {
       expiresAt: "2001-01-01T00:00:00.000Z",
     });
     expect(past.json<{ message: string }>().message).toBe("A link's expiry is in the future.");
-    expect((await makeLink(test, unit, { level: "edit" })).statusCode).toBe(400);
+    expect((await makeLink(test, unit, { level: "full" })).statusCode).toBe(400);
     const stranger = await call(test, "GET", `/units/${unit}/links`, {});
     expect(stranger.statusCode).toBe(401);
   });
@@ -296,5 +296,55 @@ describe("a visit's sync", () => {
     await expect(connect(url, `${test.workspaceId}/${other}`, visit)).rejects.toThrow();
     await expect(connect(url, `${test.workspaceId}/vault`, visit)).rejects.toThrow();
     await expect(connect(url, `${test.workspaceId}/${page}.comments`, visit)).rejects.toThrow();
+  });
+
+  /** Waits until a document's text is `expected`, a few seconds at most. */
+  async function until(read: () => string, expected: string): Promise<void> {
+    const deadline = Date.now() + 5000;
+    while (read() !== expected) {
+      if (Date.now() > deadline) throw new Error(`Still ${JSON.stringify(read())}`);
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+  }
+
+  it("writes what its link's level lets it, and never the unit's list", async () => {
+    const test = await start();
+    await test.server.listen({ host: "127.0.0.1", port: await freePort() });
+    const url = `ws://127.0.0.1:${String((test.server.server.address() as AddressInfo).port)}/api/sync`;
+    const { unit, note: page } = await sharePage(test);
+    await storeDocument(test.db, test.workspaceId, `vault.${unit}`, listing({ [page]: "Plan.md" }));
+    await storeDocument(test.db, test.workspaceId, page, note("The plan."));
+    await storeDocument(test.db, test.workspaceId, `${page}.comments`, note("A thread."));
+    const visitOf = async (level: string) => {
+      const made = await makeLink(test, unit, { level });
+      const { answer } = await open(test, tokenOf(made.json<{ url: string }>().url));
+      return decodeURIComponent(
+        /nether_visit=([^;]+)/.exec(String(answer.headers["set-cookie"]))?.[1] ?? "",
+      );
+    };
+    const commenter = await visitOf("comment");
+    const editor = await visitOf("edit");
+    const owner = await connect(url, `${test.workspaceId}/${page}`, test.token);
+    const ownerComments = await connect(url, `${test.workspaceId}/${page}.comments`, test.token);
+    const ownerList = await connect(url, `${test.workspaceId}/vault.${unit}`, test.token);
+
+    // A comment link writes comments, and not the note.
+    const commented = await connect(url, `${test.workspaceId}/${page}.comments`, commenter);
+    commented.document.getText("text").insert(0, "Visitor: ");
+    await until(() => ownerComments.document.getText("text").toJSON(), "Visitor: A thread.");
+    const read = await connect(url, `${test.workspaceId}/${page}`, commenter);
+    read.document.getText("text").insert(0, "Changed. ");
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    expect(owner.document.getText("text").toJSON()).toBe("The plan.");
+
+    // An edit link writes the note, and still not the unit's list of notes.
+    const edited = await connect(url, `${test.workspaceId}/${page}`, editor);
+    await until(() => edited.document.getText("text").toJSON(), "The plan.");
+    edited.document.getText("text").insert(9, " Edited.");
+    await until(() => owner.document.getText("text").toJSON(), "The plan. Edited.");
+    const list = await connect(url, `${test.workspaceId}/vault.${unit}`, editor);
+    list.document.getMap<string>("notes").set(randomUUID(), "Planted.md");
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    expect([...ownerList.document.getMap<string>("notes").values()]).toEqual(["Plan.md"]);
   });
 });

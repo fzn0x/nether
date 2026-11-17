@@ -2463,7 +2463,8 @@ button {
 }
 
 .share-link-new button,
-.shared-pages button {
+.shared-pages button,
+.shared-comment {
   justify-self: start;
   padding: 0.3rem 0.8rem;
   border: 1px solid var(--rule);
@@ -2508,6 +2509,28 @@ button {
   display: grid;
   gap: 0.75rem;
   max-width: 24rem;
+}
+
+/* A visitor who writes sees the note's comments beside it. */
+.shared-visit.with-comments {
+  max-width: 84rem;
+}
+
+.shared-with-comments {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(14rem, 20rem);
+  gap: 2rem;
+  align-items: start;
+}
+
+.shared-comment {
+  margin-bottom: 1rem;
+}
+
+@media (max-width: 64rem) {
+  .shared-with-comments {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media (max-width: 40rem) {

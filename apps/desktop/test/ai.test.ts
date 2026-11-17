@@ -83,6 +83,21 @@ describe("the provider a vault uses", () => {
     ).toBe(ollama);
   });
 
+  it("is none for an encrypted workspace whose requests would go through its server", () => {
+    const relayed = {
+      ...two,
+      server: { mode: "on", keepsKeys: true, manage: { own: true, instance: false } },
+    } as const;
+    for (const choice of [{ kind: "default" }, { kind: "provider", id: "o" }] as const) {
+      expect(
+        resolveAi({ settings: relayed, choice, encrypted: true, workspaceAllows: true }),
+      ).toEqual({ provider: undefined, reason: "encryptedRelay" });
+    }
+    expect(resolveAi({ settings: relayed, choice: { kind: "default" }, ...plain }).provider).toBe(
+      claude,
+    );
+  });
+
   it("is none where the workspace's owners turned AI off, even one chosen", () => {
     const off = { encrypted: false, workspaceAllows: false };
     expect(resolveAi({ settings: two, choice: { kind: "provider", id: "o" }, ...off })).toEqual({

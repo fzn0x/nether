@@ -1,10 +1,12 @@
 // A real Nether server for the web app's end-to-end tests: PostgreSQL in
 // the process (PGlite), the web app's build at `/`, email kept for the tests
-// to read, and an OpenID Connect provider standing in for single sign-on;
-// and a second server, not set up yet. Beside them, on its own port, what
-// the tests ask of it: the emails sent, a new person in the workspace, the
-// provider's sign-in, done as the provider's own page would, and the second
-// server's setup code. Run by Playwright: node e2e/server.ts
+// to read, an OpenID Connect provider standing in for single sign-on, and a
+// model on the loopback address that answers as an OpenAI-compatible API,
+// which the server's AI relay may reach (ADR 0070); and a second server, not
+// set up yet. Beside them, on its own port, what the tests ask of it: the
+// emails sent, a new person in the workspace, the provider's sign-in, done
+// as the provider's own page would, the requests the model heard, and the
+// second server's setup code. Run by Playwright: node e2e/server.ts
 import { mkdtemp } from "node:fs/promises";
 import { type IncomingMessage, createServer } from "node:http";
 import { tmpdir } from "node:os";
@@ -22,10 +24,39 @@ import { startProvider } from "../../server/test/provider.ts";
 export const port = 4175;
 export const controlPort = 4176;
 export const freshPort = 4177;
+export const modelPort = 4178;
 const url = `http://127.0.0.1:${String(port)}`;
 const password = "a long password";
 
 const provider = await startProvider();
+
+// The model: each chat completion answers "Fixed: " and the last message's
+// text between its <text> tags, streamed as an OpenAI-compatible API does.
+interface Heard {
+  readonly path: string;
+  readonly authorization: string | undefined;
+  readonly body: Record<string, unknown>;
+}
+const heard: Heard[] = [];
+const model = createServer((request, response) => {
+  let text = "";
+  request.on("data", (chunk: Buffer) => (text += chunk.toString("utf8")));
+  request.on("end", () => {
+    const body = JSON.parse(text === "" ? "{}" : text) as Record<string, unknown>;
+    heard.push({ path: request.url ?? "", authorization: request.headers.authorization, body });
+    const messages = Array.isArray(body.messages) ? (body.messages as { content?: unknown }[]) : [];
+    const content = messages.at(-1)?.content;
+    const last = typeof content === "string" ? content : "";
+    const asked = /<text>\n([\s\S]*)\n<\/text>/.exec(last)?.[1] ?? "";
+    const chunk = (content: string) =>
+      `data: ${JSON.stringify({ choices: [{ index: 0, delta: { content }, finish_reason: null }] })}\n\n`;
+    response
+      .writeHead(200, { "content-type": "text/event-stream" })
+      .end(`${chunk("Fixed: ")}${chunk(asked.replace("Teh", "The"))}data: [DONE]\n\n`);
+  });
+});
+model.listen(modelPort, "127.0.0.1");
+
 const mailer = new TestMailer();
 const db = await testDatabase();
 await migrate(db);
@@ -40,6 +71,9 @@ const app = await buildApp(
     NETHER_OIDC_CLIENT_ID: provider.clientId,
     NETHER_OIDC_CLIENT_SECRET: provider.clientSecret,
     NETHER_OIDC_NAME: "Test SSO",
+    // Keys sealed at rest, and the admin's providers may reach the model here.
+    NETHER_SECRET_KEY: Buffer.alloc(32, 3).toString("base64"),
+    NETHER_AI_PRIVATE: "loopback",
   }),
   { db, setupCode, mailer, blobs: new DiskBlobs(await mkdtemp(join(tmpdir(), "nether-web-e2e-"))) },
 );
@@ -113,6 +147,9 @@ const control = createServer((request, response) => {
       let answer: unknown;
       if (request.url === "/mail") {
         answer = mailer.sent;
+      } else if (request.url === "/model") {
+        // What the model heard, from the server's relay.
+        answer = heard;
       } else if (request.url === "/fresh") {
         // The server not set up yet, and the code its log has.
         answer = { url: freshUrl, setupCode: freshCode };
@@ -156,6 +193,7 @@ control.listen(controlPort, "127.0.0.1");
 
 const stop = () => {
   control.close();
+  model.close();
   void app.close().then(() => provider.close());
   void fresh.close().then(() => freshDb.close());
   void db.close();

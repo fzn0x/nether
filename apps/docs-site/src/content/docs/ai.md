@@ -9,8 +9,9 @@ computer through Ollama, vLLM or LM Studio, or Anthropic. Nether ships no
 provider of its own and sends nothing anywhere until you ask. Until a
 provider is set up, nothing of AI shows in the app.
 
-AI is in the desktop app for now. The web app gets it through its server
-in a later version.
+In the desktop app, providers are your computer's, and the app sends to
+them itself. In the web app, they are kept on your Nether server, yours
+or ones its admin sets for everyone, and your requests go through it.
 
 ## Setting up a provider
 
@@ -34,6 +35,29 @@ The first provider you set up is the default; **Make default** makes
 another one so. **Edit** changes a provider, and keeps its key unless you
 type another or choose **Remove the key**. Providers are this computer's:
 another computer of yours has its own.
+
+## In the web app
+
+The web app's **AI** tab lists the providers your server keeps: those its
+admins set for everyone, marked **Everyone's**, and your own. Add your own
+with **Add a provider**, as above: its key is kept on the server, sealed
+with the server's secret key, and never shown again. Admins choose under
+**For** whether a new provider is theirs or everyone's.
+
+Your requests go to the server, which adds the provider's key and sends
+them on, and writing assist says so: "Sends the text through
+nether.example.org to Team model, llama3.2 at ollama:11434." The server:
+
+- reaches your own providers at public addresses over `https://` only;
+- reaches the providers its admin sets for everyone on its own network too,
+  where the admin allows it with `NETHER_AI_PRIVATE`;
+- keeps no keys until its admin sets `NETHER_SECRET_KEY`, though a provider
+  that needs none still works;
+- sends no AI for a workspace whose owners turned it off, or for an
+  end-to-end encrypted one, whose text the server must never read: the
+  desktop app offers AI there, with a provider you choose.
+
+The admin's settings are in the [self-hosting guide](../self-hosting/).
 
 ## Choosing one for a vault
 

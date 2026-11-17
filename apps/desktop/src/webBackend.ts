@@ -9,6 +9,14 @@ import { OpfsFiles, type OpfsDirectory, SqliteStore, isNotePath } from "@nether/
 import type { Backend, Connection, Exporter, VaultMedia } from "./backend.ts";
 import { t } from "./messages.ts";
 import type { VaultInfo } from "./mygo.ts";
+import {
+  removeWebAiProvider,
+  saveWebAiProvider,
+  setWebAiDefault,
+  setWebAiKey,
+  webAiAccess,
+  webAiSettings,
+} from "./webAi.ts";
 import type { LoopbackWait } from "./server.ts";
 import { linkVaultStore } from "./sync.ts";
 import {
@@ -255,15 +263,13 @@ export const web: Backend = {
     });
   },
   syncSocket: () => Promise.resolve(globalThis.WebSocket),
-  // AI comes to the web app through its server, in a later part (ADR 0068):
-  // until then it has no providers, so nothing of AI shows.
-  aiSettings: () => Promise.resolve({ providers: [], default: "" }),
-  saveAiProvider: () => Promise.reject(new Error(t("aiNotOnTheWeb"))),
-  setAiKey: () => Promise.reject(new Error(t("aiNotOnTheWeb"))),
-  aiKey: () => Promise.resolve(undefined),
-  removeAiProvider: () => Promise.resolve(),
-  setDefaultAiProvider: () => Promise.resolve(),
-  aiFetch: () => Promise.reject(new Error(t("aiNotOnTheWeb"))),
+  // AI through the server, which keeps the providers and their keys (ADR 0070).
+  aiSettings: webAiSettings,
+  saveAiProvider: saveWebAiProvider,
+  setAiKey: setWebAiKey,
+  removeAiProvider: removeWebAiProvider,
+  setDefaultAiProvider: setWebAiDefault,
+  aiAccess: webAiAccess,
   // The web app updates with its server.
   updateSettings: () => Promise.resolve({ available: false, automatic: false }),
   setAutomaticUpdates: () => Promise.resolve(),
