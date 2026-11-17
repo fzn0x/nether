@@ -1,6 +1,7 @@
-// AI for the open vault (ADR 0068): this device's providers, the one the
-// vault uses, and its workspace's switch. Reading them costs a call to the
-// Go service as the vault opens; the workspace's server is asked only once
+// AI for the open vault (ADRs 0068 and 0070): the providers, this device's
+// or in the web app its server's, the one the vault uses, and its
+// workspace's switch. Reading them costs a call to the Go service, or the
+// server, as the vault opens; the workspace's server is asked only once
 // a provider is set up, and again before any text is sent, so an owner or
 // admin who turns AI off is heard before the next request. When the server
 // cannot be reached, what it last said holds.
@@ -8,6 +9,7 @@ import type { Vault } from "@nether/storage";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   type AiResolution,
+  type AiSettingsView,
   type VaultAiChoice,
   keepWorkspaceAi,
   knownWorkspaceAi,
@@ -18,7 +20,6 @@ import {
 } from "./ai.ts";
 import { backend } from "./backend.ts";
 import { t } from "./messages.ts";
-import type { AISettings } from "./mygo.ts";
 import { account, setWorkspaceAi } from "./server.ts";
 import { type VaultLink, hostOf } from "./sync.ts";
 
@@ -34,7 +35,7 @@ export interface WorkspaceAi {
 }
 
 export interface VaultAi {
-  readonly settings: AISettings;
+  readonly settings: AiSettingsView;
   readonly choice: VaultAiChoice;
   /** The workspace the vault syncs with; undefined when it syncs with none. */
   readonly workspace: WorkspaceAi | undefined;
@@ -66,7 +67,7 @@ async function askServer(vault: Vault, link: VaultLink): Promise<WorkspaceAi> {
 }
 
 export function useAi(vault: Vault | undefined, link: VaultLink | undefined): VaultAi {
-  const [settings, setSettings] = useState<AISettings>(noProviders);
+  const [settings, setSettings] = useState<AiSettingsView>(noProviders);
   const [choice, setChoiceState] = useState<VaultAiChoice>({ kind: "default" });
   const [workspace, setWorkspaceState] = useState<WorkspaceAi | undefined>();
   const [round, setRound] = useState(0);

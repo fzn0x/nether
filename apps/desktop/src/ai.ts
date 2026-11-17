@@ -1,14 +1,39 @@
-// Which AI provider a vault uses, if any (ADR 0068). The providers are this
-// device's, with one the default; a vault uses the default, one chosen for
-// it, or none. A vault of an end-to-end encrypted workspace uses none until
-// the user chooses one for it, and a workspace whose owners or admins
-// turned AI off uses none at all. With no provider, nothing of AI shows.
-// The choice and the last word from the workspace's server are kept in the
-// vault's index on this device, outside its folder, so neither syncs.
+// Which AI provider a vault uses, if any (ADRs 0068 and 0070). In the
+// desktop app the providers are this device's; in the web app, its
+// server's: the account's own and those its admin set for everyone. One is
+// the default; a vault uses the default, one chosen for it, or none. A vault
+// of an end-to-end encrypted workspace uses none until the user chooses one
+// for it, and in the web app none at all, since its requests go through the
+// server; a workspace whose owners or admins turned AI off uses none. With
+// no provider, nothing of AI shows. The choice and the last word from the
+// workspace's server are kept in the vault's index on this device, outside
+// its folder, so neither syncs.
 import type { Vault } from "@nether/storage";
-import type { AIProvider, AISettings } from "./mygo.ts";
+import type { AIProvider } from "./mygo.ts";
 
-/** What a vault uses: the device's default provider, one chosen for it, or none. */
+/** A provider, with whose it is when a server keeps it: the account's own, or everyone's. */
+export interface AiProviderEntry extends AIProvider {
+  readonly scope?: "own" | "instance";
+}
+
+/** What a server says of AI through it, for the web app (ADR 0070). */
+export interface ServerAi {
+  /** `on`, with accounts' own providers and the admin's; `admin`, the admin's alone; `off`. */
+  readonly mode: "on" | "admin" | "off";
+  /** Whether it keeps keys, sealed with its admin's secret key. */
+  readonly keepsKeys: boolean;
+  /** Whether this account may add providers of its own, and the instance's. */
+  readonly manage: { readonly own: boolean; readonly instance: boolean };
+}
+
+/** The providers a vault can use, and the default; with `server` when a server keeps them. */
+export interface AiSettingsView {
+  readonly providers: readonly AiProviderEntry[];
+  readonly default: string;
+  readonly server?: ServerAi;
+}
+
+/** What a vault uses: the default provider, one chosen for it, or none. */
 export type VaultAiChoice =
   | { readonly kind: "default" }
   | { readonly kind: "provider"; readonly id: string }
@@ -17,24 +42,26 @@ export type VaultAiChoice =
 /**
  * Why a vault has the provider it has, or none:
  * - `ready`: it has one;
- * - `none`: this device has no provider set up;
+ * - `none`: there is no provider to use;
  * - `vaultOff`: AI is off for this vault, on this device;
  * - `workspaceOff`: the workspace's owners or admins turned it off;
  * - `encrypted`: the workspace is end-to-end encrypted, and no provider was chosen for it;
- * - `missing`: the provider chosen for it is no longer set up.
+ * - `encryptedRelay`: the workspace is end-to-end encrypted, and requests would go through its server;
+ * - `missing`: the provider chosen for it is no longer there.
  */
-export type AiReason = "ready" | "none" | "vaultOff" | "workspaceOff" | "encrypted" | "missing";
+export type AiReason =
+  "ready" | "none" | "vaultOff" | "workspaceOff" | "encrypted" | "encryptedRelay" | "missing";
 
 export interface AiResolution {
-  readonly provider: AIProvider | undefined;
+  readonly provider: AiProviderEntry | undefined;
   readonly reason: AiReason;
 }
 
-export const noProviders: AISettings = { providers: [], default: "" };
+export const noProviders: AiSettingsView = { providers: [], default: "" };
 
 /** The provider a vault uses, if any, and why. */
 export function resolveAi(input: {
-  readonly settings: AISettings;
+  readonly settings: AiSettingsView;
   readonly choice: VaultAiChoice;
   /** Whether the vault syncs with an end-to-end encrypted workspace. */
   readonly encrypted: boolean;
@@ -45,6 +72,8 @@ export function resolveAi(input: {
   const none = (reason: AiReason): AiResolution => ({ provider: undefined, reason });
   if (settings.providers.length === 0) return none("none");
   if (!workspaceAllows) return none("workspaceOff");
+  // Requests through a server would show it an encrypted workspace's text.
+  if (encrypted && settings.server !== undefined) return none("encryptedRelay");
   if (choice.kind === "off") return none("vaultOff");
   if (choice.kind === "provider") {
     const chosen = settings.providers.find((provider) => provider.id === choice.id);
