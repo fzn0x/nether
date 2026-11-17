@@ -13,7 +13,8 @@ import com.getcapacitor.BridgeActivity;
 
 /**
  * Nether on Android (ADR 0087): the desktop app's page in the system's
- * WebView, with the app's own plugin for the vaults on the phone.
+ * WebView, with the app's own plugin for the vaults on the phone, and its
+ * inbox for what the share sheet hands it.
  */
 public class MainActivity extends BridgeActivity {
 
@@ -23,6 +24,7 @@ public class MainActivity extends BridgeActivity {
     @Override
     public void onCreate(Bundle savedInstanceState) {
         registerPlugin(NetherVaultsPlugin.class);
+        registerPlugin(NetherInboxPlugin.class);
         super.onCreate(savedInstanceState);
         // The perf build is measured through the WebView's DevTools (tools/perf/android.mjs).
         if ("perf".equals(BuildConfig.BUILD_TYPE)) WebView.setWebContentsDebuggingEnabled(true);

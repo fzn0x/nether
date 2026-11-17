@@ -21,6 +21,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import org.json.JSONArray;
@@ -32,7 +33,9 @@ import org.json.JSONObject;
  * {@code NetherVaults} (apps/desktop/src/mobile.ts). It keeps the list of the
  * phone's vaults, each a folder in the app's own files, and does to a vault's
  * folder what needs the disk, through {@link VaultFolder}, one call at a time
- * on a thread of its own.
+ * on a thread of its own. It moves a capture's files in from the inbox
+ * (NetherInboxPlugin), and writes exports for the share sheet in the app's
+ * cache, a ZIP from the vault's own files through {@link ZipExport}.
  */
 @CapacitorPlugin(name = "NetherVaults")
 public class NetherVaultsPlugin extends Plugin {
@@ -379,6 +382,34 @@ public class NetherVaultsPlugin extends Plugin {
         });
     }
 
+    /**
+     * Moves a file the inbox keeps for a capture into the vault at a path,
+     * unless a file is there, so a shared photo never crosses the bridge.
+     * Only the inbox's files move in (NetherInboxPlugin).
+     */
+    @PluginMethod
+    public void adopt(PluginCall call) {
+        String id = call.getString("id", "");
+        String path = call.getString("path", "");
+        String from = call.getString("from", "");
+        onDisk(call, () -> {
+            File source = new File(from);
+            Inbox inbox = new Inbox(new File(getContext().getCacheDir(), "inbox"));
+            if (!inbox.holds(source) || !source.isFile()) {
+                throw new IOException("\"" + from + "\" is not a file the app keeps for a capture.");
+            }
+            Object written = folderOf(id).write(path, VaultFolder.read(source), "");
+            JSObject answer = new JSObject();
+            if (written instanceof VaultFolder.Info) {
+                answer.put("result", "written");
+                answer.put("file", infoOf((VaultFolder.Info) written));
+            } else {
+                answer.put("result", written);
+            }
+            return answer;
+        });
+    }
+
     @PluginMethod
     public void move(PluginCall call) {
         String id = call.getString("id", "");
@@ -416,6 +447,97 @@ public class NetherVaultsPlugin extends Plugin {
         String id = call.getString("id", "");
         String path = call.getString("path", "");
         onDisk(call, () -> new JSObject().put("result", folderOf(id).removeFolder(path)));
+    }
+
+    // Exports, in the app's cache, for the share sheet (mobileExports.ts).
+
+    /** The exports' ZIPs being written, by their tokens. */
+    private final Map<String, ZipExport> exports = new HashMap<>();
+    private boolean exportsSwept = false;
+
+    /** A new folder in the exports' folder, which holds only this run's: older ones are gone. */
+    private File exportFolder() throws IOException {
+        File root = new File(getContext().getCacheDir(), "exports");
+        if (!exportsSwept) {
+            Inbox.deleteAll(root);
+            exportsSwept = true;
+        }
+        File folder = new File(root, UUID.randomUUID().toString());
+        if (!folder.mkdirs()) throw new IOException("The export's folder could not be made.");
+        return folder;
+    }
+
+    /** A file's name for the share sheet, without what a file system cannot hold. */
+    private static String exportName(String name) {
+        String clean = name.replaceAll("[/\\\\:*?\"<>|\\p{Cntrl}]", "-").trim();
+        return clean.isEmpty() || clean.startsWith(".") ? "Nether" + clean : clean;
+    }
+
+    @PluginMethod
+    public void exportStart(PluginCall call) {
+        String name = call.getString("name", "");
+        onDisk(call, () -> {
+            String token = UUID.randomUUID().toString();
+            exports.put(token, new ZipExport(new File(exportFolder(), exportName(name) + ".zip")));
+            return new JSObject().put("token", token);
+        });
+    }
+
+    @PluginMethod
+    public void exportAdd(PluginCall call) {
+        String token = call.getString("token", "");
+        String id = call.getString("id", "");
+        JSArray entries = call.getArray("entries", new JSArray());
+        onDisk(call, () -> {
+            ZipExport zip = exports.get(token);
+            if (zip == null) throw new IOException("No export is open as " + token + ".");
+            for (int i = 0; i < entries.length(); i++) {
+                JSONObject entry = entries.getJSONObject(i);
+                String path = entry.getString("path");
+                if (entry.has("source")) {
+                    File source = folderOf(id).resolve(entry.getString("source"));
+                    zip.addFile(path, source);
+                } else {
+                    zip.addText(path, entry.optString("text", ""));
+                }
+            }
+            return null;
+        });
+    }
+
+    @PluginMethod
+    public void exportFinish(PluginCall call) {
+        String token = call.getString("token", "");
+        onDisk(call, () -> {
+            ZipExport zip = exports.remove(token);
+            if (zip == null) throw new IOException("No export is open as " + token + ".");
+            return new JSObject().put("path", zip.finish().getAbsolutePath());
+        });
+    }
+
+    @PluginMethod
+    public void exportCancel(PluginCall call) {
+        String token = call.getString("token", "");
+        onDisk(call, () -> {
+            ZipExport zip = exports.remove(token);
+            if (zip != null) zip.cancel();
+            return null;
+        });
+    }
+
+    /** Writes a text the page made, a database's CSV or a note's copy, as a file for the share sheet. */
+    @PluginMethod
+    public void exportText(PluginCall call) {
+        String name = call.getString("name", "");
+        String text = call.getString("text", "");
+        onDisk(call, () -> {
+            File file = new File(exportFolder(), exportName(name));
+            try (FileOutputStream out = new FileOutputStream(file)) {
+                out.write(text.getBytes(StandardCharsets.UTF_8));
+                out.getFD().sync();
+            }
+            return new JSObject().put("path", file.getAbsolutePath());
+        });
     }
 
     /**
