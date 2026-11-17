@@ -230,7 +230,10 @@ export function AdminPage() {
                 const name = t(names[state.feature]);
                 const why =
                   state.pinned !== null
-                    ? t("adminPinned", { variable: variableOf(state.feature) })
+                    ? // High availability is the environment's alone (ADR 0082).
+                      t(state.feature === "ha" ? "adminPinnedAtStart" : "adminPinned", {
+                        variable: variableOf(state.feature),
+                      })
                     : state.available
                       ? undefined
                       : t("adminUnavailable");
