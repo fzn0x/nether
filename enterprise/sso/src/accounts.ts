@@ -5,7 +5,7 @@
 // an invitation.
 import { randomUUID } from "node:crypto";
 import { type Queryable, readText } from "@nether/server/src/db.ts";
-import type { EventOrigin, ServerEvents } from "@nether/server/src/events.ts";
+import { type EventOrigin, type ServerEvents, accountActor } from "@nether/server/src/events.ts";
 import { emailKey } from "@nether/server/src/http.ts";
 import { acceptInvitation, invites, openInvitation } from "@nether/server/src/invitations.ts";
 import type { Person } from "@nether/server/src/oidc.ts";
@@ -70,6 +70,17 @@ export async function resolveAccount(
         emailKey(email),
         person.name,
       ]);
+      // Made just in time, as core's own OpenID Connect makes one.
+      await events.emit(
+        tx,
+        {
+          action: "account.created",
+          actor: accountActor(userId),
+          target: { type: "account", id: userId, name: person.name },
+          details: { by: invitation === undefined ? "sso" : "invitation", provider: provider.id },
+        },
+        origin,
+      );
     }
     await tx.query("INSERT INTO identities (issuer, subject, user_id) VALUES ($1, $2, $3)", [
       issuer,

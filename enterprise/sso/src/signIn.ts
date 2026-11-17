@@ -15,7 +15,7 @@ import {
   readText,
   readTextOrNull,
 } from "@nether/server/src/db.ts";
-import { type ServerEvents, originOf } from "@nether/server/src/events.ts";
+import { type ServerEvents, accountActor, originOf } from "@nether/server/src/events.ts";
 import { fail, limitByAddress } from "@nether/server/src/http.ts";
 import {
   type OidcClient,
@@ -170,18 +170,46 @@ export function registerSignIn(app: FastifyInstance, context: SignInContext): vo
       return { code };
     });
     if ("code" in outcome) return back(reply, readText(flow, "redirect"), { code: outcome.code });
-    return failed(reply, flow, "error" in outcome ? outcome.error : "provider_error");
+    return failed(
+      request,
+      reply,
+      flow,
+      "error" in outcome ? outcome.error : "provider_error",
+      person.email,
+    );
   }
 
-  async function failed(reply: FastifyReply, flow: Row, error: SignInError) {
+  /**
+   * Ends a flow that found no account, told of as a failed sign-in by the
+   * address the provider gave, if it gave one, as core's are (ADR 0081).
+   */
+  async function failed(
+    request: FastifyRequest,
+    reply: FastifyReply,
+    flow: Row,
+    error: SignInError,
+    email?: string,
+  ) {
     await db.query("DELETE FROM sso_flows WHERE id = $1", [readText(flow, "id")]);
+    await events.attempt(
+      db,
+      {
+        action: "session.signed_in",
+        outcome: "failure",
+        reason: error.replaceAll("_", " "),
+        actor: email === undefined ? { kind: "anonymous" } : { kind: "anonymous", email },
+        details: { method: "sso", provider: readText(flow, "provider_id") },
+      },
+      originOf(request),
+      request.log,
+    );
     return back(reply, readText(flow, "redirect"), { error });
   }
 
   /** A flow under way through a provider, by the state its answer carries. */
   async function flowOf(id: string, state: string): Promise<Row | undefined> {
     const { rows } = await db.query(
-      `SELECT id, nonce, verifier, request_id, redirect, invitation_hash FROM sso_flows
+      `SELECT id, provider_id, nonce, verifier, request_id, redirect, invitation_hash FROM sso_flows
         WHERE provider_id = $1 AND state_hash = $2 AND handoff_hash IS NULL AND expires_at > now()`,
       [id, tokenHash(state)],
     );
@@ -310,7 +338,9 @@ export function registerSignIn(app: FastifyInstance, context: SignInContext): vo
         const requestId = flow === undefined ? null : readTextOrNull(flow, "request_id");
         if (flow === undefined || requestId === null) return expired(reply);
         const provider = await findProvider(db, request.params.id);
-        if (provider?.settings.kind !== "saml") return failed(reply, flow, "provider_error");
+        if (provider?.settings.kind !== "saml") {
+          return failed(request, reply, flow, "provider_error");
+        }
         let person: Person;
         try {
           person = await finishSaml(
@@ -323,7 +353,7 @@ export function registerSignIn(app: FastifyInstance, context: SignInContext): vo
             { err: error, provider: provider.id },
             "A SAML provider's answer was refused",
           );
-          return failed(reply, flow, "provider_error");
+          return failed(request, reply, flow, "provider_error");
         }
         return complete(request, reply, flow, provider, provider.settings.entityId, person);
       },
@@ -343,9 +373,9 @@ export function registerSignIn(app: FastifyInstance, context: SignInContext): vo
       const nonce = flow === undefined ? null : readTextOrNull(flow, "nonce");
       const verifier = flow === undefined ? null : readTextOrNull(flow, "verifier");
       if (flow === undefined || nonce === null || verifier === null) return expired(reply);
-      if (request.query.error !== undefined) return failed(reply, flow, "access_denied");
+      if (request.query.error !== undefined) return failed(request, reply, flow, "access_denied");
       const provider = await findProvider(db, request.params.id);
-      if (provider?.settings.kind !== "oidc") return failed(reply, flow, "provider_error");
+      if (provider?.settings.kind !== "oidc") return failed(request, reply, flow, "provider_error");
       let person: Person;
       try {
         const { clientSecret } = await secretsOf(provider);
@@ -358,7 +388,7 @@ export function registerSignIn(app: FastifyInstance, context: SignInContext): vo
           { err: error, provider: provider.id },
           "An OpenID Connect provider's answer was refused",
         );
-        return failed(reply, flow, "provider_error");
+        return failed(request, reply, flow, "provider_error");
       }
       return complete(request, reply, flow, provider, provider.settings.issuer, person);
     },
@@ -381,13 +411,14 @@ export function registerSignIn(app: FastifyInstance, context: SignInContext): vo
           [tokenHash(request.body.code)],
         );
         const flow = rows[0];
-        if (flow === undefined) return undefined;
+        if (flow === undefined) return { failed: "code used, expired or unknown" } as const;
+        const provider = readText(flow, "provider_id");
+        const userId = readText(flow, "user_id");
         const challenge = Buffer.from(readText(flow, "challenge"));
         const proven = Buffer.from(pkceChallenge(request.body.verifier));
         if (challenge.length !== proven.length || !timingSafeEqual(challenge, proven)) {
-          return undefined;
+          return { failed: "not the app that began it", userId, provider } as const;
         }
-        const userId = readText(flow, "user_id");
         const users = await tx.query(
           "SELECT name, email, instance_admin FROM users WHERE id = $1",
           [userId],
@@ -405,14 +436,7 @@ export function registerSignIn(app: FastifyInstance, context: SignInContext): vo
               );
         const workspace = workspaces?.rows[0];
         return {
-          ...(await startSession(
-            tx,
-            userId,
-            request,
-            "sso",
-            events,
-            readText(flow, "provider_id"),
-          )),
+          ...(await startSession(tx, userId, request, "sso", events, provider)),
           user: {
             id: userId,
             name: readText(user, "name"),
@@ -430,7 +454,23 @@ export function registerSignIn(app: FastifyInstance, context: SignInContext): vo
               }),
         };
       });
-      if (outcome === undefined) {
+      if ("failed" in outcome) {
+        // Told of as core's own failed redemptions are (ADR 0081).
+        await events.attempt(
+          db,
+          {
+            action: "session.signed_in",
+            outcome: "failure",
+            reason: outcome.failed,
+            actor: "userId" in outcome ? accountActor(outcome.userId) : { kind: "anonymous" },
+            details:
+              "provider" in outcome
+                ? { method: "sso", provider: outcome.provider }
+                : { method: "sso" },
+          },
+          originOf(request),
+          request.log,
+        );
         return fail(reply, 401, "That sign-in code was used, has expired, or is not this app's.");
       }
       // From the web app, the session goes in its cookie, not in the answer (ADR 0053).
