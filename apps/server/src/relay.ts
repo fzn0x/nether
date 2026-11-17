@@ -13,6 +13,15 @@
 // Each update a subscriber missed while subscribing waits until the ones
 // stored before it are sent, so a subscriber's numbers only grow. Pushing a
 // note tells the vault document's subscribers, as { type: "stored", document, seq }.
+//
+// A document's pushes and snapshots take their turn, one after another:
+// each is numbered, stored, answered and sent on before the next is
+// numbered. A client told a number has so been sent every update of the
+// document numbered before it, and keeps that number as how far it has
+// read. Two stored at once could be answered out of order, as PostgreSQL
+// answers two connections, and a client would read past the one answered
+// last, never to be sent it (#174). The turns are this process's, as its
+// subscribers are.
 import type { FastifyInstance } from "fastify";
 import type { WebSocket } from "ws";
 import { type Database, readBytes, readCount } from "./db.ts";
@@ -51,6 +60,19 @@ export function registerRelay(app: FastifyInstance, db: Database): RelayControl 
   /** Each document's subscribers. */
   const subscribers = new Map<string, Set<Client>>();
   const clients = new Set<Client>();
+  /** Each document's last push or snapshot under way, which the next waits for. */
+  const turns = new Map<string, Promise<void>>();
+
+  /** Runs a change to a document's stored updates after the one under way, and gives its outcome. */
+  function inTurn(document: string, work: () => Promise<void>): Promise<void> {
+    const turn = (turns.get(document) ?? Promise.resolve()).then(work);
+    const settled = turn.catch(() => undefined);
+    turns.set(document, settled);
+    void settled.then(() => {
+      if (turns.get(document) === settled) turns.delete(document);
+    });
+    return turn;
+  }
 
   function send(client: Client, message: object): void {
     if (client.socket.readyState === client.socket.OPEN)
@@ -144,20 +166,24 @@ export function registerRelay(app: FastifyInstance, db: Database): RelayControl 
       refuse(client, id, "That is not an update.");
       return;
     }
-    const { rows } = await db.query(
-      `INSERT INTO encrypted_updates (workspace_id, name, seq, data)
-       VALUES ($1, $2, nextval('document_seq'), $3) RETURNING seq`,
-      [found.workspaceId, found.document, data],
-    );
-    const seq = readCount(rows[0], "seq");
-    send(client, { type: "pushed", id, seq });
-    relay(name, { seq, data: message.data as string }, client);
-    if (found.document !== "vault") {
-      const vault = `${found.workspaceId}/vault`;
-      for (const listener of subscribers.get(vault) ?? []) {
-        if (listener !== client) send(listener, { type: "stored", document: found.document, seq });
+    await inTurn(`${found.workspaceId}/${found.document}`, async () => {
+      const { rows } = await db.query(
+        `INSERT INTO encrypted_updates (workspace_id, name, seq, data)
+         VALUES ($1, $2, nextval('document_seq'), $3) RETURNING seq`,
+        [found.workspaceId, found.document, data],
+      );
+      const seq = readCount(rows[0], "seq");
+      send(client, { type: "pushed", id, seq });
+      relay(name, { seq, data: message.data as string }, client);
+      if (found.document !== "vault") {
+        const vault = `${found.workspaceId}/vault`;
+        for (const listener of subscribers.get(vault) ?? []) {
+          if (listener !== client) {
+            send(listener, { type: "stored", document: found.document, seq });
+          }
+        }
       }
-    }
+    });
   }
 
   async function compact(client: Client, message: Message): Promise<void> {
@@ -176,30 +202,33 @@ export function registerRelay(app: FastifyInstance, db: Database): RelayControl 
       refuse(client, id, "That is not a snapshot.");
       return;
     }
-    const done = await db.transaction(async (tx) => {
-      // Only over what is there: a snapshot replaces stored updates, up to one
-      // of them; anything else changes nothing.
-      const { rows } = await tx.query(
-        `SELECT 1 FROM encrypted_updates WHERE workspace_id = $1 AND name = $2 AND seq = $3
-          FOR UPDATE`,
-        [found.workspaceId, found.document, through],
-      );
-      if (rows.length === 0) return false;
-      await tx.query(
-        "DELETE FROM encrypted_updates WHERE workspace_id = $1 AND name = $2 AND seq <= $3",
-        [found.workspaceId, found.document, through],
-      );
-      await tx.query(
-        "INSERT INTO encrypted_updates (workspace_id, name, seq, data) VALUES ($1, $2, $3, $4)",
-        [found.workspaceId, found.document, through, data],
-      );
-      return true;
+    // In turn too: no push numbered before `through` is still being stored.
+    await inTurn(`${found.workspaceId}/${found.document}`, async () => {
+      const done = await db.transaction(async (tx) => {
+        // Only over what is there: a snapshot replaces stored updates, up to one
+        // of them; anything else changes nothing.
+        const { rows } = await tx.query(
+          `SELECT 1 FROM encrypted_updates WHERE workspace_id = $1 AND name = $2 AND seq = $3
+            FOR UPDATE`,
+          [found.workspaceId, found.document, through],
+        );
+        if (rows.length === 0) return false;
+        await tx.query(
+          "DELETE FROM encrypted_updates WHERE workspace_id = $1 AND name = $2 AND seq <= $3",
+          [found.workspaceId, found.document, through],
+        );
+        await tx.query(
+          "INSERT INTO encrypted_updates (workspace_id, name, seq, data) VALUES ($1, $2, $3, $4)",
+          [found.workspaceId, found.document, through, data],
+        );
+        return true;
+      });
+      if (!done) {
+        refuse(client, id, "A snapshot must replace the updates up to one stored.");
+        return;
+      }
+      send(client, { type: "compacted", id });
     });
-    if (!done) {
-      refuse(client, id, "A snapshot must replace the updates up to one stored.");
-      return;
-    }
-    send(client, { type: "compacted", id });
   }
 
   app.get("/api/relay", { websocket: true }, (socket, request) => {
