@@ -207,6 +207,9 @@ What the second part decided, building it:
   each was last used, and revokes.
 - **Webhooks** (ADR 0060) are in a dialog of their own for the workspace a
   vault syncs with, for its owners and admins.
+- Both are also in the **Sync** menu, as API tokens and Workspace
+  webhooks, for the server and the workspace the vault syncs with. Each
+  dialog loads when it is opened.
 - **The guide** has an API reference page, updated with each part.
 
 ### Parts

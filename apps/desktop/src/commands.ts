@@ -41,6 +41,8 @@ export const commandIds = [
   "spaces",
   "share",
   "notifications",
+  "webhooks",
+  "apiTokens",
   "shortcuts",
   "plugins",
   "checkUpdates",
@@ -129,7 +131,20 @@ export const coreMenus: readonly CoreMenu[] = [
       "closeTab",
     ],
   },
-  { name: "sync", entries: ["servers", "sync", "members", "spaces", "share", "notifications"] },
+  {
+    name: "sync",
+    entries: [
+      "servers",
+      "sync",
+      "members",
+      "spaces",
+      "share",
+      "notifications",
+      "separator",
+      "webhooks",
+      "apiTokens",
+    ],
+  },
   {
     name: "settings",
     entries: [
