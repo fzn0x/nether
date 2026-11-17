@@ -6,6 +6,7 @@ import {
   type LoopbackWait,
   ServerError,
   account,
+  findProvider,
   invitationLink,
   pkce,
   readInvitationLink,
@@ -375,18 +376,70 @@ describe("signing in with a provider", () => {
     const methods = { password: true, emailCode: false, oidc: null };
     const on = fakeFetch({
       "GET /api/sign-in-methods": () => json(200, methods),
-      "GET /api/sso": () => json(200, { providers: [{ id: "corp", name: "Corp SSO" }, { id: 7 }] }),
+      "GET /api/sso": () =>
+        json(200, { providers: [{ id: "corp", name: "Corp SSO" }, { id: 7 }], everyone: true }),
     });
     expect(await signInMethods(on.fetcher, base)).toEqual({
       ...methods,
       sso: [{ id: "corp", name: "Corp SSO" }],
+      ssoEveryone: true,
     });
     const off = fakeFetch({
       "GET /api/sign-in-methods": () => json(200, methods),
       "GET /api/sso": () => json(404, { message: "Route GET:/api/sso not found" }),
     });
-    expect((await signInMethods(off.fetcher, base)).sso).toEqual([]);
+    expect(await signInMethods(off.fetcher, base)).toMatchObject({ sso: [], ssoEveryone: false });
     expect(await ssoProviders(fakeFetch({}).fetcher, base)).toEqual([]);
+  });
+
+  it("finds an address's provider, and none on a server without single sign-on", async () => {
+    const { fetcher, sent } = fakeFetch({
+      "POST /api/sso/find": () =>
+        json(200, { provider: { id: "corp", name: "Corp SSO" }, required: true }),
+    });
+    expect(await findProvider(fetcher, base, " grace@corp.example ")).toEqual({
+      provider: { id: "corp", name: "Corp SSO" },
+      required: true,
+    });
+    expect(sent[0]?.body).toEqual({ email: "grace@corp.example" });
+    const off = fakeFetch({
+      "POST /api/sso/find": () => json(404, { message: "Route POST:/api/sso/find not found" }),
+    });
+    expect(await findProvider(off.fetcher, base, "ada@example.org")).toEqual({
+      provider: undefined,
+      required: false,
+    });
+  });
+
+  it("keeps the provider a refusal names, and carries an invitation through a provider", async () => {
+    const { fetcher, sent } = fakeFetch({
+      "POST /api/sessions": () =>
+        json(403, {
+          statusCode: 403,
+          message: "Addresses at corp.example sign in with Corp SSO.",
+          sso: { id: "corp", name: "Corp SSO" },
+        }),
+      "POST /api/sso/corp/flows": () => json(201, { url: "https://idp.example.org/sso" }),
+      "POST /api/sso/redeem": () => json(201, { token: "session", expiresAt: "", user }),
+    });
+    const refused = await request(fetcher, base, "/api/sessions", { body: {} }).catch(
+      (error: unknown) => error,
+    );
+    expect(refused).toBeInstanceOf(ServerError);
+    expect((refused as ServerError).sso).toEqual({ id: "corp", name: "Corp SSO" });
+    await signInWithProvider(
+      fetcher,
+      base,
+      loopback({ code: "handoff" }),
+      () => Promise.resolve(),
+      "corp",
+      "invitation-token",
+    );
+    expect(sent[1]?.body).toMatchObject({ invitation: "invitation-token" });
+    const sso = loopback({ error: "sso_required" });
+    await expect(
+      signInWithProvider(fetcher, base, sso, () => Promise.resolve(), "corp"),
+    ).rejects.toThrow("This account signs in through another provider.");
   });
 
   it("makes a verifier of 43 characters, and a challenge from it", async () => {

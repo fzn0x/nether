@@ -154,7 +154,9 @@ from the same file, such as:
   [admin console](../admin/#single-sign-on), which needs
   `NETHER_SECRET_KEY` too. They reach public addresses only:
   `NETHER_SSO_PRIVATE=loopback`, or an address or range, lets them be on
-  your own network, as Keycloak beside the server.
+  your own network, as Keycloak beside the server. Where the console
+  requires single sign-on and a provider breaks,
+  `NETHER_SSO_ENFORCE=off` lets everyone in another way again.
 - **Attachments in an S3-compatible bucket** instead of the volume:
   `NETHER_STORAGE=s3` with `NETHER_S3_ENDPOINT`, `NETHER_S3_BUCKET`,
   `NETHER_S3_ACCESS_KEY` and `NETHER_S3_SECRET_KEY`.

@@ -1066,7 +1066,7 @@ test("the admin console's security page sets how long sessions last, and email c
   expect(problems).toEqual([]);
 });
 
-test("an instance admin adds a SAML provider in the console, and someone at its domain signs in through it", async ({
+test("an instance admin adds a SAML provider in the console, someone at its domain signs in through it, and it is required there", async ({
   page,
   browser,
 }) => {
@@ -1095,39 +1095,89 @@ test("an instance admin adds a SAML provider in the console, and someone at its 
     await expect(corp).toContainText("BEGIN CERTIFICATE");
     expect(await violations(page)).toEqual([]);
 
-    // Someone at corp.example, with no account yet, signs in through it.
-    const theirs = await browser.newContext();
-    try {
-      // The provider's page, which signs them in and posts its answer back, as a browser does.
-      await theirs.route("https://idp.example.test/**", async (route) => {
-        const { action, fields } = await ask<{ action: string; fields: Record<string, string> }>(
-          "/saml-answer",
-          { url: route.request().url(), email: "grace@corp.example", name: "Grace Hopper" },
-        );
-        const inputs = Object.entries(fields)
-          .map(([name, value]) => `<input type="hidden" name="${name}" value="${value}">`)
-          .join("");
-        await route.fulfill({
-          contentType: "text/html",
-          body: `<!doctype html><title>Corp</title><form method="post" action="${action}">${inputs}</form><script>document.forms[0].submit()</script>`,
+    /**
+     * Signs someone in by their address, which goes straight to its
+     * domain's provider, whose page signs them in and posts its answer
+     * back, as a browser does.
+     */
+    const byAddress = async (email: string, name: string) => {
+      const theirs = await browser.newContext();
+      try {
+        await theirs.route("https://idp.example.test/**", async (route) => {
+          const { action, fields } = await ask<{
+            action: string;
+            fields: Record<string, string>;
+          }>("/saml-answer", { url: route.request().url(), email, name });
+          const inputs = Object.entries(fields)
+            .map(([field, value]) => `<input type="hidden" name="${field}" value="${value}">`)
+            .join("");
+          await route.fulfill({
+            contentType: "text/html",
+            body: `<!doctype html><title>Corp</title><form method="post" action="${action}">${inputs}</form><script>document.forms[0].submit()</script>`,
+          });
         });
+        const other = await theirs.newPage();
+        const theirProblems = problemsOf(other);
+        await other.goto("/");
+        await other.getByRole("button", { name: "Sign in" }).click();
+        const dialog = other.getByRole("dialog", { name: "Account and encryption" });
+        await dialog.getByRole("textbox", { name: "Email address" }).fill(email);
+        expect(await violations(other)).toEqual([]);
+        await Promise.all([
+          theirs.waitForEvent("page"),
+          dialog.getByRole("button", { name: "Continue" }).click(),
+        ]);
+        await expect(dialog.getByRole("status")).toContainText("Signed in to");
+        await dialog.getByRole("button", { name: "Done" }).click();
+        await expect(other.getByText(`Signed in as ${name}, ${email}`)).toBeVisible();
+        expect(theirProblems).toEqual([]);
+      } finally {
+        await theirs.close();
+      }
+    };
+
+    // Someone at corp.example, with no account yet, signs in through it.
+    await byAddress("grace@corp.example", "Grace Hopper");
+
+    // Bea, at corp.example with a password, has a session it began.
+    const bea = await ask<{ email: string; password: string }>("/person", {
+      name: "Bea",
+      email: `bea-${String(Date.now())}@corp.example`,
+    });
+    const hers = await browser.newContext();
+    try {
+      const signedIn = await hers.request.post("/api/sessions", {
+        headers: { "x-nether-session": "cookie" },
+        data: bea,
       });
-      const other = await theirs.newPage();
-      const theirProblems = problemsOf(other);
-      await other.goto("/");
-      await other.getByRole("button", { name: "Sign in" }).click();
-      const dialog = other.getByRole("dialog", { name: "Account and encryption" });
-      await Promise.all([
-        theirs.waitForEvent("page"),
-        dialog.getByRole("button", { name: "Sign in with Corp SSO", exact: true }).click(),
-      ]);
-      await expect(dialog.getByRole("status")).toContainText("Signed in to");
-      await dialog.getByRole("button", { name: "Done" }).click();
-      await expect(other.getByText("Signed in as Grace Hopper, grace@corp.example")).toBeVisible();
-      expect(theirProblems).toEqual([]);
+      expect(signedIn.status()).toBe(201);
+      expect((await hers.request.get("/api/me")).status()).toBe(200);
+
+      // Required at its domains, the provider ends that session as the page saves.
+      await corp.getByRole("button", { name: "Change" }).click();
+      await corp
+        .getByLabel("Require it: accounts at these domains sign in through it alone")
+        .check();
+      await corp.getByRole("button", { name: "Save" }).click();
+      await expect(section.getByRole("status")).toHaveText("Corp SSO saved.");
+      expect((await hers.request.get("/api/me")).status()).toBe(401);
+      const refused = await hers.request.post("/api/sessions", { data: bea });
+      expect(refused.status()).toBe(403);
+      expect(await refused.json()).toMatchObject({ sso: { id: "corp", name: "Corp SSO" } });
     } finally {
-      await theirs.close();
+      await hers.close();
     }
+    // Her address takes her to the provider, which finds her account by it.
+    await byAddress(bea.email, "Bea");
+
+    // What single sign-on requires beside each provider; the admin, exempt, stays signed in.
+    await page.reload();
+    const requires = section.getByRole("form", { name: "What single sign-on requires" });
+    await expect(
+      requires.getByRole("checkbox", { name: "Everyone signs in through a provider" }),
+    ).not.toBeChecked();
+    await expect(requires.getByRole("checkbox", { name: "Instance admins too" })).not.toBeChecked();
+    expect(await violations(page)).toEqual([]);
 
     // Removed, it is offered no more.
     await corp.getByRole("button", { name: "Remove" }).click();

@@ -1,15 +1,19 @@
 // The console's Single sign-on page's routes (ADR 0080), for instance
 // admins while the feature is on: the providers, each SAML 2.0 from its
 // metadata, by address or pasted, or OpenID Connect from its issuer and
-// client; the domains each is trusted for; and what to give each provider.
+// client; the domains each is trusted for; what to give each provider; and
+// what single sign-on requires, which ends the sessions it refuses as soon
+// as it is saved.
 import type { FastifyInstance, FastifyReply } from "fastify";
 import type { Config } from "@nether/server/src/config.ts";
-import type { Database } from "@nether/server/src/db.ts";
+import type { Database, Queryable } from "@nether/server/src/db.ts";
 import { instanceAdmin } from "@nether/server/src/features.ts";
 import { fail } from "@nether/server/src/http.ts";
 import { oidcClient } from "@nether/server/src/oidc.ts";
-import { signedIn } from "@nether/server/src/sessions.ts";
+import { type Account, accountOf, signedIn } from "@nether/server/src/sessions.ts";
+import type { SecuritySettings } from "@nether/server/src/settings.ts";
 import { newServiceKey } from "./certificate.ts";
+import { readRules, readSettings, refusalOf, saveSettings } from "./enforcement.ts";
 import { MetadataError, metadataLimit, readIdpMetadata } from "./metadata.ts";
 import {
   type OidcSettings,
@@ -51,6 +55,7 @@ interface ProviderInput {
   readonly name?: string;
   readonly domains?: readonly string[];
   readonly makeAccounts?: boolean;
+  readonly required?: boolean;
   readonly saml?: SamlInput;
   readonly oidc?: OidcInput;
 }
@@ -90,6 +95,7 @@ const providerProperties = {
     items: { type: "string", minLength: 1, maxLength: 253 },
   },
   makeAccounts: { type: "boolean" },
+  required: { type: "boolean" },
   saml: samlInput,
   oidc: oidcInput,
 } as const;
@@ -142,8 +148,30 @@ function domainsOf(input: readonly string[]): string[] {
 const stringOrNull = (value: string | null | undefined, kept: string | null) =>
   value === undefined ? kept : value === null ? null : value.trim() === "" ? null : value.trim();
 
-export function registerConsole(app: FastifyInstance, context: SignInContext): void {
-  const { db, config, whenOn } = context;
+/** What the page's routes share beside the sign-in's. */
+export interface ConsoleContext extends SignInContext {
+  /** Closes an account's sync connections, as a session it had ends. */
+  readonly disconnect: (userId: string) => void;
+  /** Whether email codes sign in, for the warning when no instance admin has a way in. */
+  readonly security: SecuritySettings;
+}
+
+interface EnforcementInput {
+  readonly everyone?: boolean;
+  readonly admins?: boolean;
+}
+
+const enforcementBody = {
+  type: "object",
+  additionalProperties: false,
+  properties: { everyone: { type: "boolean" }, admins: { type: "boolean" } },
+} as const;
+
+const ownSession =
+  "Saving this would end your own session, which did not begin through the provider it requires: sign in through it first.";
+
+export function registerConsole(app: FastifyInstance, context: ConsoleContext): void {
+  const { db, config, whenOn, enforcement, disconnect, security } = context;
   const account = signedIn(db);
   const admins = (what: string) => ({
     preHandler: [whenOn, account, instanceAdmin(what)],
@@ -158,6 +186,7 @@ export function registerConsole(app: FastifyInstance, context: SignInContext): v
       kind: provider.settings.kind,
       name: provider.name,
       makeAccounts: provider.makeAccounts,
+      required: provider.required,
       domains: provider.domains,
     };
     const { settings } = provider;
@@ -321,6 +350,36 @@ export function registerConsole(app: FastifyInstance, context: SignInContext): v
     return reply.code(status).send(body);
   }
 
+  /**
+   * Refuses a change, in the transaction that makes it, that would end the
+   * session of the admin making it: they sign in through the provider first.
+   */
+  async function keepsOwnSession(tx: Queryable, me: Account): Promise<void> {
+    if (enforcement.pinnedOff) return;
+    const refused = refusalOf(await readRules(tx), {
+      userId: me.id,
+      email: me.email,
+      instanceAdmin: me.instanceAdmin,
+      method: me.method,
+      provider: me.provider,
+    });
+    if (refused !== undefined) throw new Refused(409, ownSession);
+  }
+
+  /** What single sign-on requires, and whether instance admins keep a way in of their own. */
+  async function enforcementView() {
+    const settings = await readSettings(db);
+    const { rows } = await db.query(
+      "SELECT 1 FROM users WHERE instance_admin AND password_hash IS NOT NULL LIMIT 1",
+    );
+    const codes = config.mail !== null && (await security.values()).emailCodes;
+    return {
+      ...settings,
+      pinnedBy: enforcement.pinnedOff ? "NETHER_SSO_ENFORCE" : null,
+      adminWayIn: rows.length > 0 || codes,
+    };
+  }
+
   app.get("/api/admin/sso", admins("see single sign-on's providers"), async () => ({
     providers: await Promise.all((await listProviders(db)).map(view)),
     publicUrl: config.publicUrl,
@@ -328,7 +387,35 @@ export function registerConsole(app: FastifyInstance, context: SignInContext): v
     privateSetting,
     environment:
       config.oidc === null ? null : { name: config.oidc.name, issuer: config.oidc.issuer },
+    enforcement: await enforcementView(),
   }));
+
+  // What single sign-on requires beside each provider's own switch: every
+  // account, and instance admins too. The sessions and tokens it refuses
+  // end as it is saved.
+  app.put<{ Body: EnforcementInput }>(
+    "/api/admin/sso/enforcement",
+    { schema: { body: enforcementBody }, ...admins("set what single sign-on requires") },
+    (request, reply) =>
+      answer(reply, 200, async () => {
+        if (enforcement.pinnedOff) {
+          throw new Refused(409, "NETHER_SSO_ENFORCE=off pins enforcement off: unset it first.");
+        }
+        const { body } = request;
+        if (body.everyone === true && config.oidc === null) {
+          const { rows } = await db.query("SELECT 1 FROM sso_providers LIMIT 1");
+          if (rows.length === 0) {
+            throw new Refused(409, "Add a provider first: with none, no one could sign in.");
+          }
+        }
+        await db.transaction(async (tx) => {
+          await saveSettings(tx, body);
+          await keepsOwnSession(tx, accountOf(request));
+        });
+        const ended = await enforcement.sweep(disconnect);
+        return { ...(await enforcementView()), ended };
+      }),
+  );
 
   app.post<{ Body: ProviderInput }>(
     "/api/admin/sso/providers",
@@ -362,12 +449,15 @@ export function registerConsole(app: FastifyInstance, context: SignInContext): v
               id: body.id,
               name: (body.name ?? body.id).trim(),
               makeAccounts: body.makeAccounts ?? true,
+              required: body.required ?? false,
               domains,
               settings: made.settings,
             },
             sealSecrets(seal, body.id, made.secrets ?? {}),
           );
+          await keepsOwnSession(tx, accountOf(request));
         });
+        await enforcement.sweep(disconnect);
         const kept = await findProvider(db, body.id);
         if (kept === undefined) throw new Refused(404, "There is no such provider.");
         return view(kept);
@@ -412,12 +502,15 @@ export function registerConsole(app: FastifyInstance, context: SignInContext): v
               id: kept.id,
               name: body.name?.trim() ?? kept.name,
               makeAccounts: body.makeAccounts ?? kept.makeAccounts,
+              required: body.required ?? kept.required,
               domains,
               settings: changed.settings,
             },
             changed.secrets === undefined ? undefined : sealSecrets(seal, kept.id, changed.secrets),
           );
+          await keepsOwnSession(tx, accountOf(request));
         });
+        await enforcement.sweep(disconnect);
         const now = await findProvider(db, kept.id);
         if (now === undefined) throw new Refused(404, "There is no such provider.");
         return view(now);
@@ -445,10 +538,24 @@ export function registerConsole(app: FastifyInstance, context: SignInContext): v
     "/api/admin/sso/providers/:id",
     admins("remove a single sign-on provider"),
     async (request, reply) => {
+      // The last provider stays while everyone signs in through one.
+      if (config.oidc === null && (await readSettings(db)).everyone) {
+        const { rows } = await db.query("SELECT id FROM sso_providers WHERE id <> $1 LIMIT 1", [
+          request.params.id,
+        ]);
+        if (rows.length === 0) {
+          return fail(
+            reply,
+            409,
+            "Everyone signs in through a provider: turn that off before removing the last one.",
+          );
+        }
+      }
       const { rows } = await db.query("DELETE FROM sso_providers WHERE id = $1 RETURNING id", [
         request.params.id,
       ]);
       if (rows.length === 0) return fail(reply, 404, "There is no such provider.");
+      enforcement.forget();
       return reply.code(204).send();
     },
   );

@@ -953,6 +953,31 @@ export const messages = {
   adminSsoNetherCallback: "Redirect address",
   adminSsoCertificate:
     "Nether's certificate for this provider, which it signs its requests with and the provider can encrypt assertions to:",
+  adminSsoRequire: "Require it: accounts at these domains sign in through it alone",
+  adminSsoRequired: "Required",
+  adminSsoEnforcement: "What single sign-on requires",
+  adminSsoEnforcementIntro:
+    "A required provider takes its domains' accounts. Saving a change ends at once the sessions and tokens it refuses.",
+  adminSsoEveryone: "Everyone signs in through a provider",
+  adminSsoEveryoneHint:
+    "An account at no provider's domain may use any provider it is linked to. The apps offer a password and a code only to instance admins.",
+  adminSsoAdmins: "Instance admins too",
+  adminSsoAdminsHint:
+    "Off, instance admins keep their passwords and codes, to fix a provider that breaks.",
+  adminSsoAdminsCovered:
+    "Instance admins sign in through providers too. If one breaks, NETHER_SSO_ENFORCE=off on the server lets everyone in another way again.",
+  adminSsoNoAdminWayIn:
+    "No instance admin has a password, and the server sends no codes: if a provider breaks, only NETHER_SSO_ENFORCE=off lets an admin in.",
+  adminSsoPinned:
+    "{variable}=off on the server pins this off: nothing is required until it is unset.",
+  adminSsoEnforcementSaved: "Saved. Sessions ended: {sessions}. Tokens ended: {tokens}.",
+  signInAddressHint: "Your email address tells the server how you sign in.",
+  signInThroughProvider: "{email} signs in through a provider.",
+  signInAsAdmin: "Sign in as an instance admin",
+  signInAsAdminHint:
+    "Instance admins may keep a password or a code, to fix a provider that breaks.",
+  invitationThroughProvider: "Addresses there sign in with {name}: finish in your browser.",
+  providerSsoRequired: "This account signs in through another provider.",
   adminFind: "Find a workspace by its name, or by a member's name or email",
   adminFindButton: "Find",
   adminNoWorkspaces: "No workspace matches.",

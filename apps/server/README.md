@@ -505,6 +505,7 @@ machine.
 | `NETHER_SETUP_CODE` | none | The setup code while the server has no account: 16 to 64 characters, not counting spaces and hyphens, as `openssl rand -hex 12` makes. Every node takes the same one (ADR 0082). Without it, each start makes a code and writes it to the log |
 | `NETHER_SECRET_KEY` | none | 32 random bytes in base64, as `openssl rand -base64 32` makes them, which seal AI providers' keys at rest; without it the server keeps no keys. Keep it with your backups' secrets: a restore needs the same key to open them |
 | `NETHER_ENTERPRISE_SSO` | unset | Single sign-on |
+| `NETHER_SSO_ENFORCE` | unset | `off` stops single sign-on requiring its providers, as the console sets it, until unset: the way back in when a provider breaks (ADR 0080) |
 | `NETHER_ENTERPRISE_SCIM` | unset | Provisioning through SCIM and LDAP |
 | `NETHER_ENTERPRISE_AUDIT` | unset | Audit logs |
 | `NETHER_ENTERPRISE_POLICIES` | unset | Data policies and advanced permissions |

@@ -3,12 +3,18 @@
 // in the console by SAML, from its metadata's address, gives Keycloak
 // Nether's certificate, which it then checks requests with and encrypts
 // assertions to, and someone at corp.example signs in on Keycloak's own
-// page; then the same through OpenID Connect. It runs when
-// NETHER_TEST_KEYCLOAK names Keycloak's address, and is skipped otherwise.
+// page; then the same through OpenID Connect. Then Keycloak is required at
+// its domains: a password there is refused and its session ends, while the
+// instance admin, exempt, keeps hers. Ada signs in once, as the server
+// counts ten sign-ins an account in 15 minutes across the tests. It runs
+// when NETHER_TEST_KEYCLOAK names Keycloak's address, and is skipped
+// otherwise.
 import { type BrowserContext, type Locator, type Page, expect, test } from "@playwright/test";
 
 const keycloak = process.env.NETHER_TEST_KEYCLOAK ?? "";
 const password = "a long password";
+/** What the tests ask of the server beside them (e2e/server.ts). */
+const control = "http://127.0.0.1:4176";
 
 test.skip(keycloak === "", "Set NETHER_TEST_KEYCLOAK to Keycloak's address to run these.");
 
@@ -77,26 +83,30 @@ async function removeProviders(section: Locator) {
   }
 }
 
+/** Signs Ada, the instance admin, in with her password, giving her address first when asked for it. */
 async function signIn(page: Page) {
   await page.goto("/");
   await page.getByRole("button", { name: "Sign in" }).click();
   const dialog = page.getByRole("dialog", { name: "Account and encryption" });
   await dialog.getByRole("textbox", { name: "Email address" }).fill("ada@example.org");
+  const next = dialog.getByRole("button", { name: "Continue" });
+  if (await next.isVisible()) await next.click();
   await dialog.getByLabel("Password").fill(password);
   await dialog.getByRole("button", { name: "Sign in", exact: true }).click();
   await expect(dialog.getByRole("status")).toContainText("Signed in to");
   await dialog.getByRole("button", { name: "Done" }).click();
 }
 
-/** Signs in through a provider's button, on Keycloak's own page, as `username`. */
-async function throughKeycloak(context: BrowserContext, button: string, username: string) {
+/** Signs in by the address, which goes straight to its provider, on Keycloak's own page as `username`. */
+async function throughKeycloak(context: BrowserContext, email: string, username: string) {
   const page = await context.newPage();
   await page.goto("/");
   await page.getByRole("button", { name: "Sign in" }).click();
   const dialog = page.getByRole("dialog", { name: "Account and encryption" });
+  await dialog.getByRole("textbox", { name: "Email address" }).fill(email);
   const [popup] = await Promise.all([
     context.waitForEvent("page"),
-    dialog.getByRole("button", { name: button, exact: true }).click(),
+    dialog.getByRole("button", { name: "Continue" }).click(),
   ]);
   await popup.waitForURL(`${keycloak}/**`);
   await popup.getByLabel(/Username or email/).fill(username);
@@ -108,11 +118,11 @@ async function throughKeycloak(context: BrowserContext, button: string, username
   return page;
 }
 
-test("Keycloak signs people in by SAML and by OpenID Connect, as the console adds it", async ({
+test("Keycloak signs people in by SAML and by OpenID Connect, as the console adds it, and when it is required", async ({
   page,
   browser,
 }) => {
-  test.setTimeout(120_000);
+  test.setTimeout(180_000);
   await signIn(page);
   await page.goto("/admin");
   const sso = page
@@ -151,7 +161,7 @@ test("Keycloak signs people in by SAML and by OpenID Connect, as the console add
     const theirs = await browser.newContext();
     try {
       // Grace, by SAML: her account made just in time, the assertion encrypted to Nether.
-      const grace = await throughKeycloak(theirs, "Sign in with Keycloak", "grace");
+      const grace = await throughKeycloak(theirs, "grace@corp.example", "grace");
       await expect(grace.getByText("Signed in as Grace Hopper, grace@corp.example")).toBeVisible();
       await grace.close();
     } finally {
@@ -160,11 +170,55 @@ test("Keycloak signs people in by SAML and by OpenID Connect, as the console add
     const others = await browser.newContext();
     try {
       // Hal, by OpenID Connect, at its domain: his account made too.
-      const hal = await throughKeycloak(others, "Sign in with Keycloak OIDC", "hal");
+      const hal = await throughKeycloak(others, "hal@corp.test", "hal");
       await expect(hal.getByText("Signed in as Hal Abelson, hal@corp.test")).toBeVisible();
     } finally {
       await others.close();
     }
+
+    // Ida has a password, and a session it began.
+    const hers = await browser.newContext();
+    try {
+      const made = await fetch(`${control}/person`, {
+        method: "POST",
+        body: JSON.stringify({ name: "Ida Rhodes", email: "ida@corp.example" }),
+      });
+      expect(made.ok).toBe(true);
+      const signedIn = await hers.request.post("/api/sessions", {
+        headers: { "x-nether-session": "cookie" },
+        data: { email: "ida@corp.example", password },
+      });
+      expect(signedIn.status()).toBe(201);
+      expect((await hers.request.get("/api/me")).status()).toBe(200);
+
+      // Keycloak required at corp.example, and at Ada's example.org: Ida's
+      // password session ends as the page saves it.
+      await saml.getByRole("button", { name: "Change" }).click();
+      await saml.getByLabel("Email domains").fill("corp.example\nexample.org");
+      await saml
+        .getByLabel("Require it: accounts at these domains sign in through it alone")
+        .check();
+      await saml.getByRole("button", { name: "Save" }).click();
+      await expect(section.getByRole("status")).toHaveText("Keycloak saved.");
+      expect((await hers.request.get("/api/me")).status()).toBe(401);
+      const refused = await hers.request.post("/api/sessions", {
+        data: { email: "ida@corp.example", password },
+      });
+      expect(refused.status()).toBe(403);
+      expect(await refused.json()).toMatchObject({ sso: { id: "keycloak", name: "Keycloak" } });
+
+      // Her address takes her straight to Keycloak, which finds her account by it.
+      const ida = await throughKeycloak(hers, "ida@corp.example", "ida");
+      await expect(ida.getByText("Signed in as Ida Rhodes, ida@corp.example")).toBeVisible();
+    } finally {
+      await hers.close();
+    }
+
+    // Ada, an instance admin at example.org, is exempt: her password's session goes on.
+    await page.reload();
+    await expect(
+      section.getByRole("heading", { name: "What single sign-on requires" }),
+    ).toBeVisible();
   } finally {
     await removeProviders(section);
     await sso.uncheck();

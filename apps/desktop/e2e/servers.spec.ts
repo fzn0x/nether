@@ -207,3 +207,72 @@ test("says when an address is no Nether server's", async ({ page }) => {
     "https://nether.test does not answer as a Nether server.",
   );
 });
+
+test("asks for the address first where single sign-on is on, and goes to its domain's provider", async ({
+  page,
+  context,
+}) => {
+  const errors = errorsOf(page);
+  const grace = { id: "u2", name: "Grace", email: "grace@corp.example", instanceAdmin: false };
+  const sent = await fakeServer(page, {
+    "GET /api/sign-in-methods": () => [200, { password: true, emailCode: true, oidc: null }],
+    "GET /api/sso": () => [200, { providers: [{ id: "corp", name: "Corp SSO" }], everyone: true }],
+    // Every account signs in through a provider; corp.example's through Corp SSO.
+    "POST /api/sso/find": (request) => [
+      200,
+      (request.postDataJSON() as { email: string }).email.endsWith("@corp.example")
+        ? { provider: { id: "corp", name: "Corp SSO" }, required: true }
+        : { provider: null, required: true },
+    ],
+    "POST /api/sso/corp/flows": () => [201, { url: "https://login.test/authorize" }],
+    "POST /api/sso/redeem": () => [201, { ...session, user: grace }],
+    "POST /api/sessions": () => [201, session],
+  });
+  await context.route("https://login.test/**", (route) =>
+    route.fulfill({ status: 200, contentType: "text/html", body: "<title>Provider</title>" }),
+  );
+  await openSample(page);
+  await page.evaluate(() => {
+    (
+      globalThis as unknown as {
+        netherPreview: { loopback: () => unknown };
+      }
+    ).netherPreview.loopback = () => ({
+      redirect: "http://127.0.0.1:43123/back",
+      wait: () => Promise.resolve({ code: "handoff" }),
+      close: () => Promise.resolve(),
+    });
+  });
+  const dialog = await openServers(page);
+  await dialog.getByRole("textbox", { name: "Server address" }).fill("nether.test");
+  await dialog.getByRole("button", { name: "Continue" }).click();
+
+  // The address first, and nothing else yet.
+  const address = dialog.getByRole("textbox", { name: "Email address" });
+  await expect(address).toBeFocused();
+  await expect(dialog.getByLabel("Password")).toHaveCount(0);
+  expect(await violations(page)).toEqual([]);
+  await address.fill("grace@corp.example");
+  await dialog.getByRole("button", { name: "Continue" }).click();
+  await expect(dialog.getByRole("status")).toHaveText("Signed in to nether.test as Grace.");
+  const flow = sent.find((request) => new URL(request.url()).pathname === "/api/sso/corp/flows");
+  expect(flow?.postDataJSON()).toMatchObject({ redirect: "http://127.0.0.1:43123/back" });
+
+  // At no provider's domain, with everyone required: the providers, and the
+  // password only behind signing in as an instance admin.
+  await dialog.getByRole("button", { name: "Connect to a server" }).click();
+  await dialog.getByRole("textbox", { name: "Server address" }).fill("nether.test");
+  await dialog.getByRole("button", { name: "Continue" }).click();
+  await dialog.getByRole("textbox", { name: "Email address" }).fill("ada@example.org");
+  await dialog.getByRole("button", { name: "Continue" }).click();
+  await expect(dialog.getByRole("button", { name: "Sign in with Corp SSO" })).toBeVisible();
+  await expect(dialog.getByLabel("Password")).toHaveCount(0);
+  expect(await violations(page)).toEqual([]);
+  await dialog.getByRole("button", { name: "Sign in as an instance admin" }).click();
+  const password = dialog.getByLabel("Password");
+  await expect(password).toBeFocused();
+  await password.fill("a long password");
+  await dialog.getByRole("button", { name: "Sign in", exact: true }).click();
+  await expect(dialog.getByRole("status")).toHaveText("Signed in to nether.test as Ada.");
+  expect(pageErrors(errors)).toEqual([]);
+});

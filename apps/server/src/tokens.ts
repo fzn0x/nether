@@ -5,10 +5,12 @@
 // owner to tell it from the others. Making one takes the account's password
 // again, so a stolen session cannot make itself a key that outlives it.
 // Tokens are managed with a session only: a token never makes, lists or
-// revokes tokens.
+// revokes tokens. A token keeps how the session that made it began, so a
+// guard that would end that session ends the token too (ADR 0080).
 import { randomUUID } from "node:crypto";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
-import { type Database, type Row, readText, readTextOrNull, readTime } from "./db.ts";
+import { type Database, type Row, readBoolean, readText, readTextOrNull, readTime } from "./db.ts";
+import { sessionMethodOf } from "./events.ts";
 import { fail, limitByAddress, nameField, passwordField, uuidField } from "./http.ts";
 import {
   accountOf,
@@ -21,6 +23,7 @@ import {
   tokenHash,
   wrongPassword,
 } from "./sessions.ts";
+import { signInGuards } from "./signIns.ts";
 import { membership } from "./workspaces.ts";
 import { type EventActor, type ServerEvents, accountActor, originOf } from "./events.ts";
 
@@ -88,10 +91,14 @@ function tokenInfo(row: Row): TokenInfo {
 const tokenColumns = `t.id, t.name, t.access, t.hint, t.workspace_id, w.name AS workspace_name,
   t.expires_at, t.created_at, t.used_at`;
 
-/** The caller a personal access token signs in, while it lasts. */
+/**
+ * The caller a personal access token signs in, while it lasts and the
+ * server's guards let it, as they let the session that made it.
+ */
 export async function tokenCaller(db: Database, token: string): Promise<ApiCaller | undefined> {
   const { rows } = await db.query(
-    `SELECT ${tokenColumns}, u.id AS user_id, u.name AS user_name, u.email
+    `SELECT ${tokenColumns}, t.method, t.provider,
+            u.id AS user_id, u.name AS user_name, u.email, u.instance_admin
        FROM api_tokens t
        JOIN users u ON u.id = t.user_id
        LEFT JOIN workspaces w ON w.id = t.workspace_id
@@ -101,11 +108,25 @@ export async function tokenCaller(db: Database, token: string): Promise<ApiCalle
   const row = rows[0];
   if (row === undefined) return undefined;
   const info = tokenInfo(row);
+  const userId = readText(row, "user_id");
+  const refusal = await signInGuards(db).check(
+    {
+      userId,
+      email: readText(row, "email"),
+      instanceAdmin: readBoolean(row, "instance_admin"),
+      method: sessionMethodOf(readTextOrNull(row, "method")),
+      provider: readTextOrNull(row, "provider"),
+    },
+    db,
+  );
+  if (refusal !== undefined) {
+    await db.query("DELETE FROM api_tokens WHERE id = $1", [info.id]);
+    return undefined;
+  }
   // Marked used every few minutes, not on every request, as sessions are.
   if (info.usedAt === null || Date.parse(info.usedAt) < Date.now() - 5 * 60_000) {
     await db.query("UPDATE api_tokens SET used_at = now() WHERE id = $1", [info.id]);
   }
-  const userId = readText(row, "user_id");
   return {
     userId,
     name: readText(row, "user_name"),
@@ -238,8 +259,9 @@ export function registerTokens(app: FastifyInstance, db: Database, events: Serve
         );
         if (Number(counted[0]?.count ?? 0) >= maxTokens) return false;
         await tx.query(
-          `INSERT INTO api_tokens (id, user_id, name, token_hash, hint, access, workspace_id, expires_at)
-           VALUES ($1, $2, $3, $4, $5, $6, $7,
+          `INSERT INTO api_tokens
+             (id, user_id, name, token_hash, hint, access, workspace_id, method, provider, expires_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $9, $10,
                    CASE WHEN $8::integer IS NULL THEN NULL
                         ELSE now() + $8::integer * interval '1 day' END)`,
           [
@@ -251,6 +273,8 @@ export function registerTokens(app: FastifyInstance, db: Database, events: Serve
             request.body.access,
             workspace,
             days,
+            me.method,
+            me.provider,
           ],
         );
         await events.emit(

@@ -29,6 +29,7 @@ import { SecuritySettings } from "./settings.ts";
 import { AiEndpoints } from "./aiEndpoints.ts";
 import { DataPolicies } from "./dataPolicies.ts";
 import { registerSetup } from "./setup.ts";
+import { signInGuards } from "./signIns.ts";
 import { registerRelay } from "./relay.ts";
 import { type ClusterBus, ProcessBus, shareDisconnects } from "./cluster.ts";
 import { ClusterJobs } from "./jobs.ts";
@@ -365,6 +366,7 @@ export async function buildApp(config: Config, services: Services): Promise<Fast
       disconnect,
       security,
       aiEndpoints,
+      guards: signInGuards(services.db),
       every: jobs.every,
       events,
       dataPolicies,
