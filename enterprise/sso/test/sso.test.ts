@@ -1,14 +1,22 @@
 // Single sign-on (ADR 0080), through the server as the apps reach it: the
 // console's providers, signing in through SAML and OpenID Connect, the
 // account each finds or makes by the domains it is trusted for, and every
-// answer a provider, or someone in its place, should not get through with.
+// answer a provider, or someone in its place, should not get through with;
+// and what single sign-on requires, with the answers Okta and Entra ID send.
 import { randomBytes } from "node:crypto";
-import { type TestServer, bearer, setUp, startServer } from "@nether/server/test/app.ts";
+import {
+  type TestServer,
+  admin as ada,
+  bearer,
+  setUp,
+  startServer,
+} from "@nether/server/test/app.ts";
 import { type TestProvider, startProvider } from "@nether/server/test/provider.ts";
 import { pkceChallenge } from "@nether/server/src/oidc.ts";
 import { afterEach, describe, expect, it } from "vitest";
 import { ssoModule } from "../src/index.ts";
 import { type Bend, type IdpPerson, TestIdp, emailFormat, transient } from "./idp.ts";
+import { entra, okta } from "./shapes.ts";
 
 const publicUrl = "https://nether.example.org";
 const app = "http://127.0.0.1:43123/signed-in";
@@ -119,6 +127,39 @@ async function samlSignIn(test: Test, idp: TestIdp, person: IdpPerson, bend: Ben
   return { at: landed(await post(test, form)), verifier, form, url };
 }
 
+/** Adds an OpenID Connect provider, `okta`, of the test's own. */
+async function addOidc(test: Test, extra: object = {}) {
+  oidcProvider = await startProvider();
+  const added = await admin(test, "POST", "/api/admin/sso/providers", {
+    id: "okta",
+    name: "Okta",
+    domains: ["corp.example"],
+    ...extra,
+    oidc: {
+      issuer: oidcProvider.issuer,
+      clientId: oidcProvider.clientId,
+      clientSecret: oidcProvider.clientSecret,
+    },
+  });
+  expect(added.statusCode, added.body).toBe(201);
+  expect(added.json()).toMatchObject({
+    kind: "oidc",
+    oidc: { secret: true, callbackUrl: `${publicUrl}/api/sso/okta/oidc/callback` },
+  });
+  return oidcProvider;
+}
+
+async function oidcSignIn(test: Test, provider: TestProvider) {
+  const { url, verifier } = await startFlow(test, "okta");
+  const callback = new URL(provider.authorize(url));
+  expect(callback.origin + callback.pathname).toBe(`${publicUrl}/api/sso/okta/oidc/callback`);
+  const answered = await test.server.inject({
+    method: "GET",
+    url: callback.pathname + callback.search,
+  });
+  return { at: landed(answered), verifier };
+}
+
 describe("single sign-on, off", () => {
   it("answers nothing while the feature is off", async () => {
     const test = await start({ NETHER_ENTERPRISE_SSO: "off" });
@@ -163,7 +204,10 @@ describe("the console's providers", () => {
     expect(metadata.body).toContain('use="encryption"');
     // The apps' list.
     const listed = await test.server.inject({ method: "GET", url: "/api/sso" });
-    expect(listed.json()).toEqual({ providers: [{ id: "corp", name: "Corp SSO" }] });
+    expect(listed.json()).toEqual({
+      providers: [{ id: "corp", name: "Corp SSO" }],
+      everyone: false,
+    });
   });
 
   it("refuses what it cannot keep, saying why", async () => {
@@ -284,6 +328,7 @@ describe("the console's providers", () => {
     expect((await admin(test, "DELETE", "/api/admin/sso/providers/corp")).statusCode).toBe(404);
     expect((await test.server.inject({ method: "GET", url: "/api/sso" })).json()).toEqual({
       providers: [],
+      everyone: false,
     });
   });
 });
@@ -467,37 +512,6 @@ describe("signing in through SAML", () => {
 });
 
 describe("signing in through OpenID Connect", () => {
-  async function addOidc(test: Test) {
-    oidcProvider = await startProvider();
-    const added = await admin(test, "POST", "/api/admin/sso/providers", {
-      id: "okta",
-      name: "Okta",
-      domains: ["corp.example"],
-      oidc: {
-        issuer: oidcProvider.issuer,
-        clientId: oidcProvider.clientId,
-        clientSecret: oidcProvider.clientSecret,
-      },
-    });
-    expect(added.statusCode, added.body).toBe(201);
-    expect(added.json()).toMatchObject({
-      kind: "oidc",
-      oidc: { secret: true, callbackUrl: `${publicUrl}/api/sso/okta/oidc/callback` },
-    });
-    return oidcProvider;
-  }
-
-  async function oidcSignIn(test: Test, provider: TestProvider) {
-    const { url, verifier } = await startFlow(test, "okta");
-    const callback = new URL(provider.authorize(url));
-    expect(callback.origin + callback.pathname).toBe(`${publicUrl}/api/sso/okta/oidc/callback`);
-    const answered = await test.server.inject({
-      method: "GET",
-      url: callback.pathname + callback.search,
-    });
-    return { at: landed(answered), verifier };
-  }
-
   it("takes an address at its domains as verified, as Entra ID sends none", async () => {
     const test = await start();
     const provider = await addOidc(test);
@@ -533,5 +547,313 @@ describe("signing in through OpenID Connect", () => {
     expect(renamed.json()).toMatchObject({ name: "Okta SSO", oidc: { secret: true } });
     provider.person = { sub: "grace-oid", email: "grace@corp.example" };
     expect((await oidcSignIn(test, provider)).at.searchParams.get("code")).not.toBeNull();
+  });
+});
+
+/** A request with a session's token. */
+function as(
+  test: Test,
+  token: string,
+  method: "GET" | "POST" | "PUT" | "DELETE",
+  url: string,
+  payload?: object,
+) {
+  return test.server.inject({
+    method,
+    url,
+    headers: bearer(token),
+    ...(payload === undefined ? {} : { payload }),
+  });
+}
+
+/** Signs in through a SAML provider by its short name, and redeems the code if one came. */
+async function samlAt(test: Test, idp: TestIdp, id: string, person: IdpPerson, bend: Bend = {}) {
+  const { url, verifier } = await startFlow(test, id);
+  const at = landed(await post(test, await idp.answer(url, person, bend), id));
+  const code = at.searchParams.get("code");
+  const session = code === null ? undefined : await redeem(test, code, verifier);
+  return {
+    error: at.searchParams.get("error"),
+    session: session?.json<{ token: string; user: { id: string; name: string; email: string } }>(),
+  };
+}
+
+function withPassword(test: Test, email: string, password: string) {
+  return test.server.inject({ method: "POST", url: "/api/sessions", payload: { email, password } });
+}
+
+function find(test: Test, email: string) {
+  return test.server.inject({ method: "POST", url: "/api/sso/find", payload: { email } });
+}
+
+const bea = { name: "Bea", email: "bea@corp.example", password: "bea's long password" };
+
+/** An account with a password, made by accepting an invitation, and its session. */
+async function withAccount(test: Test, person = bea): Promise<string> {
+  const invitation = (
+    await admin(test, "POST", `/api/workspaces/${test.workspaceId}/invitations`, {
+      role: "member",
+    })
+  ).json<{ token: string }>().token;
+  const accepted = await test.server.inject({
+    method: "POST",
+    url: "/api/invitations/accept",
+    payload: { token: invitation, ...person },
+  });
+  expect(accepted.statusCode, accepted.body).toBe(201);
+  return accepted.json<{ token: string }>().token;
+}
+
+const corp = { id: "corp", name: "Corp SSO" };
+
+describe("requiring single sign-on", () => {
+  it("refuses other ways in at a required domain, names its provider, and ends other sessions as it is saved", async () => {
+    const test = await start();
+    const idp = new TestIdp();
+    await addSaml(test, idp);
+    const session = await withAccount(test);
+    const made = await as(test, session, "POST", "/api/tokens", {
+      name: "Script",
+      access: "read",
+      password: bea.password,
+    });
+    const token = made.json<{ token: string }>().token;
+    const grace = await samlAt(test, idp, "corp", {
+      nameId: "grace-1",
+      attributes: { email: "grace@corp.example", displayName: "Grace Hopper" },
+    });
+    expect((await withPassword(test, bea.email, bea.password)).statusCode).toBe(201);
+    expect((await find(test, bea.email)).json()).toEqual({ provider: corp, required: false });
+
+    const required = await admin(test, "PUT", "/api/admin/sso/providers/corp", { required: true });
+    expect(required.json()).toMatchObject({ required: true });
+    // Bea's sessions and token, begun with her password, ended as it was saved.
+    expect((await as(test, session, "GET", "/api/me")).statusCode).toBe(401);
+    expect((await as(test, token, "GET", "/api/v1/me")).statusCode).toBe(401);
+    const left = await test.db.query(
+      "SELECT s.method FROM sessions s JOIN users u ON u.id = s.user_id WHERE u.email = $1",
+      [bea.email],
+    );
+    expect(left.rows).toEqual([]);
+    // Grace's, through the provider, and the admin's, elsewhere, go on.
+    expect((await as(test, grace.session?.token ?? "", "GET", "/api/me")).statusCode).toBe(200);
+    expect((await as(test, test.token, "GET", "/api/me")).statusCode).toBe(200);
+
+    // A password names the provider, right or wrong, with an account or none.
+    for (const [email, password] of [
+      [bea.email, bea.password],
+      [bea.email, "not her long password"],
+      ["eve@corp.example", "anyone's long password"],
+    ] as const) {
+      const answer = await withPassword(test, email, password);
+      expect(answer.statusCode).toBe(403);
+      expect(answer.json()).toMatchObject({ sso: corp });
+    }
+    expect((await find(test, "BEA@corp.example")).json()).toEqual({
+      provider: corp,
+      required: true,
+    });
+    expect((await find(test, "ada@example.org")).json()).toEqual({
+      provider: null,
+      required: false,
+    });
+    expect((await test.server.inject({ method: "GET", url: "/api/sso" })).json()).toMatchObject({
+      everyone: false,
+    });
+
+    // Through the provider, Bea signs in, her account found by its address at its domain.
+    const through = await samlAt(test, idp, "corp", {
+      nameId: "bea-1",
+      attributes: { email: bea.email },
+    });
+    expect(through.session?.user.email).toBe(bea.email);
+    const kept = await test.db.query(
+      "SELECT s.method, s.provider FROM sessions s JOIN users u ON u.id = s.user_id WHERE u.email = $1",
+      [bea.email],
+    );
+    expect(kept.rows).toEqual([{ method: "sso", provider: "corp" }]);
+    // She sets no password, and the admin at another domain signs in as before.
+    const changed = await as(test, through.session?.token ?? "", "PUT", "/api/me/password", {
+      password: "a new long password",
+    });
+    expect(changed.statusCode).toBe(403);
+    expect((await withPassword(test, ada.email, ada.password)).statusCode).toBe(201);
+  });
+
+  it("leaves instance admins exempt unless the page covers them, and keeps the admin's own session", async () => {
+    const test = await start();
+    const idp = new TestIdp();
+    await addSaml(test, idp, { domains: ["example.org"], required: true });
+    // Ada, an instance admin at example.org, is exempt: her session and password go on.
+    expect((await as(test, test.token, "GET", "/api/me")).statusCode).toBe(200);
+    expect((await withPassword(test, ada.email, ada.password)).statusCode).toBe(201);
+    expect((await admin(test, "GET", "/api/admin/sso")).json()).toMatchObject({
+      providers: [{ id: "corp", required: true, domains: ["example.org"] }],
+      enforcement: { everyone: false, admins: false, pinnedBy: null, adminWayIn: true },
+    });
+    // Covering admins would end the very session asking, begun at setup.
+    const refused = await admin(test, "PUT", "/api/admin/sso/enforcement", { admins: true });
+    expect(refused.statusCode).toBe(409);
+    expect(refused.json()).toMatchObject({
+      message: expect.stringContaining("your own session") as unknown,
+    });
+    expect((await admin(test, "GET", "/api/admin/sso")).json()).toMatchObject({
+      enforcement: { admins: false },
+    });
+    // Signed in through the provider, she may, and her other sessions end.
+    const through = await samlAt(test, idp, "corp", {
+      nameId: "ada-1",
+      attributes: { email: "ada@example.org" },
+    });
+    const saved = await as(
+      test,
+      through.session?.token ?? "",
+      "PUT",
+      "/api/admin/sso/enforcement",
+      { admins: true },
+    );
+    expect(saved.statusCode, saved.body).toBe(200);
+    expect(saved.json()).toMatchObject({ admins: true, ended: { sessions: 2, tokens: 0 } });
+    expect((await as(test, test.token, "GET", "/api/me")).statusCode).toBe(401);
+    expect((await withPassword(test, ada.email, ada.password)).json()).toMatchObject({
+      sso: corp,
+    });
+  });
+
+  it("requires a provider of everyone, a password answering as a wrong one", async () => {
+    const test = await start();
+    const idp = new TestIdp();
+    await addSaml(test, idp);
+    const provider = await addOidc(test, { domains: [] });
+    const zoe = { name: "Zoe", email: "zoe@example.net", password: "zoe's long password" };
+    const zoeSession = await withAccount(test, zoe);
+    const grace = await samlAt(test, idp, "corp", {
+      nameId: "grace-1",
+      attributes: { email: "grace@corp.example" },
+    });
+
+    const saved = await admin(test, "PUT", "/api/admin/sso/enforcement", { everyone: true });
+    expect(saved.statusCode, saved.body).toBe(200);
+    expect(saved.json()).toMatchObject({ everyone: true, ended: { sessions: 1, tokens: 0 } });
+    expect((await as(test, zoeSession, "GET", "/api/me")).statusCode).toBe(401);
+    expect((await test.server.inject({ method: "GET", url: "/api/sso" })).json()).toMatchObject({
+      everyone: true,
+    });
+    // A password tells nothing: it answers as a wrong one.
+    expect((await withPassword(test, zoe.email, zoe.password)).json()).toEqual({
+      statusCode: 401,
+      error: "Unauthorized",
+      message: "That email address and password do not match an account.",
+    });
+    expect((await find(test, zoe.email)).json()).toEqual({ provider: null, required: true });
+    // At no provider's domain, any provider she is linked to.
+    provider.person = { sub: "zoe-oid", email: zoe.email, email_verified: true, name: "Zoe" };
+    const linked = await oidcSignIn(test, provider);
+    const redeemed = await redeem(test, linked.at.searchParams.get("code") ?? "", linked.verifier);
+    expect(redeemed.statusCode).toBe(201);
+    // At a provider's domain, its own alone: Grace through the other is refused, linking nothing.
+    provider.person = { sub: "grace-oid", email: "grace@corp.example", email_verified: true };
+    expect((await oidcSignIn(test, provider)).at.searchParams.get("error")).toBe("sso_required");
+    const { rows } = await test.db.query("SELECT subject FROM identities ORDER BY subject");
+    expect(rows).toEqual([{ subject: "grace-1" }, { subject: "zoe-oid" }]);
+    expect((await as(test, grace.session?.token ?? "", "GET", "/api/me")).statusCode).toBe(200);
+    // The last provider stays while everyone needs one.
+    expect((await admin(test, "DELETE", "/api/admin/sso/providers/okta")).statusCode).toBe(204);
+    expect((await admin(test, "DELETE", "/api/admin/sso/providers/corp")).statusCode).toBe(409);
+  });
+
+  it("requires nothing while NETHER_SSO_ENFORCE=off pins it off", async () => {
+    const test = await start({ NETHER_SSO_ENFORCE: "off" });
+    const idp = new TestIdp();
+    await addSaml(test, idp, { required: true });
+    await withAccount(test);
+    expect((await withPassword(test, bea.email, bea.password)).statusCode).toBe(201);
+    expect((await find(test, bea.email)).json()).toEqual({ provider: corp, required: false });
+    expect((await admin(test, "GET", "/api/admin/sso")).json()).toMatchObject({
+      enforcement: { pinnedBy: "NETHER_SSO_ENFORCE" },
+    });
+    const refused = await admin(test, "PUT", "/api/admin/sso/enforcement", { everyone: true });
+    expect(refused.statusCode).toBe(409);
+  });
+
+  it("refuses everyone with no provider to sign in through", async () => {
+    const test = await start();
+    const refused = await admin(test, "PUT", "/api/admin/sso/enforcement", { everyone: true });
+    expect(refused.statusCode).toBe(409);
+    expect(refused.json()).toMatchObject({
+      message: "Add a provider first: with none, no one could sign in.",
+    });
+  });
+});
+
+describe("as Okta and Entra ID answer", () => {
+  const grace = { id: "00u1grace", email: "grace@okta.example", given: "Grace", family: "Hopper" };
+  const alan = {
+    id: "8f0c2a1e-0000-4000-8000-000000000002",
+    email: "alan@entra.example",
+    given: "Alan",
+    family: "Turing",
+  };
+
+  it("signs in through their SAML apps, each required at its domain", async () => {
+    const test = await start();
+    const oktaIdp = new TestIdp(okta.entityId);
+    const entraIdp = new TestIdp(entra.entityId);
+    await addSaml(test, oktaIdp, {
+      id: "okta",
+      name: "Okta",
+      domains: ["okta.example"],
+      required: true,
+    });
+    await addSaml(test, entraIdp, {
+      id: "entra",
+      name: "Entra ID",
+      domains: ["entra.example"],
+      required: true,
+      saml: { metadataXml: entraIdp.metadata(), subjectAttribute: entra.subjectAttribute },
+    });
+    // Okta signs the response and the assertion; its NameID is the username.
+    const viaOkta = await samlAt(test, oktaIdp, "okta", okta.saml(grace), okta.bend);
+    expect(viaOkta.session?.user).toMatchObject({ name: "Grace Hopper", email: grace.email });
+    // Entra ID signs the assertion alone; who someone is comes from the object ID.
+    const viaEntra = await samlAt(test, entraIdp, "entra", entra.saml(alan), entra.bend);
+    expect(viaEntra.session?.user).toMatchObject({ name: "Alan Turing", email: alan.email });
+    const { rows } = await test.db.query("SELECT issuer, subject FROM identities ORDER BY issuer");
+    expect(rows).toEqual([
+      { issuer: okta.entityId, subject: grace.email },
+      { issuer: entra.entityId, subject: alan.id },
+    ]);
+    // Each at its own domain alone: Alan through Okta's app links nothing.
+    expect((await samlAt(test, oktaIdp, "okta", okta.saml(alan), okta.bend)).error).toBe(
+      "email_not_verified",
+    );
+    for (const email of [grace.email, alan.email]) {
+      expect((await withPassword(test, email, "a long password")).statusCode).toBe(403);
+    }
+  });
+
+  it("signs in through their OpenID Connect apps, Entra ID's unverified address at its domain", async () => {
+    const test = await start();
+    const provider = await addOidc(test, {
+      domains: ["okta.example", "entra.example"],
+      required: true,
+    });
+    provider.person = okta.idToken(grace);
+    const viaOkta = await oidcSignIn(test, provider);
+    expect(
+      (await redeem(test, viaOkta.at.searchParams.get("code") ?? "", viaOkta.verifier)).json(),
+    ).toMatchObject({ user: { name: "Grace Hopper", email: grace.email } });
+    provider.person = entra.idToken(alan);
+    const viaEntra = await oidcSignIn(test, provider);
+    expect(
+      (await redeem(test, viaEntra.at.searchParams.get("code") ?? "", viaEntra.verifier)).json(),
+    ).toMatchObject({ user: { name: "Alan Turing", email: alan.email } });
+    const { rows } = await test.db.query("SELECT subject FROM identities ORDER BY subject");
+    expect(rows).toEqual([{ subject: grace.id }, { subject: `pairwise-${alan.id}` }]);
+    // Outside its domains, a new person's address from Entra ID is not verified, and links nothing.
+    provider.person = entra.idToken({ ...alan, id: "another-object", email: "alan@example.org" });
+    expect((await oidcSignIn(test, provider)).at.searchParams.get("error")).toBe(
+      "email_not_verified",
+    );
   });
 });
