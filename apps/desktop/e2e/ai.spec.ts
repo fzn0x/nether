@@ -2,9 +2,11 @@
 // provider is set up in the settings' AI tab; then writing assist works on
 // the selection, names where the text goes, streams the reply into a
 // preview, and puts it in the note as one edit that one undo takes out. A
-// provider's requests go to a route of the page here, never to a provider.
+// workspace's owner turns AI off for everyone, and the app hears it before
+// it sends. A provider's requests go to a route of the page here, never to
+// a provider, and the server is the test's.
 import { type Page, type Request, expect, test } from "@playwright/test";
-import { errorsOf, openSample, settle, violations } from "./helpers.ts";
+import { errorsOf, fakeServer, openSample, pageErrors, settle, violations } from "./helpers.ts";
 
 /** A reply as an OpenAI-compatible endpoint streams it. */
 function streamed(...parts: string[]): string {
@@ -229,4 +231,102 @@ test("writing assist tells a provider's error, and AI turned off for the vault h
   await again.getByRole("button", { name: "Close" }).click();
   expect(await noteMenuItems(page)).not.toContain("Writing assist");
   expect(errors.filter((error) => !error.startsWith("Failed to load resource"))).toEqual([]);
+});
+
+const ada = { id: "u1", name: "Ada", email: "ada@example.org", instanceAdmin: false };
+
+async function command(page: Page, name: string) {
+  await page.keyboard.press("Control+p");
+  await page.keyboard.type(name);
+  await page.keyboard.press("Enter");
+}
+
+/** Signs in to the test's server and syncs the sample vault with its empty workspace. */
+async function linked(page: Page) {
+  await openSample(page);
+  await command(page, "servers");
+  const servers = page.getByRole("dialog", { name: "Servers" });
+  await servers.getByRole("textbox", { name: "Server address" }).fill("nether.test");
+  await servers.getByRole("button", { name: "Continue" }).click();
+  await servers.getByRole("textbox", { name: "Email address" }).fill("ada@example.org");
+  await servers.getByLabel("Password").fill("a long password");
+  await servers.getByRole("button", { name: "Sign in", exact: true }).click();
+  await expect(servers.getByRole("status")).toHaveText("Signed in to nether.test as Ada.");
+  await page.keyboard.press("Escape");
+  await command(page, "sync this vault");
+  const sync = page.getByRole("dialog", { name: "Sync" });
+  await sync.getByRole("button", { name: "Sync this vault" }).click();
+  await expect(sync.getByText("This vault syncs with Team on nether.test.")).toBeVisible();
+  await sync.getByRole("button", { name: "Done" }).click();
+  await expect(sync).toBeHidden();
+}
+
+test("a workspace's owner turns AI off for everyone, and the app hears it before it sends", async ({
+  page,
+  baseURL,
+}) => {
+  const errors = errorsOf(page);
+  const workspace = { ai: true };
+  const switched: unknown[] = [];
+  await fakeServer(page, {
+    "GET /api/sign-in-methods": () => [200, { password: true, emailCode: false, oidc: null }],
+    "POST /api/sessions": () => [201, { token: "session-token", expiresAt: "", user: ada }],
+    "GET /api/me": () => [
+      200,
+      { user: ada, workspaces: [{ id: "w", name: "Team", role: "owner", ai: workspace.ai }] },
+    ],
+    "GET /api/workspaces/w/documents": () => [200, { documents: [], more: false }],
+    "GET /api/workspaces/w/units": () => [
+      200,
+      { units: [{ id: "general", kind: "general", level: "full", document: "vault" }] },
+    ],
+    "PATCH /api/workspaces/w": (request) => {
+      const body = request.postDataJSON() as { ai: boolean };
+      switched.push(body);
+      workspace.ai = body.ai;
+      return [200, { id: "w", ai: body.ai }];
+    },
+  });
+  const sent = await fakeProvider(page, [{ body: streamed("Never shown") }]);
+  await linked(page);
+
+  const settings = await openSettingsAt(page, "AI");
+  const tab = settings.getByRole("tabpanel", { name: "AI" });
+  const allows = tab.getByRole("checkbox", { name: "Members' apps may offer AI in Team" });
+  await expect(allows).toBeChecked();
+  await tab.getByRole("button", { name: "Add a provider" }).click();
+  await tab.getByLabel("Name", { exact: true }).fill("Local");
+  await tab.getByLabel("Address").fill(`${baseURL ?? ""}/fake-ai/v1`);
+  await tab.getByLabel("Model").fill("test-model");
+  await tab.getByRole("button", { name: "Save" }).click();
+  await expect(tab.getByLabel("AI in this vault")).toHaveValue("default");
+  expect(await violations(page)).toEqual([]);
+  await settings.getByRole("button", { name: "Close" }).click();
+
+  await selectHeading(page);
+  await page.keyboard.press("Control+j");
+  const assist = page.getByRole("region", { name: "Writing assist" });
+  await expect(assist).toBeVisible();
+  // Another admin turns AI off meanwhile: the app asks before it sends.
+  workspace.ai = false;
+  await assist.getByRole("button", { name: "Rewrite" }).click();
+  await expect(assist.getByRole("alert")).toHaveText(
+    "AI is off here now, for this vault or its workspace, so nothing was sent.",
+  );
+  expect(sent).toHaveLength(0);
+  await assist.getByRole("button", { name: "Discard" }).click();
+  expect(await noteMenuItems(page)).not.toContain("Writing assist");
+
+  // This owner turns it on again, for everyone.
+  const again = await openSettingsAt(page, "AI");
+  const back = again
+    .getByRole("tabpanel", { name: "AI" })
+    .getByRole("checkbox", { name: "Members' apps may offer AI in Team" });
+  await expect(back).not.toBeChecked();
+  await back.check();
+  await expect.poll(() => switched).toEqual([{ ai: true }]);
+  await again.getByRole("button", { name: "Close" }).click();
+  expect(await noteMenuItems(page)).toContain("Writing assist");
+  // Sync's socket finds no test server, as in the other tests of a linked vault.
+  expect(pageErrors(errors).filter((error) => !error.includes("WebSocket"))).toEqual([]);
 });

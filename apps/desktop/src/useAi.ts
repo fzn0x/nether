@@ -178,13 +178,24 @@ export function useAi(vault: Vault | undefined, link: VaultLink | undefined): Va
   const setWorkspace = useCallback(async (on: boolean) => {
     const { vault: open, link: linked } = latest.current;
     if (open === undefined || linked === undefined) return;
-    const token = await backend.serverToken(linked.server);
-    if (token === undefined) throw new Error(t("syncSignedOut", { server: hostOf(linked.server) }));
-    await setWorkspaceAi(backend.serverFetch, linked.server, token, linked.workspaceId, on);
+    const shown = (value: boolean) => {
+      setWorkspaceState((previous) =>
+        previous === undefined ? previous : { ...previous, on: value, error: undefined },
+      );
+    };
+    // The switch moves at once, and back if the server refuses.
+    shown(on);
+    try {
+      const token = await backend.serverToken(linked.server);
+      if (token === undefined) {
+        throw new Error(t("syncSignedOut", { server: hostOf(linked.server) }));
+      }
+      await setWorkspaceAi(backend.serverFetch, linked.server, token, linked.workspaceId, on);
+    } catch (error) {
+      shown(!on);
+      throw error;
+    }
     await keepWorkspaceAi(open, linked.workspaceId, on);
-    setWorkspaceState((previous) =>
-      previous === undefined ? previous : { ...previous, on, error: undefined },
-    );
   }, []);
 
   return {
