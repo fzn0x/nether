@@ -11,6 +11,7 @@ import {
   type Test,
   actions,
   addDirectory,
+  admin,
   enterpriseSchema,
   errorSchema,
   filtered,
@@ -264,6 +265,10 @@ describe("Entra ID", () => {
     const directory = await entra(test);
     const ada = await join(test, "ada@contoso.example", "Ada");
     await scim(test, directory, "POST", "/Users", entraUser("ada@contoso.example"));
+    // The policies are read, and kept a few seconds, before the hold is set.
+    const before = await admin(test, "GET", "/api/me");
+    expect(before.json()).toMatchObject({ workspaces: [{ policies: { legalHold: false } }] });
+    // Set a moment before the removal, the hold still stops it.
     await test.db.query("INSERT INTO workspace_policies (workspace_id, policy) VALUES ($1, $2)", [
       test.workspaceId,
       JSON.stringify({ legalHold: true }),
@@ -281,17 +286,30 @@ describe("Entra ID", () => {
     expect(kept.json()).toMatchObject({ id: ada.id, active: false });
     const places = await test.db.query("SELECT role FROM memberships WHERE user_id = $1", [ada.id]);
     expect(places.rows).toEqual([{ role: "member" }]);
+
+    // The hold taken off, and set for every workspace instead: still held.
     await test.db.query("DELETE FROM workspace_policies WHERE workspace_id = $1", [
       test.workspaceId,
     ]);
-    // The policies are read again after a few seconds; then the removal goes through.
-    let removed = 0;
-    const deadline = Date.now() + 15_000;
-    while (removed !== 204 && Date.now() < deadline) {
-      removed = (await scim(test, directory, "DELETE", `/Users/${ada.id}`)).statusCode;
-      if (removed !== 204) await new Promise((resolve) => setTimeout(resolve, 500));
-    }
-    expect(removed).toBe(204);
+    await test.db.query("INSERT INTO instance_settings (key, value) VALUES ('policies.data', $1)", [
+      JSON.stringify({ legalHold: true }),
+    ]);
+    expect((await scim(test, directory, "DELETE", `/Users/${ada.id}`)).statusCode).toBe(403);
+    // Taken off everywhere, the removal goes through at once.
+    await test.db.query("DELETE FROM instance_settings WHERE key = 'policies.data'");
+    expect((await scim(test, directory, "DELETE", `/Users/${ada.id}`)).statusCode).toBe(204);
+  });
+
+  it("removes a user while the data policies feature is off, whatever its policies say", async () => {
+    const test = await start({ NETHER_ENTERPRISE_POLICIES: "off" });
+    const directory = await entra(test);
+    const ada = await join(test, "ada@contoso.example", "Ada");
+    await scim(test, directory, "POST", "/Users", entraUser("ada@contoso.example"));
+    await test.db.query("INSERT INTO workspace_policies (workspace_id, policy) VALUES ($1, $2)", [
+      test.workspaceId,
+      JSON.stringify({ legalHold: true }),
+    ]);
+    expect((await scim(test, directory, "DELETE", `/Users/${ada.id}`)).statusCode).toBe(204);
   });
 });
 
