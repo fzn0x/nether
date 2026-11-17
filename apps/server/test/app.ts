@@ -8,6 +8,7 @@ import { connectRedis } from "../src/redis.ts";
 import { readConfig } from "../src/config.ts";
 import type { BlobStore } from "../src/blobs.ts";
 import type { ClusterBus } from "../src/cluster.ts";
+import type { Readiness } from "../src/health.ts";
 import type { Database } from "../src/db.ts";
 import type { TxtResolver } from "../src/domains.ts";
 import type { Mailer, Message } from "../src/mail.ts";
@@ -84,6 +85,8 @@ export async function startServer(
     wrapDb?: (db: Database) => Database;
     /** What the server's nodes tell each other, shared by the nodes a test starts. */
     bus?: ClusterBus;
+    /** Whether the server takes work, which a test drains. */
+    readiness?: Readiness;
     /** A server already started, which this one is another node of: its database, set up already. */
     nodeOf?: TestServer;
   } = {},
@@ -103,6 +106,7 @@ export async function startServer(
     ...(options.aiResolve === undefined ? {} : { aiResolve: options.aiResolve }),
     ...(options.resolveTxt === undefined ? {} : { resolveTxt: options.resolveTxt }),
     ...(options.bus === undefined ? {} : { bus: options.bus }),
+    ...(options.readiness === undefined ? {} : { readiness: options.readiness }),
     ...(options.enterpriseModules === undefined
       ? {}
       : { enterpriseModules: options.enterpriseModules }),

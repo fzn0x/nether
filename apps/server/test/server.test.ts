@@ -40,6 +40,7 @@ describe("readConfig", () => {
       databaseUrl: database.NETHER_DATABASE_URL,
       // The machine's own name, as a pod's is.
       nodeName: hostname(),
+      drainSeconds: 5,
       redisUrl: null,
       trustProxy: false,
       webhookPrivate: false,
