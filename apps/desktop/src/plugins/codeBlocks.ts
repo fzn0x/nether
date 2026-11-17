@@ -2,7 +2,7 @@
 // A note open in the app shows what a plugin draws below the block's code,
 // and an HTML page in the code's place. A plugin's code loads when a block
 // in a language its manifest declares is first drawn.
-import type { LinkTarget, NoteId } from "@nether/core";
+import type { JsonValue, LinkTarget, NoteId } from "@nether/core";
 import type { LinkGraph } from "@nether/graph";
 import type { CodeBlockContext, CodeBlockOutput } from "@nether/plugin-api";
 import type { Vault } from "@nether/storage";
@@ -47,6 +47,13 @@ export interface CodeBlockNote {
   readonly createNote: (request: NoteRequest) => Promise<void>;
   /** Opens what a link names, as a link in the note does: a note, a part of one, or a file. */
   readonly openLink: (target: LinkTarget) => void;
+  /** Tells what watches the app's changes that the view set a note's property (ADR 0072). */
+  readonly propertyChanged: (
+    note: NoteId,
+    key: string,
+    before: JsonValue | undefined,
+    after: JsonValue,
+  ) => Promise<void>;
 }
 
 /** What a built-in plugin's live view of a code block is given, below its code in a note. */

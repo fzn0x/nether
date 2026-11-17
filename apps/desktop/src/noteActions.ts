@@ -153,17 +153,43 @@ export function withProperty(
     : [...entries, { key, value }];
 }
 
-/** Sets a property of a note in its frontmatter, as a button does, the others as they are. */
+/**
+ * Sets a property of a note in its frontmatter, as a button does, the
+ * others as they are; gives the value it had, undefined for none.
+ */
 export function setNoteValue(
   vault: Vault,
   id: NoteId,
   key: string,
   value: JsonValue,
+): Promise<JsonValue | undefined> {
+  return changeDocument(
+    vault,
+    id,
+    (entries) => ({
+      entries: withProperty(entries, key, value),
+      result: entries.find((entry) => entry.key === key)?.value,
+    }),
+    t("propertyCannotChange"),
+  );
+}
+
+/** Sets properties of a note in its frontmatter at once, as a trigger does, the others as they are. */
+export function setNoteValues(
+  vault: Vault,
+  id: NoteId,
+  values: Readonly<Record<string, JsonValue>>,
 ): Promise<void> {
   return changeDocument(
     vault,
     id,
-    (entries) => ({ entries: withProperty(entries, key, value), result: undefined }),
+    (entries) => ({
+      entries: Object.entries(values).reduce<PropertyEntry[]>(
+        (next, [key, value]) => withProperty(next, key, value),
+        [...entries],
+      ),
+      result: undefined,
+    }),
     t("propertyCannotChange"),
   );
 }

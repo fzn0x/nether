@@ -208,8 +208,10 @@ export function PropertiesPanel(props: {
   readonly graph: LinkGraph;
   /** The property types plugins add (ADR 0057). */
   readonly propertyTypes: PropertyTypeRegistry;
+  /** Told of each edit made here, its properties before and after, as triggers follow them (ADR 0072). */
+  readonly onEdit?: (before: readonly PropertyEntry[], after: readonly PropertyEntry[]) => void;
 }) {
-  const { document, vault, graph, propertyTypes } = props;
+  const { document, vault, graph, propertyTypes, onEdit } = props;
   const pluginTypes = usePropertyTypes(propertyTypes);
   const [entries, setEntries] = useState<readonly PropertyEntry[]>(() =>
     documentProperties(document),
@@ -246,7 +248,9 @@ export function PropertiesPanel(props: {
   }, [vault]);
 
   const save = (next: readonly PropertyEntry[]) => {
+    const before = documentProperties(document);
     setDocumentProperties(document, next);
+    onEdit?.(before, next);
   };
   const keys = entries.map((entry) => entry.key);
 

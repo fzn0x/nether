@@ -55,6 +55,7 @@ import {
   usePropertyTypes,
 } from "./plugins/propertyTypes.ts";
 import { type LayoutRegistry, useLayouts } from "./plugins/layouts.ts";
+import type { PropertyChangeRegistry } from "./plugins/propertyChanges.ts";
 import { useDocumentProperties } from "./DatabaseSlot.tsx";
 import { ListEditor } from "./PropertiesPanel.tsx";
 import type { Exporter, VaultMedia } from "./backend.ts";
@@ -692,6 +693,8 @@ export interface DatabaseProps {
   readonly layouts: LayoutRegistry;
   /** The property types plugins add (ADR 0057). */
   readonly propertyTypes: PropertyTypeRegistry;
+  /** What watches the properties the app changes, as triggers do (ADR 0072). */
+  readonly propertyChanges: PropertyChangeRegistry;
 }
 
 /**
@@ -706,6 +709,7 @@ export function DatabaseView(props: DatabaseProps) {
 
 function Database(props: DatabaseProps & { readonly entries: readonly PropertyEntry[] }) {
   const { vault, media, exporter, graph, document, path, onOpenNote, layouts, entries } = props;
+  const { propertyChanges } = props;
   const available = useLayouts(layouts);
   const pluginTypes = usePropertyTypes(props.propertyTypes);
   /** The view of a property of a plugin's type, when its plugin is here. */
@@ -812,12 +816,13 @@ function Database(props: DatabaseProps & { readonly entries: readonly PropertyEn
     if (relation.database === self?.id) {
       const taken = back !== undefined && schema.properties.some((item) => item.key === back.key);
       saveSchema({
+        ...schema,
         properties: [...schema.properties, own, ...(back === undefined || taken ? [] : [back])],
         views: show(schema.views),
       });
       return;
     }
-    saveSchema({ properties: [...schema.properties, own], views: show(schema.views) });
+    saveSchema({ ...schema, properties: [...schema.properties, own], views: show(schema.views) });
     const other = graph.note(relation.database);
     if (back === undefined || other === undefined) return;
     const theirs = databaseOf(other.index.properties, resolveLink(graph, other.path));
@@ -851,29 +856,34 @@ function Database(props: DatabaseProps & { readonly entries: readonly PropertyEn
       });
     }
     const before = rows.find((item) => item.id === row);
+    const was = before?.properties.find((entry) => entry.key === key)?.value;
     const backlink = property?.relation?.backlink;
+    let written = value;
     // A list's edit goes to the list as the file has it now, which may be newer than the cell.
     (base !== undefined && Array.isArray(value)
-      ? updateNoteProperty(vault, row, key, (current) => mergeList(current, base, value))
+      ? updateNoteProperty(vault, row, key, (current) => {
+          written = mergeList(current, base, value);
+          return written;
+        })
       : setNoteProperty(vault, row, key, value)
     )
       .then(() =>
         // The other end of a two-way relation, in the rows it now names or no longer does.
         backlink === undefined || before === undefined
           ? undefined
-          : syncBacklinks(
-              vault,
-              graph,
-              before,
-              before.properties.find((entry) => entry.key === key)?.value,
-              value,
-              backlink,
-            ),
+          : syncBacklinks(vault, graph, before, was, value, backlink),
+      )
+      // A change the app made, which the database's triggers follow.
+      .then(() =>
+        propertyChanges.changed({ vault, graph, note: row, key, before: was, after: written }),
       )
       .catch((problem: unknown) => {
         setError(problem instanceof Error ? problem.message : String(problem));
       });
   };
+  /** Tells the database's triggers of a new row made with a value, as in a board's column. */
+  const made = (row: NoteId, key: string, value: JsonValue) =>
+    propertyChanges.changed({ vault, graph, note: row, key, before: undefined, after: value });
 
   const nameOf = (key: string) =>
     key.startsWith("$") ? t(`builtIn_${key.slice(1)}` as MessageKey) : key;
@@ -944,11 +954,11 @@ function Database(props: DatabaseProps & { readonly entries: readonly PropertyEn
     const key = view?.date;
     setError(undefined);
     createRow(vault, path, t("untitled"))
-      .then((created) =>
-        key === undefined || key.startsWith("$")
-          ? undefined
-          : setNoteProperty(vault, created.id, key, day),
-      )
+      .then(async (created) => {
+        if (key === undefined || key.startsWith("$")) return;
+        await setNoteProperty(vault, created.id, key, day);
+        await made(created.id, key, day);
+      })
       .catch(fail);
   };
   /** Moves a card to another column: the value it is grouped by becomes the column's. */
@@ -976,16 +986,12 @@ function Database(props: DatabaseProps & { readonly entries: readonly PropertyEn
     const key = view?.groupBy;
     setError(undefined);
     createRow(vault, path, t("untitled"))
-      .then((created) =>
-        key === undefined || value === null
-          ? undefined
-          : setNoteProperty(
-              vault,
-              created.id,
-              key,
-              typeOf(key) === "multiSelect" ? [value] : value,
-            ),
-      )
+      .then(async (created) => {
+        if (key === undefined || value === null) return;
+        const stored = typeOf(key) === "multiSelect" ? [value] : value;
+        await setNoteProperty(vault, created.id, key, stored);
+        await made(created.id, key, stored);
+      })
       .catch(fail);
   };
   /** A gallery card's cover: the file or address its cover property names. */
@@ -1393,6 +1399,7 @@ function Database(props: DatabaseProps & { readonly entries: readonly PropertyEn
                 onAdd={(key, type, more) => {
                   if (more?.plugin !== undefined) {
                     saveSchema({
+                      ...schema,
                       properties: [...schema.properties, { key, type, plugin: more.plugin }],
                       views: schema.views.map((item) =>
                         item.id === view.id ? { ...item, visible: [...item.visible, key] } : item,
@@ -1406,6 +1413,7 @@ function Database(props: DatabaseProps & { readonly entries: readonly PropertyEn
                   }
                   if (more?.formula !== undefined) {
                     saveSchema({
+                      ...schema,
                       properties: [
                         ...schema.properties,
                         { key, type: "formula", formula: more.formula },
@@ -1418,6 +1426,7 @@ function Database(props: DatabaseProps & { readonly entries: readonly PropertyEn
                   }
                   if (more?.rollup !== undefined) {
                     saveSchema({
+                      ...schema,
                       properties: [
                         ...schema.properties,
                         { key, type: "rollup", rollup: more.rollup },
@@ -1433,6 +1442,7 @@ function Database(props: DatabaseProps & { readonly entries: readonly PropertyEn
                       ? { key, type, options: [] }
                       : { key, type };
                   saveSchema({
+                    ...schema,
                     properties: [...schema.properties, property],
                     views: schema.views.map((item) =>
                       item.id === view.id ? { ...item, visible: [...item.visible, key] } : item,

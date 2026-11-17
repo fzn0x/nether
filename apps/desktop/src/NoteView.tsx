@@ -295,6 +295,8 @@ export default function NoteView(props: {
       openLink: (target) => {
         base.open(target);
       },
+      propertyChanged: (note, key, before, after) =>
+        plugins.propertyChanges.changed({ vault, graph, note, key, before, after }),
     };
     return {
       ...base,
@@ -464,6 +466,14 @@ export default function NoteView(props: {
                 vault={vault}
                 graph={graph}
                 propertyTypes={plugins.propertyTypes}
+                onEdit={(before, after) => {
+                  // A row's property edited here, which its database's triggers follow.
+                  plugins.propertyChanges
+                    .changedFrom({ vault, graph, note: id }, before, after)
+                    .catch((error: unknown) => {
+                      setFileError(error instanceof Error ? error.message : String(error));
+                    });
+                }}
               />
             ) : (
               <p className="notice" role="status">
@@ -498,6 +508,7 @@ export default function NoteView(props: {
               path={note.path}
               layouts={plugins.layouts}
               propertyTypes={plugins.propertyTypes}
+              propertyChanges={plugins.propertyChanges}
               onOpenNote={(row) => {
                 onOpenNote(row);
               }}
