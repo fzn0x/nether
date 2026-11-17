@@ -33,6 +33,22 @@ describe("ServerEvents", () => {
     expect(heard).toEqual(["session.signed_in 203.0.113.7 true"]);
   });
 
+  it("is wanted while a listener wants it, or listens with no say", async () => {
+    const events = new ServerEvents();
+    expect(await events.wanted(tx)).toBe(false);
+    let on = false;
+    const stop = events.listen(
+      () => Promise.resolve(),
+      () => Promise.resolve(on),
+    );
+    expect(await events.wanted(tx)).toBe(false);
+    on = true;
+    expect(await events.wanted(tx)).toBe(true);
+    stop();
+    events.listen(() => Promise.resolve());
+    expect(await events.wanted(tx)).toBe(true);
+  });
+
   it("fails a change a listener cannot record, and logs an attempt's", async () => {
     const events = new ServerEvents();
     events.listen(() => Promise.reject(new Error("no room")));
