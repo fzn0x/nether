@@ -8,6 +8,7 @@
 import type { FastifyInstance, FastifyPluginAsync, FastifyReply, FastifyRequest } from "fastify";
 import type { AiEndpoints } from "./aiEndpoints.ts";
 import type { Config } from "./config.ts";
+import type { DataPolicies } from "./dataPolicies.ts";
 import type { Database, Queryable } from "./db.ts";
 import type { ServerEvents } from "./events.ts";
 import type { SecuritySettings } from "./settings.ts";
@@ -46,6 +47,8 @@ export interface EnterpriseServices {
    * console setting a member's role does.
    */
   readonly events: ServerEvents;
+  /** The workspaces' data policies (ADR 0088), which the `policies` module's page reads and sets. */
+  readonly dataPolicies: DataPolicies;
 }
 
 /** What a module's plugin is given. */

@@ -9,7 +9,12 @@ import type {
   HookHandlerDoneFunction,
 } from "fastify";
 import type { Database } from "./db.ts";
-import { type EnterpriseSwitches, isEnterpriseFeature, switchVariable } from "./enterprise.ts";
+import {
+  type EnterpriseFeature,
+  type EnterpriseSwitches,
+  isEnterpriseFeature,
+  switchVariable,
+} from "./enterprise.ts";
 import { fail } from "./http.ts";
 import { accountOf, signedIn } from "./sessions.ts";
 import { type ServerEvents, accountActor, originOf } from "./events.ts";
@@ -25,11 +30,16 @@ export function instanceAdmin(what: string) {
   };
 }
 
+/**
+ * The routes of the enterprise features' switches. `switched` hears of each
+ * switch this server moves, for what it changes to take effect at once.
+ */
 export function registerFeatures(
   app: FastifyInstance,
   db: Database,
   switches: EnterpriseSwitches,
   events: ServerEvents,
+  switched: (feature: EnterpriseFeature) => void = () => undefined,
 ): void {
   const account = signedIn(db);
 
@@ -76,6 +86,7 @@ export function registerFeatures(
           originOf(request),
         );
       });
+      switched(feature);
       return (await switches.states()).find((state) => state.feature === feature);
     },
   );

@@ -78,6 +78,7 @@ describe("migrate", () => {
       "webhook_deliveries",
       "webhooks",
       "workspace_keys",
+      "workspace_policies",
       "workspaces",
     ]);
   });

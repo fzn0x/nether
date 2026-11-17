@@ -34,6 +34,7 @@ import {
 } from "./events.ts";
 import { hashPassword, verifyPassword } from "./passwords.ts";
 import type { AiEndpoints } from "./aiEndpoints.ts";
+import { type DataPolicies, appsPolicy } from "./dataPolicies.ts";
 import { type SecuritySettings, settingSql } from "./settings.ts";
 import {
   type RequiredProvider,
@@ -358,6 +359,7 @@ export function registerSessions(
   security: SecuritySettings,
   aiEndpoints: AiEndpoints,
   events: ServerEvents,
+  policies: DataPolicies,
 ): void {
   const account = signedIn(db);
   const guards = signInGuards(db);
@@ -535,16 +537,25 @@ export function registerSessions(
         WHERE m.user_id = $1 ORDER BY w.created_at, w.name`,
       [me.id],
     );
+    const policed = await policies.on();
+    const workspaces = await Promise.all(
+      rows.map(async (row) => {
+        const id = readText(row, "id");
+        return {
+          id,
+          name: readText(row, "name"),
+          role: readText(row, "role"),
+          encryption: readText(row, "encryption"),
+          // Whether its members' apps offer AI in it (ADR 0068).
+          ai: readBoolean(row, "ai"),
+          // What its members' apps keep to of its data policy, or null (ADR 0088).
+          policies: policed ? appsPolicy(await policies.of(id)) : null,
+        };
+      }),
+    );
     return {
       user: { id: me.id, name: me.name, email: me.email, instanceAdmin: me.instanceAdmin },
-      workspaces: rows.map((row) => ({
-        id: readText(row, "id"),
-        name: readText(row, "name"),
-        role: readText(row, "role"),
-        encryption: readText(row, "encryption"),
-        // Whether its members' apps offer AI in it (ADR 0068).
-        ai: readBoolean(row, "ai"),
-      })),
+      workspaces,
       // The only addresses every app may send AI requests to, or null (ADR 0086).
       aiEndpoints: await aiEndpoints.locked(),
     };
