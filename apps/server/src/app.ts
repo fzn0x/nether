@@ -26,6 +26,7 @@ import { registerOidc } from "./oidc.ts";
 import { registerSessions } from "./sessions.ts";
 import { registerSetup } from "./setup.ts";
 import { registerRelay } from "./relay.ts";
+import { type ClusterBus, ProcessBus } from "./cluster.ts";
 import { registerSync } from "./sync.ts";
 import { registerLinks } from "./links.ts";
 import { registerPublished } from "./published.ts";
@@ -94,6 +95,11 @@ export interface Services {
   readonly webhookWorker?: boolean;
   /** What resolves AI providers' hosts, for the relay's checks; the system's unless a test gives another. */
   readonly aiResolve?: Resolver;
+  /**
+   * What this node tells the server's other nodes, and hears from them
+   * (ADR 0082); a bus of this process alone unless the `ha` module gives one.
+   */
+  readonly bus?: ClusterBus;
   /** What looks up sites' domains' TXT records (ADR 0077); the system's unless a test gives another. */
   readonly resolveTxt?: TxtResolver;
 }
@@ -215,7 +221,7 @@ export async function buildApp(config: Config, services: Services): Promise<Fast
   }
   // The relay's sockets come through the WebSocket plugin sync registers.
   const sync = await registerSync(app, services.db);
-  const relay = registerRelay(app, services.db);
+  const relay = registerRelay(app, services.db, services.bus ?? new ProcessBus());
   const reconnect = (userId: string) => {
     sync.disconnect(userId);
     relay.disconnect(userId);
