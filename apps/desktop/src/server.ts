@@ -1,6 +1,7 @@
 // Talking to a Nether server (ADR 0036): its address as someone types it,
 // the ways it offers to sign in, and signing in with a password, a code it
-// emails, or its OpenID Connect provider. Requests go through the
+// emails, or its OpenID Connect provider, or single sign-on's provider
+// for the address's domain (ADR 0080). Requests go through the
 // backend's fetch: Go makes them in the desktop app, so the page's CORS
 // does not apply, and the browser does in the preview.
 import { type MessageKey, t } from "./messages.ts";
@@ -25,6 +26,8 @@ export interface SignInMethods {
   readonly oidc: { readonly name: string } | null;
   /** The single sign-on providers its console names (ADR 0080), by their short names; none while that is off. */
   readonly sso: readonly SsoProvider[];
+  /** Whether every account signs in through a provider, instance admins aside. */
+  readonly ssoEveryone: boolean;
 }
 
 /** A single sign-on provider the server's console names. */
@@ -61,12 +64,23 @@ type Fetch = typeof fetch;
 /** A server's answer that is not a success, with the message it gave. */
 export class ServerError extends Error {
   readonly status: number;
+  /** The provider an address must sign in with, when the server named one (ADR 0080). */
+  readonly sso: SsoProvider | undefined;
 
-  constructor(status: number, message: string) {
+  constructor(status: number, message: string, sso?: SsoProvider) {
     super(message);
     this.name = "ServerError";
     this.status = status;
+    this.sso = sso;
   }
+}
+
+/** A provider as a server names it, or undefined. */
+function providerOf(value: unknown): SsoProvider | undefined {
+  const provider = record(value);
+  return typeof provider.id === "string" && typeof provider.name === "string"
+    ? { id: provider.id, name: provider.name }
+    : undefined;
 }
 
 /**
@@ -135,6 +149,7 @@ export async function request(
       typeof message === "string"
         ? message
         : t("serverAnswered", { server: base, status: response.status }),
+      providerOf(record(answer).sso),
     );
   }
   return answer;
@@ -211,29 +226,67 @@ export async function signInMethods(fetcher: Fetch, base: string): Promise<SignI
     throw new ServerError(0, t("notNetherServer", { server: base }));
   }
   const oidc = record(answer.oidc);
+  const sso = await ssoOffer(fetcher, base);
   return {
     password: answer.password,
     emailCode: answer.emailCode === true,
     oidc: typeof oidc.name === "string" ? { name: oidc.name } : null,
-    sso: await ssoProviders(fetcher, base),
+    sso: sso.providers,
+    ssoEveryone: sso.everyone,
   };
 }
 
-/** The single sign-on providers a server offers: none from one whose single sign-on is off, or older. */
-export async function ssoProviders(fetcher: Fetch, base: string): Promise<SsoProvider[]> {
+/**
+ * The single sign-on providers a server offers, and whether everyone signs
+ * in through one: none from one whose single sign-on is off, or older.
+ */
+export async function ssoOffer(
+  fetcher: Fetch,
+  base: string,
+): Promise<{ providers: SsoProvider[]; everyone: boolean }> {
   let answer: unknown;
   try {
     answer = await request(fetcher, base, "/api/sso");
   } catch {
-    return [];
+    return { providers: [], everyone: false };
   }
   const providers = record(answer).providers;
-  return (Array.isArray(providers) ? (providers as unknown[]) : []).flatMap((item) => {
-    const provider = record(item);
-    return typeof provider.id === "string" && typeof provider.name === "string"
-      ? [{ id: provider.id, name: provider.name }]
-      : [];
-  });
+  return {
+    providers: (Array.isArray(providers) ? (providers as unknown[]) : []).flatMap((item) => {
+      const provider = providerOf(item);
+      return provider === undefined ? [] : [provider];
+    }),
+    everyone: record(answer).everyone === true,
+  };
+}
+
+/** The single sign-on providers a server offers. */
+export async function ssoProviders(fetcher: Fetch, base: string): Promise<SsoProvider[]> {
+  return (await ssoOffer(fetcher, base)).providers;
+}
+
+/**
+ * The provider an address signs in through, by its domain alone, and
+ * whether it must (ADR 0080); none from a server without single sign-on.
+ */
+export async function findProvider(
+  fetcher: Fetch,
+  base: string,
+  email: string,
+): Promise<{ provider: SsoProvider | undefined; required: boolean }> {
+  let answer: unknown;
+  try {
+    answer = await request(fetcher, base, "/api/sso/find", { body: { email: email.trim() } });
+  } catch (error) {
+    if (error instanceof ServerError && error.status === 404) {
+      return { provider: undefined, required: false };
+    }
+    throw error;
+  }
+  return {
+    provider: providerOf(record(answer).provider),
+    required: record(answer).required === true,
+  };
 }
 
 export async function signInWithPassword(
@@ -320,6 +373,7 @@ const providerErrors: Readonly<Record<string, MessageKey>> = {
   other_address: "providerOtherAddress",
   no_address: "providerNoAddress",
   provider_error: "providerFailed",
+  sso_required: "providerSsoRequired",
 };
 
 /**
@@ -327,7 +381,8 @@ const providerErrors: Readonly<Record<string, MessageKey>> = {
  * system's browser signs in at the provider, comes back to the app's
  * loopback address with a code, which the app redeems with its verifier.
  * The provider is the server's own (ADR 0034), or one of its console's by
- * its short name (ADR 0080).
+ * its short name (ADR 0080). With an invitation's token, the account it
+ * signs in to accepts it.
  */
 export async function signInWithProvider(
   fetcher: Fetch,
@@ -335,6 +390,7 @@ export async function signInWithProvider(
   loopback: LoopbackWait,
   openUrl: (url: string) => Promise<void>,
   sso?: string,
+  invitation?: string,
 ): Promise<SignedIn> {
   const paths =
     sso === undefined
@@ -344,7 +400,11 @@ export async function signInWithProvider(
     const { verifier, challenge } = await pkce();
     const flow = record(
       await request(fetcher, base, paths.flows, {
-        body: { redirect: loopback.redirect, challenge },
+        body: {
+          redirect: loopback.redirect,
+          challenge,
+          ...(invitation === undefined ? {} : { invitation }),
+        },
       }),
     );
     await openUrl(text(flow.url, base));

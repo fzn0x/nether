@@ -14,11 +14,10 @@ import { type ChainKey, chainKey } from "./chain.ts";
 import { checkLog } from "./check.ts";
 import { record } from "./log.ts";
 import {
-  checkpoint,
+  keepUp,
   maxRetentionDays,
   minRetentionDays,
   pinnedRetention,
-  purge,
   retentionDays,
   setRetentionDays,
 } from "./retention.ts";
@@ -27,7 +26,7 @@ import { actionGroups, isActionGroup, searchLog, shownEvent } from "./search.ts"
 export { canonical, chainKey, keyFingerprint, rowHash } from "./chain.ts";
 export { type CheckResult, checkLog } from "./check.ts";
 export { type AuditRow, fieldsOf, record } from "./log.ts";
-export { checkpoint, purge, retentionDays } from "./retention.ts";
+export { checkpoint, keepUp, purge, retentionDays } from "./retention.ts";
 export { actionGroups, searchLog } from "./search.ts";
 
 /** How often the log is purged and its head recorded. */
@@ -98,6 +97,8 @@ function registerAudit(
   key: ChainKey,
   pinned: number | undefined,
   whenOn: EnterpriseContext["whenOn"],
+  /** Whether a workspace is on legal hold now, which holds the purge. */
+  held: () => Promise<boolean>,
 ): void {
   const account = signedIn(db);
   const admin = instanceAdmin("read and keep the audit log");
@@ -230,9 +231,12 @@ function registerAudit(
   // to the server's log too.
   const upkeep = async () => {
     if (!(await isOn())) return;
-    const purged = await purge(db, await retentionDays(db, pinned), key);
-    if (purged > 0) app.log.info({ purged }, "Purged the audit log's oldest events");
-    const head = await checkpoint(db, key);
+    const { purged, head } = await keepUp(db, key, pinned, held);
+    if (purged === null) {
+      app.log.info("A workspace is on legal hold: the audit log purges nothing");
+    } else if (purged > 0) {
+      app.log.info({ purged }, "Purged the audit log's oldest events");
+    }
     if (head !== undefined) app.log.info({ audit: head }, "Audit log checkpoint");
   };
   const timer = setInterval(() => {
@@ -255,7 +259,7 @@ export function createAuditModule(env: NodeJS.ProcessEnv = process.env): Enterpr
   const pinned = pinnedRetention(env.NETHER_AUDIT_RETENTION_DAYS);
   return {
     feature: "audit",
-    plugin: (app, { db, config, isOn, whenOn, events }) => {
+    plugin: (app, { db, config, isOn, whenOn, events, dataPolicies }) => {
       const key = chainKey(config.secretKey);
       const stop = events.listen(
         async (event, origin, tx) => {
@@ -283,7 +287,9 @@ export function createAuditModule(env: NodeJS.ProcessEnv = process.env): Enterpr
         stop();
         done();
       });
-      registerAudit(app, db, isOn, key, pinned, whenOn);
+      // While a workspace is on legal hold, the log purges nothing (ADR 0088):
+      // its purge cuts the chain's oldest rows, the held workspace's among them.
+      registerAudit(app, db, isOn, key, pinned, whenOn, () => dataPolicies.anyHold());
       return Promise.resolve();
     },
   };

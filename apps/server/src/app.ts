@@ -29,6 +29,7 @@ import { SecuritySettings } from "./settings.ts";
 import { AiEndpoints } from "./aiEndpoints.ts";
 import { DataPolicies } from "./dataPolicies.ts";
 import { registerSetup } from "./setup.ts";
+import { signInGuards } from "./signIns.ts";
 import { registerRelay } from "./relay.ts";
 import { type ClusterBus, ProcessBus, shareDisconnects } from "./cluster.ts";
 import { Readiness, registerReadiness } from "./health.ts";
@@ -203,7 +204,9 @@ export async function buildApp(config: Config, services: Services): Promise<Fast
   // Versions older than the admin keeps them, old notifications and
   // deliveries, and nodes gone without saying so: once an hour.
   const purge = async () => {
-    await purgeVersions(services.db, config.historyDays).catch((error: unknown) => {
+    // Each workspace's history as its data policy keeps it, if one holds (ADR 0088).
+    const policies = await dataPolicies.all().catch(() => undefined);
+    await purgeVersions(services.db, config.historyDays, policies).catch((error: unknown) => {
       app.log.error({ err: error }, "Could not delete the versions kept too long");
     });
     await purgeNotifications(services.db).catch((error: unknown) => {
@@ -370,6 +373,7 @@ export async function buildApp(config: Config, services: Services): Promise<Fast
       disconnect,
       security,
       aiEndpoints,
+      guards: signInGuards(services.db),
       every: jobs.every,
       events,
       dataPolicies,

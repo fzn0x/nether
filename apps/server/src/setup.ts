@@ -11,6 +11,7 @@ import { emailField, emailKey, fail, limitByAddress, nameField, newPasswordField
 import { hashPassword } from "./passwords.ts";
 import { startSession } from "./sessions.ts";
 import { type ServerEvents, accountActor, originOf } from "./events.ts";
+import { signInGuards } from "./signIns.ts";
 
 /** Whether the server still waits for its first account. */
 export async function setupNeeded(db: Database): Promise<boolean> {
@@ -140,7 +141,11 @@ export function registerSetup(
           origin,
         );
         return {
-          ...(await startSession(tx, user.id, request, "setup", events)),
+          ...(await startSession(tx, user.id, request, {
+            method: "setup",
+            events,
+            guards: signInGuards(db),
+          })),
           user,
           workspace,
         };

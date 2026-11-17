@@ -1,6 +1,7 @@
 // Single sign-on's providers as the console keeps them (ADR 0080): each
 // SAML 2.0 or OpenID Connect, by a short name of the admin's, with the
-// email domains it is trusted for, one provider at most each. Their secrets,
+// email domains it is trusted for, one provider at most each, and whether
+// accounts at those domains sign in through it alone. Their secrets,
 // SAML's key and OpenID Connect's client secret, are sealed with
 // NETHER_SECRET_KEY and opened only to sign in.
 import {
@@ -56,6 +57,8 @@ export interface Provider {
   readonly id: string;
   readonly name: string;
   readonly makeAccounts: boolean;
+  /** Whether accounts at its domains sign in through it alone (ADR 0080). */
+  readonly required: boolean;
   readonly domains: readonly string[];
   readonly settings: Settings;
   readonly updatedAt: Date;
@@ -89,7 +92,7 @@ export function openSecrets(seal: Seal, id: string, box: Uint8Array): Secrets {
   return JSON.parse(seal.open(box, owner(id))) as Secrets;
 }
 
-const columns = "id, name, make_accounts, settings, updated_at";
+const columns = "id, name, make_accounts, required, settings, updated_at";
 
 async function domainsOf(db: Queryable, ids: readonly string[]): Promise<Map<string, string[]>> {
   const { rows } = await db.query(
@@ -106,6 +109,7 @@ function providerOf(row: Record<string, unknown>, domains: readonly string[]): P
     id: readText(row, "id"),
     name: readText(row, "name"),
     makeAccounts: readBoolean(row, "make_accounts"),
+    required: readBoolean(row, "required"),
     domains,
     settings: row.settings as Settings,
     updatedAt: readTime(row, "updated_at"),
@@ -183,13 +187,14 @@ export async function insertProvider(
   box: Buffer,
 ): Promise<void> {
   await db.query(
-    `INSERT INTO sso_providers (id, kind, name, make_accounts, settings, secrets)
-     VALUES ($1, $2, $3, $4, $5, $6)`,
+    `INSERT INTO sso_providers (id, kind, name, make_accounts, required, settings, secrets)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)`,
     [
       provider.id,
       provider.settings.kind,
       provider.name,
       provider.makeAccounts,
+      provider.required,
       JSON.stringify(provider.settings),
       box,
     ],
@@ -205,7 +210,7 @@ export async function updateProvider(
 ): Promise<void> {
   await db.query(
     `UPDATE sso_providers
-        SET name = $2, make_accounts = $3, settings = $4,
+        SET name = $2, make_accounts = $3, required = $6, settings = $4,
             secrets = coalesce($5, secrets), updated_at = now()
       WHERE id = $1`,
     [
@@ -214,6 +219,7 @@ export async function updateProvider(
       provider.makeAccounts,
       JSON.stringify(provider.settings),
       box ?? null,
+      provider.required,
     ],
   );
   await setDomains(db, provider.id, provider.domains);

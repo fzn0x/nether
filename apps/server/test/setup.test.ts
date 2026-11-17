@@ -85,6 +85,29 @@ describe("migrate", () => {
     ]);
   });
 
+  it("keeps how each session and token began, and which providers are required", async () => {
+    const db = await database();
+    await migrate(db);
+    const { rows } = await db.query(
+      `SELECT table_name, column_name, data_type, is_nullable FROM information_schema.columns
+        WHERE table_schema = current_schema()
+          AND (column_name IN ('method', 'provider') OR (table_name = 'sso_providers' AND column_name = 'required'))
+        ORDER BY table_name, column_name`,
+    );
+    expect(rows).toEqual([
+      { table_name: "api_tokens", column_name: "method", data_type: "text", is_nullable: "YES" },
+      { table_name: "api_tokens", column_name: "provider", data_type: "text", is_nullable: "YES" },
+      { table_name: "sessions", column_name: "method", data_type: "text", is_nullable: "YES" },
+      { table_name: "sessions", column_name: "provider", data_type: "text", is_nullable: "YES" },
+      {
+        table_name: "sso_providers",
+        column_name: "required",
+        data_type: "boolean",
+        is_nullable: "NO",
+      },
+    ]);
+  });
+
   it("runs on a database a newer server migrated, unless a step since needs a newer server", async () => {
     const db = await database();
     await migrate(db);

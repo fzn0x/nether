@@ -320,6 +320,18 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `NETHER_SSO_PRIVATE` lets providers be on the server's own network. CI
   signs in through Keycloak, by SAML and by OpenID Connect
   ([ADR 0080](docs/adr/0080-single-sign-on-binds-saml-and-oidc-providers-to-email-domains-and-enforcement-refuses-other-ways-in.md)).
+- Single sign-on, second part: a provider can be required at its domains,
+  or of everyone, with instance admins exempt unless the console covers
+  them too. An account it covers signs in through its provider alone: a
+  password, a code, joining with a password, setting one and another
+  domain's provider are refused, telling nothing of accounts, and its
+  sessions and tokens that began another way end as the console saves,
+  and at their next request. Each session and token keeps how it began.
+  The apps ask for the address first and go straight to its provider.
+  `NETHER_SSO_ENFORCE=off` is the way back in when a provider breaks.
+  Okta's and Entra ID's answers are tested as they send them, and CI
+  requires Keycloak at its domain
+  ([ADR 0080](docs/adr/0080-single-sign-on-binds-saml-and-oidc-providers-to-email-domains-and-enforcement-refuses-other-ways-in.md)).
 - AI locked to approved endpoints, the `policies` feature's first part: an
   instance admin lists the addresses AI may go to, in the console's AI
   endpoints section or with `NETHER_AI_ENDPOINTS`, and for every workspace
@@ -353,7 +365,11 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   and a database's CSV export say the server's policy keeps the
   workspace's notes, asking the server as an export starts and holding to
   its last answer offline, and the Share dialog offers only what links and
-  publishing may do, saying why.
+  publishing may do, saying why. Retention and legal hold on the server:
+  each workspace's history is kept for its policy's days, nothing of a
+  workspace on legal hold is purged, the audit log purges nothing while
+  any workspace is on hold, `/api/me` gives the apps each workspace's
+  trash days and hold, and each change of a policy is in the audit log.
 
 ### Changed
 

@@ -13,6 +13,8 @@ export interface Person {
   readonly email?: string;
   readonly email_verified?: boolean;
   readonly name?: string;
+  /** Any other claim the ID token carries, as a provider shaped like Entra ID's sends `oid`. */
+  readonly [claim: string]: string | boolean | undefined;
 }
 
 interface Grant {
