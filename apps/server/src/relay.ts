@@ -27,7 +27,7 @@
 import { randomUUID } from "node:crypto";
 import type { FastifyInstance } from "fastify";
 import type { WebSocket } from "ws";
-import type { ClusterBus, Unsubscribe } from "./cluster.ts";
+import type { Closable, ClusterBus, Unsubscribe } from "./cluster.ts";
 import { type Database, readBytes, readCount, readText } from "./db.ts";
 import { socketCookieToken } from "./cookies.ts";
 import { lockNumbers } from "./numbers.ts";
@@ -76,6 +76,8 @@ type Message = Readonly<Record<string, unknown>>;
 export interface RelayControl {
   /** Closes an account's sockets, so its apps connect again and are checked anew. */
   disconnect(userId: string): void;
+  /** Every socket of the relay here. */
+  sockets(): Iterable<Closable>;
 }
 
 /** The bus's topic for a workspace's encrypted updates: a hint that there are new ones to read. */
@@ -464,6 +466,10 @@ export function registerRelay(app: FastifyInstance, db: Database, bus: ClusterBu
       for (const client of clients) {
         if (client.userId === userId) client.socket.close(4403, "Access changed");
       }
+    },
+
+    sockets() {
+      return [...clients].map((client) => client.socket);
     },
   };
 }

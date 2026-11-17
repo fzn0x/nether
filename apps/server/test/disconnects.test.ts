@@ -1,12 +1,20 @@
 // Closing an account's sockets on every node (ADR 0082): the node that is
 // asked closes its own at once and tells the others through the bus, fire
-// and forget.
+// and forget; and a node whose bus comes back after it was lost closes
+// every socket it has, spread over a few seconds, so each app connects
+// again with its access as it is now.
 import type { AddressInfo } from "node:net";
 import { HocuspocusProvider } from "@hocuspocus/provider";
 import type { FastifyBaseLogger } from "fastify";
 import { afterEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
-import { type ClusterBus, ProcessBus, shareDisconnects } from "../src/cluster.ts";
+import {
+  type Closable,
+  type ClusterBus,
+  ProcessBus,
+  type Unsubscribe,
+  shareDisconnects,
+} from "../src/cluster.ts";
 import { type SetUp, type TestServer, bearer, setUp, startServer } from "./app.ts";
 import { freePort } from "./ports.ts";
 
@@ -22,6 +30,31 @@ afterEach(async () => {
   // The second node first: the first closes the database they share.
   for (const node of running.splice(0).reverse()) await node.close();
 });
+
+/** A bus whose connection a test can bring back, as one over a network comes back. */
+class ReconnectingBus implements ClusterBus {
+  readonly #bus = new ProcessBus();
+  readonly #back = new Set<() => void>();
+
+  publish(topic: string, message: string): void {
+    this.#bus.publish(topic, message);
+  }
+
+  subscribe(topic: string, handler: (message: string) => void): Unsubscribe {
+    return this.#bus.subscribe(topic, handler);
+  }
+
+  onReconnect(handler: () => void): Unsubscribe {
+    this.#back.add(handler);
+    return () => {
+      this.#back.delete(handler);
+    };
+  }
+
+  reconnect(): void {
+    for (const handler of [...this.#back]) handler();
+  }
+}
 
 /** A log that keeps what is said, by level. */
 function logOf() {
@@ -64,6 +97,7 @@ function nodeOf(open: ReturnType<typeof socketOf>[]) {
     disconnect(userId: string) {
       for (const socket of open) if (socket.user === userId) socket.close(4403);
     },
+    open: (): Iterable<Closable> => open,
   };
 }
 
@@ -107,6 +141,38 @@ describe("closing an account's sockets on every node", () => {
     }).not.toThrow();
     expect(here[0]?.closed).toHaveLength(1);
     expect(log.said.filter((entry) => entry.level === "error")).toHaveLength(1);
+  });
+
+  it("closes every socket, spread out, when the bus comes back, and says why", async () => {
+    const log = logOf();
+    const bus = new ReconnectingBus();
+    const open = Array.from({ length: 20 }, (_, index) => socketOf(`user${String(index)}`));
+    const node = shareDisconnects(bus, "one", nodeOf(open), log, 300);
+    stops.push(node.stop);
+    const started = performance.now();
+    bus.reconnect();
+    // None at once: spread over the next moments.
+    expect(open.every((socket) => socket.closed.length === 0)).toBe(true);
+    await until(() => open.every((socket) => socket.closed.length === 1));
+    const times = open.map((socket) => socket.closed[0]?.at ?? 0);
+    expect(Math.max(...times) - started).toBeLessThan(1_000);
+    expect(Math.max(...times) - Math.min(...times)).toBeGreaterThan(0);
+    expect(open.every((socket) => socket.closed[0]?.code === 4403)).toBe(true);
+    const warned = log.said.filter((entry) => entry.level === "warn");
+    expect(warned).toHaveLength(1);
+    expect(warned[0]?.details).toEqual({ sockets: 20, seconds: 0.3 });
+    expect(warned[0]?.message).toContain("connects again with its access as it is now");
+  });
+
+  it("closes nothing more once stopped", async () => {
+    const bus = new ReconnectingBus();
+    const open = [socketOf("bea")];
+    const node = shareDisconnects(bus, "one", nodeOf(open), logOf(), 100);
+    bus.reconnect();
+    node.stop();
+    bus.reconnect();
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    expect(open[0]?.closed).toEqual([]);
   });
 });
 
@@ -190,5 +256,16 @@ describe("two nodes", () => {
     expect(await apps.relayClosed).toBe(4403);
     // The sync app connects again, and is refused.
     await until(() => apps.sync.refused !== undefined);
+  }, 30_000);
+
+  it("close every socket of a node whose bus comes back, and its apps connect again", async () => {
+    const bus = new ReconnectingBus();
+    const { setup, bea, port } = await cluster(bus);
+    const apps = await beaOn(port, setup.workspaceId, bea.token);
+    bus.reconnect();
+    // Within the few seconds the closes are spread over.
+    expect(await apps.relayClosed).toBe(4403);
+    await until(() => apps.sync.synced > 1);
+    expect(apps.sync.refused).toBeUndefined();
   }, 30_000);
 });

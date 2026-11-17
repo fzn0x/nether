@@ -283,6 +283,10 @@ export async function buildApp(config: Config, services: Services): Promise<Fast
         sync.disconnect(userId);
         relay.disconnect(userId);
       },
+      *open() {
+        yield* sync.sockets();
+        yield* relay.sockets();
+      },
     },
     app.log,
   );
