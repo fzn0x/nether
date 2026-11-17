@@ -182,7 +182,9 @@ in chunks of their own.
 ### The parts
 
 The item is delivered in five parts, each from `main` after the one
-before it merges:
+before it merges, except the fifth, which needs only the first and is made
+beside the others
+([ADR 0074](0074-search-by-meaning-keeps-passages-vectors-on-the-device-and-loads-them-only-to-search.md)):
 
 1. **This part**: `@nether/ai`, providers on the desktop, the off switch for
    vaults and workspaces, and writing assist
@@ -197,7 +199,7 @@ before it merges:
    from a description, made as an import plan
    ([ADR 0027](0027-imports-are-plans-made-from-sources-read-only.md)) that
    the user previews before anything is made.
-5. **Semantic search**: embeddings of each note's blocks in the vault's
+5. **Semantic search**: embeddings of each note's passages in the vault's
    index, from a provider's embedding model the user chooses, off by
    default, and a search by meaning beside the search by words.
 

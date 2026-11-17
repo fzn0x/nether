@@ -78,3 +78,4 @@ record supersedes it and says so. Start a new one from
 | [0068](0068-ai-comes-from-the-users-own-provider-reached-from-their-device.md) | AI comes from the user's own provider, reached from their device, and shows nothing until there is one | Accepted |
 | [0069](0069-writing-assist-streams-into-a-preview-and-goes-in-as-one-edit.md) | Writing assist streams into a preview, and goes into the note as one edit | Accepted |
 | [0071](0071-a-share-link-opens-one-shared-page-to-anyone-with-it-through-the-web-app.md) | A share link opens one shared page to anyone with it, through the web app | Accepted |
+| [0074](0074-search-by-meaning-keeps-passages-vectors-on-the-device-and-loads-them-only-to-search.md) | Search by meaning keeps each passage's vector on the device, and loads them only to search | Accepted |
