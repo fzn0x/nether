@@ -20,7 +20,12 @@ import tags from "./tags/manifest.json";
 export const builtinPlugins: readonly BuiltinPlugin[] = [
   { manifest: mermaid, load: () => import("./mermaid/plugin.ts") },
   { manifest: query, load: () => import("./query/plugin.tsx") },
-  { manifest: automations, load: () => import("./automations/plugin.tsx") },
+  // Its triggers run on the properties the app changes, from the first change.
+  {
+    manifest: automations,
+    load: () => import("./automations/plugin.tsx"),
+    watchesProperties: true,
+  },
   { manifest: tags, load: () => import("./tags/plugin.tsx") },
   { manifest: assigned, load: () => import("./assigned/plugin.tsx") },
   { manifest: outline, load: () => import("./outline/plugin.tsx") },
