@@ -1239,6 +1239,27 @@ test("the audit log records sign-ins and its own switch, found and checked in th
     "Each is chained to the one before under a key from NETHER_SECRET_KEY.",
   );
 
+  // A webhook to a SIEM: its secret shown once, the events waiting, then removed.
+  const siem = log.getByRole("region", { name: "Sending to a SIEM" });
+  await expect(siem).toContainText("The log goes nowhere else yet.");
+  const adding = siem.getByRole("form", { name: "Add the destination" });
+  await adding.getByRole("combobox", { name: "Kind" }).selectOption("webhook");
+  await adding.getByRole("textbox", { name: "Name" }).fill("Ops SIEM");
+  await adding.getByRole("textbox", { name: "Address" }).fill("http://127.0.0.1:9/nether");
+  await adding.getByRole("button", { name: "Add the destination" }).click();
+  await expect(siem.getByText("Ops SIEM is added.")).toBeVisible();
+  await expect(siem.locator(".audit-siem-secret code")).toHaveText(/^whsec_[A-Za-z0-9+/=]+$/);
+  const destination = siem.getByRole("listitem").filter({ hasText: "Ops SIEM" });
+  await expect(destination).toContainText("http://127.0.0.1:9/nether");
+  await expect(destination).toContainText("Nothing delivered yet.");
+  expect(await violations(page)).toEqual([]);
+  await destination.getByRole("button", { name: "Remove Ops SIEM" }).click();
+  await destination.getByRole("button", { name: "Remove", exact: true }).click();
+  await expect(siem.getByText("Ops SIEM gets the log no more.")).toBeVisible();
+  await filters.getByRole("button", { name: "Search" }).click();
+  await expect(log.getByRole("row").nth(1)).toContainText("SIEM destination removed");
+  await expect(log.getByRole("row").nth(1)).toContainText("audit.destination_removed");
+
   // Off again, as the other tests found it.
   await audit.uncheck();
   await expect(page.getByText("Audit logs: off.")).toBeVisible();
