@@ -253,8 +253,25 @@ jobs:
         run: pnpm --filter @nether/desktop exec playwright install --with-deps chromium
       - name: The desktop page in Chromium
         run: pnpm --filter @nether/desktop test:e2e
+      # Single sign-on against a real Keycloak (ADR 0080), its realm beside the
+      # web app's tests. The image needs its start command, which a service
+      # container cannot pass, so it starts here.
+      - name: Start Keycloak
+        run: |
+          docker run -d --name keycloak -p 8080:8080 \
+            -e KC_BOOTSTRAP_ADMIN_USERNAME=admin -e KC_BOOTSTRAP_ADMIN_PASSWORD=admin \
+            -v "$PWD/apps/web/e2e/keycloak:/opt/keycloak/data/import:ro" \
+            quay.io/keycloak/keycloak:26.8.2 start-dev --import-realm
+          for i in $(seq 1 60); do
+            curl -fsS http://127.0.0.1:8080/realms/nether/.well-known/openid-configuration > /dev/null && exit 0
+            sleep 3
+          done
+          docker logs keycloak
+          exit 1
       - name: The web app, served by a real server, in Chromium
         run: pnpm --filter @nether/web test:e2e
+        env:
+          NETHER_TEST_KEYCLOAK: http://127.0.0.1:8080
       - name: The web clipper, unpacked in Chromium, against the web app's test server
         run: pnpm --filter @nether/clipper test:e2e
       - uses: actions/upload-artifact@v7
