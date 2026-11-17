@@ -23,6 +23,7 @@ import { type LinkSuggestion, type NoteLinks, isNoteLink } from "@nether/editor"
 import { type LinkGraph, noteSection } from "@nether/graph";
 import { type ParsedMarkdown, parseMarkdown, serializeMarkdown } from "@nether/markdown";
 import { ChangedOnDisk, type NoteEntry, type Vault } from "@nether/storage";
+import { pdfEmbed } from "./PdfEmbed.tsx";
 
 // What tells a highlight from another block loads when a link to a block is followed.
 const loadHighlights = () => import("./pdfHighlights.ts");
@@ -367,7 +368,28 @@ export function noteLinks(
       const title = vault.note(note)?.title ?? "";
       // A block of this note is edited where it is, not in its embed.
       const synced = "block" in target && note !== id;
-      return blocks === undefined ? undefined : { title, blocks, synced };
+      if (blocks === undefined) return undefined;
+      // A highlight's embed shows its passage above it, as the PDF draws it (ADR 0067).
+      const [only] = blocks;
+      if (blocks.length === 1 && only?.type === "callout" && "block" in target) {
+        const { highlightedPassage } = await loadHighlights();
+        const found = await highlightedPassage(vault, note, target.block);
+        if (found !== undefined) {
+          const figure = pdfEmbed({
+            vault,
+            path: found.path,
+            part: found.part,
+            onOpen:
+              openFile === undefined
+                ? undefined
+                : (place) => {
+                    openFile(found.path, place);
+                  },
+          });
+          return { title, blocks, synced, figure };
+        }
+      }
+      return { title, blocks, synced };
     },
 
     async saveEmbed(target: LinkTarget, block: ContentBlock) {
