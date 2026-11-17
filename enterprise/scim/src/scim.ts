@@ -22,6 +22,7 @@ import {
   userSchema,
 } from "./discovery.ts";
 import { ScimError, sendError, sendScim } from "./errors.ts";
+import { findGroup, groupResource, listGroups, membersOf } from "./groups.ts";
 import { coreUserSchema, parseFilter } from "./paths.ts";
 import { applyPatch, docFromResource, operationsOf } from "./userDoc.ts";
 import {
@@ -211,6 +212,12 @@ export function registerScim(app: FastifyInstance, context: ScimContext): void {
     };
     const prefix = "/api/scim/:directory/v2";
 
+    /** Paging as a query asks for it: less than 1 is 1, and a count past the most is the most (RFC 7644, 3.4.2.4). */
+    const pageOf = (query: ListQuery) => ({
+      startIndex: Math.max(1, whole(query.startIndex, "startIndex") ?? 1),
+      count: Math.min(mostResults, Math.max(0, whole(query.count, "count") ?? defaultCount)),
+    });
+
     scim.get<{ Params: Params }>(`${prefix}/ServiceProviderConfig`, guarded, (request, reply) => {
       noFilter(request);
       return sendScim(reply, 200, serviceProviderConfig(scimBase(config, directoryOf(request).id)));
@@ -291,12 +298,7 @@ export function registerScim(app: FastifyInstance, context: ScimContext): void {
         const directory = directoryOf(request);
         const { filter, attributes, excludedAttributes } = request.query;
         const comparisons = filter === undefined || filter.trim() === "" ? [] : parseFilter(filter);
-        // Less than 1 is 1, and a count past the most is the most (RFC 7644, 3.4.2.4).
-        const startIndex = Math.max(1, whole(request.query.startIndex, "startIndex") ?? 1);
-        const count = Math.min(
-          mostResults,
-          Math.max(0, whole(request.query.count, "count") ?? defaultCount),
-        );
+        const { startIndex, count } = pageOf(request.query);
         const page = await listUsers(db, directory.id, comparisons, startIndex, count);
         const groups = await groupsOf(
           db,
@@ -312,6 +314,53 @@ export function registerScim(app: FastifyInstance, context: ScimContext): void {
           ),
         );
         return sendScim(reply, 200, listOf(resources, page.total, startIndex));
+      },
+    );
+
+    // Groups, read: as Entra ID's test connection looks one up.
+    scim.get<{ Params: Params; Querystring: ListQuery }>(
+      `${prefix}/Groups`,
+      guarded,
+      async (request, reply) => {
+        const directory = directoryOf(request);
+        const { filter, attributes, excludedAttributes } = request.query;
+        const comparisons = filter === undefined || filter.trim() === "" ? [] : parseFilter(filter);
+        const { startIndex, count } = pageOf(request.query);
+        const page = await listGroups(db, directory.id, comparisons, startIndex, count);
+        const members = await membersOf(
+          db,
+          page.rows.map((row) => row.id),
+        );
+        const base = scimBase(config, directory.id);
+        const resources = page.rows.map((row) =>
+          projected(
+            groupResource(row, members.get(row.id) ?? [], base),
+            attributes,
+            excludedAttributes,
+          ),
+        );
+        return sendScim(reply, 200, listOf(resources, page.total, startIndex));
+      },
+    );
+
+    scim.get<{ Params: UserParams; Querystring: ListQuery }>(
+      `${prefix}/Groups/:id`,
+      guarded,
+      async (request, reply) => {
+        const directory = directoryOf(request);
+        const row = await findGroup(db, directory.id, request.params.id);
+        if (row === undefined) throw new ScimError(404, "There is no such group.");
+        const members = await membersOf(db, [row.id]);
+        const { attributes, excludedAttributes } = request.query;
+        return sendScim(
+          reply,
+          200,
+          projected(
+            groupResource(row, members.get(row.id) ?? [], scimBase(config, directory.id)),
+            attributes,
+            excludedAttributes,
+          ),
+        );
       },
     );
 
