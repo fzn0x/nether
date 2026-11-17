@@ -462,6 +462,22 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   it below them or remove it, and the members list says which group gives
   the place. The console's Workspaces page marks those with no active
   owner, and lists them alone when asked.
+  Then the LDAP pull: an LDAP directory, as Active Directory or OpenLDAP,
+  is added on the same page from a preset, read by the server with ldapts
+  over `ldaps://` or StartTLS, its certificate checked against the
+  system's authorities, a pasted one or a pinned fingerprint, its address
+  under the outbound rules with `NETHER_LDAP_PRIVATE`, and its bind
+  password sealed with `NETHER_SECRET_KEY`. Test the connection reads a
+  few people and groups. Each directory runs every hour unless its admin
+  picks another time, on one node at a time; Sync now runs it at once.
+  People are known by objectGUID or entryUUID, so a renamed entry stays
+  one account; groups come with their members from memberOf or the
+  groups' member lists, nesting flattened, and give places as SCIM's do.
+  Someone no longer read is deactivated and leaves the read groups,
+  keeping their own places. A run changes nothing on any error, the first
+  is a preview to apply, and one that would deactivate more than a tenth
+  of the accounts, and more than five, waits for Run anyway. CI reads a
+  real OpenLDAP built from Alpine's packages.
 
 ### Changed
 

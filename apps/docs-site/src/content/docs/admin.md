@@ -264,8 +264,10 @@ unset. `NETHER_ENTERPRISE_SSO=off` turns single sign-on off altogether.
 With **Provisioning** on, the console's **Directories** page adds the
 directories that make, change, deactivate and remove the server's
 accounts: an identity provider that speaks SCIM 2.0, as Okta or Microsoft
-Entra ID, for the people it assigns to Nether. The page needs
-`NETHER_PUBLIC_URL`, the address a directory reaches the server at.
+Entra ID, for the people it assigns to Nether, or an LDAP directory the
+server reads, as Active Directory or OpenLDAP. A SCIM directory needs
+`NETHER_PUBLIC_URL`, the address it reaches the server at; an LDAP one
+needs `NETHER_SECRET_KEY`, which seals its bind password.
 
 ### Adding a directory
 
@@ -359,7 +361,113 @@ with how many members it has.
 - **Removing a directory** keeps each place its groups gave, as the
   member's own role.
 
-Reading an LDAP directory comes next.
+### Reading an LDAP directory
+
+An LDAP directory, as Active Directory or OpenLDAP, has no way to send
+its changes: the server reads it on a schedule. Choose **Add a
+directory**, then **LDAP**, and fill it in from **Active Directory** or
+**OpenLDAP**; every field stays yours to change.
+
+- **LDAP address**: `ldaps://host`, or `ldap://host` to start TLS on it,
+  with a port if it is not the usual one. A connection is always
+  encrypted; plain LDAP is refused, as the bind sends its password.
+- **Its certificate**: checked against the system's authorities, against
+  an authority you paste in PEM, as an internal one often is, or pinned
+  by its SHA-256 fingerprint. Its name is checked too, unless it is
+  pinned. There is no way to skip the check.
+- **Bind DN** and **Bind password**: an account that may read people and
+  groups, and nothing more. The password is sealed with
+  `NETHER_SECRET_KEY` and never shown again; a new address or bind DN
+  asks for it again.
+- **People's** and **Groups' base DN and filter**: where to read, and
+  which entries. Narrow the groups to those you will give places, as
+  `(&(objectClass=group)(cn=nether-*))`.
+- **Stable ID**, **userName**, **Email address**, **Name** and **Group's
+  name**: the attributes each is read from.
+- **Who is in a group**: each person's `memberOf`, by default, or each
+  group's `member`, `uniqueMember` or `memberUid`.
+- **Runs**: every hour, or from every 15 minutes to once a day.
+- **Hold back a run that deactivates more than**: 10 percent of the
+  directory's active accounts unless you pick another share.
+
+The server reaches public addresses only. A directory on your own
+network needs `NETHER_LDAP_PRIVATE` on the server, as `10.0.0.5` or
+`10.0.0.0/8`; the server connects to the address it checked and gives
+TLS the name.
+
+**Test the connection** binds and reads a few people and groups, so you
+see that the settings read what you meant. Then **Preview the first
+run**: it reads the whole directory and shows who it would make, change
+and deactivate, and changes nothing. **Apply it** runs it again and
+applies it, and from then on the directory runs on its schedule. **Sync
+now** runs it at once.
+
+What a run does:
+
+- **It reads everything first, and gives up on any error**, changing
+  nothing: a bind refused, a page that fails, a size or time limit, a
+  referral, or a group whose members come in ranges. A directory read in
+  part would deactivate everyone not read.
+- **It knows a person by the stable ID**, `objectGUID` or `entryUUID`, so
+  a renamed or moved entry stays the same account. It makes accounts and
+  takes them over at its domains, as a SCIM directory does, and sets
+  their names and addresses.
+- **Someone it no longer reads is deactivated**: deleted, disabled,
+  moved out of the base or out of the filter, as LDAP cannot tell these
+  apart. They leave the groups read, so what those gave goes, and keep
+  their own places. When they come back, they are reactivated and get
+  their groups again. An LDAP directory never removes an account.
+- **Groups** come with their members, nested groups flattened, a group
+  between two read ones followed by its DN. Give them places as a SCIM
+  directory's groups. A group no longer read goes, with what it gave.
+- **It skips and names** a person with no address, at a domain the
+  directory does not speak for, or with a userName another has; their
+  accounts stay as they are.
+- **It holds back a large deactivation**: more than its share of the
+  directory's active accounts, and more than five. It changes nothing
+  and shows who would go; **Run anyway** applies it once, for the
+  accounts shown.
+- **One node reads a directory at a time.** A run claims it until it
+  ends, or for an hour if its node stops.
+
+The page shows each run: when, how long, and how many it made, changed,
+deactivated and skipped, or why it failed or held back. The audit log
+records it as **Directory synced**, and each change as the directory's.
+
+The people a directory reads sign in through single sign-on, as
+Keycloak or AD FS in front of the same directory, or by an email code:
+Nether never checks a directory password.
+
+#### Active Directory
+
+- **LDAP address**: a domain controller, as `ldaps://dc1.corp.example`.
+  Its certificate often comes from your enterprise authority: paste it.
+- **Bind DN**: a service account's DN, as
+  `CN=Nether,OU=Service Accounts,DC=corp,DC=example`, which may read
+  people and groups and do nothing else.
+- **People's base DN**: the organizational unit that holds them, as
+  `OU=People,DC=corp,DC=example`. Reading from the domain's root sends
+  referrals to its DNS zones, which Nether does not follow.
+- The preset reads people with
+  `(&(objectCategory=person)(objectClass=user)(!(userAccountControl:1.2.840.113556.1.4.803:=2)))`,
+  which leaves disabled accounts out: disabling someone deactivates
+  them. It reads `objectGUID` as the ID, `userPrincipalName` as the
+  userName, and membership from `memberOf`. Pages hold 500 entries,
+  under Active Directory's `MaxPageSize`.
+
+#### OpenLDAP
+
+- **LDAP address**: `ldaps://ldap.corp.example`, or `ldap://` with
+  StartTLS. Paste the authority that signed its certificate.
+- **Bind DN**: an account the server's access rules let read people and
+  groups, as `cn=nether,ou=services,dc=corp,dc=example`.
+- The preset reads `(objectClass=inetOrgPerson)` and
+  `(objectClass=groupOfNames)`, `entryUUID` as the ID and `uid` as the
+  userName. It reads membership from `memberOf`, which the `memberof`
+  overlay keeps; without the overlay, choose each group's `member`.
+- A paged search must be allowed past the server's size limit, as
+  `sizelimit size.prtotal=unlimited`; otherwise a run stops at the limit,
+  changing nothing.
 
 ## AI endpoints
 

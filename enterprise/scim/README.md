@@ -19,7 +19,29 @@ and LDAP
   workspaces, each change settling the places it touches.
 - `src/discovery.ts`: what a directory's address says of itself.
 - `src/scim.ts`: the SCIM server at `/api/scim/<directory>/v2`.
+- `src/ldapSettings.ts`: an LDAP directory's settings, its presets for
+  Active Directory and OpenLDAP, and what binds its sealed password.
+- `src/ldapConnect.ts`: reaching a directory with ldapts, always
+  encrypted, its certificate checked, its address under the outbound
+  rules, on one connection a run.
+- `src/ldapRead.ts`: what a run reads, people and groups by their stable
+  IDs, nested groups flattened.
+- `src/ldapSync.ts`: what a run changes, worked out and applied through
+  the paths SCIM's requests take, 500 accounts to a transaction.
+- `src/ldapRuns.ts`: runs claimed one node at a time, on the schedule or
+  at once, the first a preview and a large deactivation held back.
+- `src/ldapConsole.ts`: the Directories page's LDAP routes: settings,
+  Test the connection, and Sync now.
 
-The LDAP pull comes next.
+`test/ldap/` builds the OpenLDAP the LDAP tests read, from Alpine's
+packages. With Docker:
+
+```sh
+docker build -t nether-ldap-test enterprise/scim/test/ldap
+docker run -d --name nether-ldap -p 1389:389 -p 1636:636 -v "/tmp/nether-ldap:/out" nether-ldap-test
+NETHER_TEST_LDAP="/tmp/nether-ldap" pnpm --filter @nether/enterprise-scim test
+```
+
+Without `NETHER_TEST_LDAP`, those tests are skipped.
 
 Roadmap: Phase 5, enterprise, mobile and scale.

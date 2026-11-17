@@ -583,6 +583,41 @@ reactivated and gets their groups again.
 check passwords. Its people sign in through single sign-on, as Keycloak
 or AD FS in front of the same directory, or by an email code.
 
+**As built in part 4**, where this section left a choice open:
+
+- **The groups between are followed.** A person's `memberOf` or a
+  group's `member` can name a group the filter does not read, as
+  `cn=engineering` inside `cn=nether-all`. The run reads such a group by
+  its DN, a base search for the one attribute that nests, so its members
+  reach the read group above it. Otherwise narrowing the filter, as the
+  guide suggests, would cut nesting at the first group left out. A DN
+  that no longer exists gives nothing; any other error fails the run.
+- **An entry made again is found by its name.** When a read person's ID
+  is new, and an account of the directory whose own ID is not read has
+  the same `userName`, that account is the person, and its `externalId`
+  changes. A group whose ID is new is found by its name the same way, so
+  it keeps its places. An Active Directory account deleted and made again
+  so keeps its account and its groups' places, instead of being refused
+  as a duplicate address.
+- **Who is skipped stays as they are.** A person read but skipped, with
+  no address or a `userName` another has, is not deactivated: they were
+  read. A person with no stable ID cannot be matched, and is skipped
+  alone.
+- **Run anyway lets go of the accounts shown.** It applies a run whose
+  deactivations are those the held run listed; more beyond them, past the
+  same share, hold it again, so a directory that broke further between
+  the two is held once more.
+- **The first run's preview** is applied by an instance admin's **Apply
+  it**, told of as `directory.changed`, as **Run anyway** is. Until then
+  the schedule does not run the directory; **Sync now** previews it again.
+- **Writes take a savepoint each.** A person refused within a batch, as
+  by an address another directory has, is skipped and named, and the rest
+  of the batch commits.
+- **The CI job is a step** of the job that runs the unit tests, as a
+  service container cannot be built from the repository: it builds the
+  image from `enterprise/scim/test/ldap`, starts it, and points
+  `NETHER_TEST_LDAP` at the folder its authority is written to.
+
 ### Air-gapped installs
 
 - **LDAP works with nothing outside the network**: the library is in the
