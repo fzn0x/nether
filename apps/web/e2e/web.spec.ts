@@ -1228,9 +1228,12 @@ test("the audit log records sign-ins and its own switch, found and checked in th
   await expect(failure).toContainText("audit-e2e");
   expect(await violations(page)).toEqual([]);
 
-  // The chain checks, and the check is recorded.
+  // The chain checks, and the check is recorded. The log searches again as
+  // the check ends, so its "Searching" status may show beside the check's.
   await log.getByRole("button", { name: "Check the log" }).click();
-  await expect(log.getByRole("status")).toHaveText(/^Checked \d+ events: every one holds\.$/);
+  await expect(log.getByRole("status").filter({ hasText: /^Checked / })).toHaveText(
+    /^Checked \d+ events: every one holds\.$/,
+  );
   await filters.getByRole("combobox", { name: "Outcome" }).selectOption("");
   await filters.getByRole("combobox", { name: "Kind" }).selectOption("log");
   await filters.getByRole("button", { name: "Search" }).click();
