@@ -269,6 +269,14 @@ server reads, as Active Directory or OpenLDAP. A SCIM directory needs
 `NETHER_PUBLIC_URL`, the address it reaches the server at; an LDAP one
 needs `NETHER_SECRET_KEY`, which seals its bind password.
 
+The directory is yours: you bring your own Okta, Microsoft Entra ID,
+Active Directory, OpenLDAP or other directory, and Nether has no account
+at any of them. CI sends SCIM requests shaped as Okta's and Entra ID's
+documents describe them, and reads a real OpenLDAP. If you run one of
+those, or another directory, tell how it went with the
+[identity provider report](https://github.com/fzn0x/nether/issues/new?template=provider_report.yml),
+so the steps below hold for everyone.
+
 ### Adding a directory
 
 Choose **Add a directory**, then:
