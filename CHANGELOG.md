@@ -442,6 +442,15 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   other's change, and later syncs did not bring it. The relay now tells a
   device its change's number only after sending it every change numbered
   before it.
+- A page that stops being shared on its own keeps its notes and files on
+  every device. Before, an app that saw them listed where the page sat
+  while the page's unit was still there could move them back into it, and
+  once the unit was gone they went to the trash on every device; a device
+  that heard the unit was gone before their new list could send them to
+  the trash and fetch them again. An app now leaves a note or file where
+  it is listed when the page's unit lists it too, and after letting a unit
+  go it syncs the units it still opens again before it next compares
+  lists.
 
 ## [0.1.0] - 2026-11-15
 

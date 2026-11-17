@@ -10,6 +10,7 @@ import {
   reconcileFiles,
   setVaultFile,
   sha256,
+  vaultFile,
   vaultFiles,
 } from "../src/files.ts";
 import {
@@ -97,6 +98,10 @@ describe("the paths sync takes", () => {
     files.set("b.png", { hash: "short", blob: hash(1) });
     files.set("c.png", "not a file");
     expect(vaultFiles(document)).toEqual(new Map([["a.png", { hash: hash(1), blob: hash(2) }]]));
+    expect(vaultFile(document, "a.png")).toEqual({ hash: hash(1), blob: hash(2) });
+    for (const path of [".obsidian/plugins/x/main.js", "b.png", "c.png", "d.png"]) {
+      expect(vaultFile(document, path), path).toBeUndefined();
+    }
 
     // Setting what is there already changes nothing.
     let updates = 0;

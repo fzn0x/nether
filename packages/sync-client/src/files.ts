@@ -77,6 +77,13 @@ export function vaultFiles(document: Y.Doc): Map<string, VaultFile> {
   return files;
 }
 
+/** The file the vault document lists at a path; undefined when it lists none. */
+export function vaultFile(document: Y.Doc, path: string): VaultFile | undefined {
+  const value = filesOf(document).get(path);
+  if (!isSyncedFile(path) || !isVaultFile(value)) return undefined;
+  return { hash: value.hash, blob: value.blob };
+}
+
 /** Lists a file at a path, or its new bytes. */
 export function setVaultFile(document: Y.Doc, path: string, file: VaultFile): void {
   const files = filesOf(document);
