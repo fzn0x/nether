@@ -1261,6 +1261,8 @@ test("the admin console sets data policies for every workspace, and for one set 
     await expect(team.getByRole("combobox", { name: "Share links" })).toHaveValue("view");
     await expect(team.getByRole("checkbox", { name: "Allow export" })).not.toBeChecked();
     await team.getByRole("combobox", { name: "Share links" }).selectOption("Off");
+    await team.getByRole("spinbutton", { name: "Keep history, in days" }).fill("90");
+    await team.getByRole("checkbox", { name: "Legal hold" }).check();
     await save("Team").click();
     await expect(section.getByRole("status")).toHaveText("Saved the policy for Team.");
     expect(await violations(page)).toEqual([]);
@@ -1268,7 +1270,10 @@ test("the admin console sets data policies for every workspace, and for one set 
     // Read again, as another visit to the console finds them.
     await page.reload();
     await expect(team.getByRole("combobox", { name: "Share links" })).toHaveValue("off");
+    await expect(team.getByRole("spinbutton", { name: "Keep history, in days" })).toHaveValue("90");
+    await expect(team.getByRole("checkbox", { name: "Legal hold" })).toBeChecked();
     await expect(every.getByRole("combobox", { name: "Share links" })).toHaveValue("view");
+    await expect(every.getByRole("spinbutton", { name: "Keep history, in days" })).toHaveValue("");
   } finally {
     // Every workspace open again, as the other tests expect.
     const join = section.getByRole("button", { name: "Use every workspace's" });
