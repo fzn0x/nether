@@ -934,7 +934,7 @@ test("the admin console turns a feature on and off, for an instance admin alone"
   await expect(page.getByRole("heading", { name: "Admin console", level: 1 })).toBeVisible();
   const features = page.getByRole("region", { name: "Features" });
   // A feature this build has no module for is shown, and cannot be turned on.
-  await expect(features.getByRole("checkbox", { name: "Audit logs" })).toBeDisabled();
+  await expect(features.getByRole("checkbox", { name: "High availability" })).toBeDisabled();
   await expect(features).toContainText("Not in this server's build of Nether yet.");
   const pages = features.getByRole("checkbox", {
     name: "The console's usage, workspaces and security pages",
@@ -1136,6 +1136,58 @@ test("an instance admin adds a SAML provider in the console, and someone at its 
   expect(problems).toEqual([]);
 });
 
+test("the audit log records sign-ins and its own switch, found and checked in the console", async ({
+  page,
+}) => {
+  const problems = problemsOf(page);
+  await signIn(page, { email: "ada@example.org", password: "a long password" });
+  await page.goto("/admin");
+  const features = page.getByRole("region", { name: "Features" });
+  const audit = features.getByRole("checkbox", { name: "Audit logs" });
+  await expect(audit).toBeEnabled();
+  await audit.check();
+  await expect(page.getByText("Audit logs: on.")).toBeVisible();
+  const log = page.getByRole("region", { name: "Audit log" });
+  // Turning it on is the log's first event, by the admin.
+  await expect(log.getByRole("row").nth(1)).toContainText("instance.feature_changed");
+  await expect(log.getByRole("row").nth(1)).toContainText("Ada");
+
+  // A wrong password, from another client: a failure, by the email typed.
+  const refused = await fetch("http://127.0.0.1:4175/api/sessions", {
+    method: "POST",
+    headers: { "content-type": "application/json", "user-agent": "audit-e2e" },
+    body: JSON.stringify({ email: "nobody@example.org", password: "not the password" }),
+  });
+  expect(refused.status).toBe(401);
+  const filters = log.getByRole("form", { name: "Find events" });
+  await filters.getByRole("combobox", { name: "Outcome" }).selectOption("failure");
+  await filters.getByRole("combobox", { name: "Kind" }).selectOption("signIns");
+  await filters.getByRole("button", { name: "Search" }).click();
+  const failure = log.getByRole("row").filter({ hasText: "nobody@example.org" });
+  await expect(failure).toContainText("session.signed_in");
+  await expect(failure).toContainText("Failed: no such account");
+  await failure.getByText("Details").click();
+  await expect(failure).toContainText("audit-e2e");
+  expect(await violations(page)).toEqual([]);
+
+  // The chain checks, and the check is recorded.
+  await log.getByRole("button", { name: "Check the log" }).click();
+  await expect(log.getByRole("status")).toHaveText(/^Checked \d+ events: every one holds\.$/);
+  await filters.getByRole("combobox", { name: "Outcome" }).selectOption("");
+  await filters.getByRole("combobox", { name: "Kind" }).selectOption("log");
+  await filters.getByRole("button", { name: "Search" }).click();
+  await expect(log.getByRole("row").nth(1)).toContainText("audit.checked");
+  await expect(log).toContainText(
+    "Each is chained to the one before under a key from NETHER_SECRET_KEY.",
+  );
+
+  // Off again, as the other tests found it.
+  await audit.uncheck();
+  await expect(page.getByText("Audit logs: off.")).toBeVisible();
+  await expect(page.getByRole("region", { name: "Audit log" })).toHaveCount(0);
+  expect(problems).toEqual([]);
+});
+
 test("the admin console locks AI to approved endpoints, and the AI tab says so", async ({
   page,
 }) => {
@@ -1168,6 +1220,64 @@ test("the admin console locks AI to approved endpoints, and the AI tab says so",
     await list.fill("");
     await save.click();
     await expect(section.getByRole("status")).toHaveText("Saved: nothing is locked.");
+    await policies.uncheck();
+  }
+  expect(problems).toEqual([]);
+});
+
+test("the admin console sets data policies for every workspace, and for one set apart", async ({
+  page,
+}) => {
+  const problems = problemsOf(page);
+  await signIn(page, { email: "ada@example.org", password: "a long password" });
+  await page.goto("/admin");
+  const policies = page.getByRole("checkbox", { name: "Data policies" });
+  await policies.check();
+  const section = page.getByRole("region", { name: "Data policies" });
+  const every = section.getByRole("group", { name: "Every workspace" });
+  const team = section.getByRole("group", { name: "Team" });
+  /** The Save button of the form a policy's group is in. */
+  const save = (name: string) =>
+    section
+      .locator("form")
+      .filter({ has: page.getByRole("group", { name }) })
+      .getByRole("button", { name: "Save" });
+  try {
+    await every.getByRole("combobox", { name: "Share links" }).selectOption("View only");
+    await every.getByRole("checkbox", { name: "Allow export" }).uncheck();
+    await save("Every workspace").click();
+    await expect(section.getByRole("status")).toHaveText("Saved the policy for Every workspace.");
+
+    await section.getByRole("combobox", { name: "Set a workspace apart" }).selectOption("Team");
+    await section.getByRole("button", { name: "Set apart" }).click();
+    await expect(section.getByRole("status")).toHaveText(
+      "Team is set apart, with every workspace's policy to start from.",
+    );
+    // It starts from every workspace's.
+    await expect(team.getByRole("combobox", { name: "Share links" })).toHaveValue("view");
+    await expect(team.getByRole("checkbox", { name: "Allow export" })).not.toBeChecked();
+    await team.getByRole("combobox", { name: "Share links" }).selectOption("Off");
+    await save("Team").click();
+    await expect(section.getByRole("status")).toHaveText("Saved the policy for Team.");
+    expect(await violations(page)).toEqual([]);
+
+    // Read again, as another visit to the console finds them.
+    await page.reload();
+    await expect(team.getByRole("combobox", { name: "Share links" })).toHaveValue("off");
+    await expect(every.getByRole("combobox", { name: "Share links" })).toHaveValue("view");
+  } finally {
+    // Every workspace open again, as the other tests expect.
+    const join = section.getByRole("button", { name: "Use every workspace's" });
+    if (await join.isVisible()) {
+      await join.click();
+      await expect(section.getByRole("status")).toHaveText(
+        "Team uses every workspace's policy again.",
+      );
+    }
+    await every.getByRole("combobox", { name: "Share links" }).selectOption("Open at any level");
+    await every.getByRole("checkbox", { name: "Allow export" }).check();
+    await save("Every workspace").click();
+    await expect(section.getByRole("status")).toHaveText("Saved the policy for Every workspace.");
     await policies.uncheck();
   }
   expect(problems).toEqual([]);

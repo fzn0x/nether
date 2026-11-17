@@ -310,6 +310,26 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   and marks a provider elsewhere; the server refuses to keep or relay to
   one
   ([ADR 0086](docs/adr/0086-ai-is-locked-to-the-endpoints-an-instance-admin-approves-in-the-apps-and-the-relay.md)).
+- Audit logs, first part: with the `audit` feature on, every sign-in and
+  its failures, permission change, share, export and deletion is recorded
+  with who, what, where, when and from which address, in the same
+  transaction as the change, as the next event of an append-only log
+  chained by hashes under a key from `NETHER_SECRET_KEY`. The admin console
+  finds events by email, kind, workspace, outcome and time, keeps them 365
+  days or as long as an admin says, or `NETHER_AUDIT_RETENTION_DAYS`, and
+  checks the chain. The REST API's reads of notes, rows and search are
+  recorded one event per request. The server's routes tell of their events
+  through a hook enterprise modules listen to, so core never depends on
+  `enterprise/`
+  ([ADR 0081](docs/adr/0081-audit-events-come-from-a-hook-the-server-emits-kept-in-a-chained-append-only-log-and-sent-to-a-siem.md)).
+- Data policies for public sharing and export, on the server: in the
+  console's Data policies section, an instance admin sets for every
+  workspace, or for one set apart, whether share links open at any level,
+  only view, or not at all, whether its published sites are served, and
+  whether the public API gives its notes' text, rows and search passages.
+  A change closes the visits it stops, and `/api/me` tells the apps each
+  workspace's `export`
+  ([ADR 0088](docs/adr/0088-data-policies-set-a-workspaces-retention-legal-hold-public-sharing-and-export-over-its-owners.md)).
 - The page laid out for phones, the mobile apps' first part, in the web
   app first: below 40rem, one note shows under a bar with the drawer's
   button, its title, the quick switcher and the palette; the sidebar is a

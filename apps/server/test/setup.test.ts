@@ -45,6 +45,7 @@ describe("migrate", () => {
       "ai_providers",
       "api_tokens",
       "attachments",
+      "audit_events",
       "backup_state",
       "document_versions",
       "documents",
@@ -77,6 +78,7 @@ describe("migrate", () => {
       "webhook_deliveries",
       "webhooks",
       "workspace_keys",
+      "workspace_policies",
       "workspaces",
     ]);
   });

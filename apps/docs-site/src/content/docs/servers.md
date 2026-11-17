@@ -230,7 +230,9 @@ marked **(by a link)**, since no account stands behind it, and an edit
 link's visitor's caret shows it to the others. Whoever opens a link sees
 nothing else of the workspace, not even other pages' names. **Copy
 link** copies it again, and **Revoke** stops it, which ends what it
-opened. A server opens links only when it serves the web app.
+opened. A server opens links only when it serves the web app. Its admin
+may let a workspace's links only view, or open nothing, by a
+[data policy](../admin/#data-policies).
 
 ### Publishing
 

@@ -6,12 +6,14 @@
 // and their notes are not served: the server cannot read them.
 import type { JsonValue } from "@nether/core";
 import type { FastifyInstance, FastifyRequest } from "fastify";
+import { type DataPolicy, exportOff } from "./dataPolicies.ts";
 import { type Database, type Queryable, type Row, readText, readTime } from "./db.ts";
 import { fail, limitBy, uuidField } from "./http.ts";
 import type * as Markdown from "./markdown.ts";
 import { maxResults, noteContent, search } from "./search.ts";
 import type { SyncControl } from "./sync.ts";
-import { type ApiCaller, apiCaller, callerOf } from "./tokens.ts";
+import { type ApiCaller, apiCaller, callerActor, callerOf } from "./tokens.ts";
+import { type EventTarget, type ServerEvents, originOf } from "./events.ts";
 import { type Level, type Unit, accessible, general } from "./units.ts";
 import { membership } from "./workspaces.ts";
 
@@ -276,6 +278,11 @@ export async function noteAnswer(sync: SyncControl, reached: Reached, row: Row) 
   };
 }
 
+/** What the API reads of a workspace's data policy. */
+export interface ApiPolicies {
+  of(workspace: string): Promise<DataPolicy>;
+}
+
 /** A database the account opens, with its schema as it is now; undefined for none. */
 export async function findDatabase(
   db: Queryable,
@@ -296,8 +303,46 @@ export async function findDatabase(
  * The public API's routes, reading. It gives the checks every route of the
  * API runs, its caller's and its limit, for the routes that write.
  */
-export function registerApi(app: FastifyInstance, db: Database, sync: SyncControl) {
+/** The most notes an event names one by one: the rest it counts. */
+const namedNotes = 50;
+
+export function registerApi(
+  app: FastifyInstance,
+  db: Database,
+  sync: SyncControl,
+  events: ServerEvents,
+  policies: ApiPolicies,
+) {
+  /** Whether a workspace's data policy lets the API give its text (ADR 0088). */
+  const exported = async (workspace: string) => (await policies.of(workspace)).export;
   const caller = apiCaller(db);
+
+  /**
+   * Tells of a request that gave notes' text or rows, before it is answered:
+   * one event for the request, naming up to 50 notes, and how many more
+   * (ADR 0081). An export the log cannot record is not given.
+   */
+  const toldRead = (
+    request: FastifyRequest,
+    action: "note.read_by_api" | "database.read_by_api" | "search.read_by_api",
+    workspace: string | null,
+    notes: readonly string[],
+    target?: EventTarget,
+  ) =>
+    events.emit(
+      db,
+      {
+        action,
+        actor: callerActor(callerOf(request)),
+        workspace,
+        ...(target === undefined ? {} : { target }),
+        details: {
+          notes: [...notes.slice(0, namedNotes)],
+          more: Math.max(0, notes.length - namedNotes),
+        },
+      },
+      originOf(request),
+    );
   // Per account, its tokens and sessions together, so more tokens are not more requests.
   const limit = limitBy(app, "api", 300, "1 minute", (request) => callerOf(request).limitKey);
   const searchLimit = limitBy(
@@ -373,7 +418,14 @@ export function registerApi(app: FastifyInstance, db: Database, sync: SyncContro
       if (!("workspace" in reached)) return fail(reply, reached[0], reached[1]);
       const row = await listedNote(db, reached, request.params.note);
       if (row === undefined) return fail(reply, 404, noNote);
+      if (!(await exported(reached.workspace))) return fail(reply, 403, exportOff);
       const note = await noteAnswer(sync, reached, row);
+      const id = readText(row, "note");
+      await toldRead(request, "note.read_by_api", reached.workspace, [id], {
+        type: "note",
+        id,
+        name: readText(row, "title"),
+      });
       // What `If-Match` sends back to change the note only as it was read.
       reply.header("etag", note.tag);
       if (wantsMarkdown(request)) {
@@ -398,6 +450,13 @@ export function registerApi(app: FastifyInstance, db: Database, sync: SyncContro
         ...(after === undefined ? {} : { after }),
         limit: request.query.limit ?? pageSize,
       });
+      // Their schemas, one event for the page.
+      await toldRead(
+        request,
+        "database.read_by_api",
+        reached.workspace,
+        page.rows.map((row) => readText(row, "note")),
+      );
       return {
         databases: page.rows.map((row) => ({
           id: readText(row, "note"),
@@ -419,6 +478,11 @@ export function registerApi(app: FastifyInstance, db: Database, sync: SyncContro
       if (!("workspace" in reached)) return fail(reply, reached[0], reached[1]);
       const found = await findDatabase(db, sync, reached, request.params.note);
       if (found === undefined) return fail(reply, 404, noDatabase);
+      await toldRead(request, "database.read_by_api", reached.workspace, [found.id], {
+        type: "note",
+        id: found.id,
+        name: readText(found.row, "title"),
+      });
       return {
         id: found.id,
         workspace: reached.workspace,
@@ -438,6 +502,7 @@ export function registerApi(app: FastifyInstance, db: Database, sync: SyncContro
       if (!("workspace" in reached)) return fail(reply, reached[0], reached[1]);
       const found = await findDatabase(db, sync, reached, request.params.note);
       if (found === undefined) return fail(reply, 404, noDatabase);
+      if (!(await exported(reached.workspace))) return fail(reply, 403, exportOff);
       const after = request.query.after === undefined ? undefined : readCursor(request.query.after);
       if (request.query.after !== undefined && after === undefined) {
         return fail(reply, 400, badCursor);
@@ -449,6 +514,14 @@ export function registerApi(app: FastifyInstance, db: Database, sync: SyncContro
         ...(after === undefined ? {} : { after }),
         limit: request.query.limit ?? pageSize,
       });
+      // A page of rows is one event, naming its rows.
+      await toldRead(
+        request,
+        "database.read_by_api",
+        reached.workspace,
+        page.rows.map((row) => readText(row, "note")),
+        { type: "note", id: found.id, name: readText(found.row, "title") },
+      );
       return {
         rows: page.rows.map((row) => ({
           id: readText(row, "note"),
@@ -476,9 +549,26 @@ export function registerApi(app: FastifyInstance, db: Database, sync: SyncContro
         return fail(reply, 404, noWorkspace);
       }
       if (request.query.q.trim() === "") return fail(reply, 400, "Type something to search for.");
-      return search(db, me.userId, request.query.q, request.query.limit, only);
+      // Results show passages of notes: a workspace the policy keeps is left out.
+      if (only !== undefined && !(await exported(only))) return fail(reply, 403, exportOff);
+      const found = await search(
+        db,
+        me.userId,
+        request.query.q,
+        request.query.limit,
+        only,
+        exported,
+      );
+      // The notes whose passages it gave, never what was searched for.
+      await toldRead(
+        request,
+        "search.read_by_api",
+        only ?? null,
+        found.results.map((result) => result.note),
+      );
+      return found;
     },
   );
 
-  return { caller, limit };
+  return { caller, limit, exported };
 }

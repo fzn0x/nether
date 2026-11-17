@@ -99,6 +99,11 @@ curl https://nether.example.org/api/v1/workspaces \
   the trash.
 - **Encrypted workspaces.** They are listed, but the server cannot read
   their notes, so every request for them answers 409. Read them in the app.
+- **Export off.** A server's admin may keep a workspace's text on the
+  server by a [data policy](../admin/#data-policies). Its notes' Markdown,
+  its databases' rows and a search in it then answer 403, a search of
+  every workspace leaves it out, and a write answers with the note's ID,
+  path, title and time, not its text. Lists of notes go on.
 - **Browsers.** The API sends no CORS headers: call it from a script or a
   server, not from a page on another site.
 

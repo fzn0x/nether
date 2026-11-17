@@ -24,8 +24,10 @@ import {
   passwordField,
   uuidField,
 } from "./http.ts";
+import { type ServerEvents, type SessionMethod, accountActor, originOf } from "./events.ts";
 import { hashPassword, verifyPassword } from "./passwords.ts";
 import type { AiEndpoints } from "./aiEndpoints.ts";
+import { type DataPolicies, appsPolicy } from "./dataPolicies.ts";
 import { type SecuritySettings, settingSql } from "./settings.ts";
 
 /**
@@ -64,11 +66,18 @@ export interface NewSession {
   readonly expiresAt: string;
 }
 
-/** Starts a session for a user, as signing in does. */
+/**
+ * Starts a session for a user, as signing in does, and tells of it in the
+ * same transaction, by how it began (ADR 0081): through a single sign-on
+ * provider, `provider` is its ID.
+ */
 export async function startSession(
   db: Queryable,
   userId: string,
   request: FastifyRequest,
+  method: SessionMethod,
+  events: ServerEvents,
+  provider?: string,
 ): Promise<NewSession> {
   const token = newToken();
   const client = (request.headers["user-agent"] ?? "").slice(0, 200);
@@ -78,6 +87,15 @@ export async function startSession(
      VALUES ($1, $2, $3, $4, now() + ${settingSql("sessionLifetimeDays")} * interval '1 day')
      RETURNING expires_at`,
     [randomUUID(), userId, tokenHash(token), client],
+  );
+  await events.emit(
+    db,
+    {
+      action: "session.signed_in",
+      actor: accountActor(userId),
+      details: provider === undefined ? { method } : { method, provider },
+    },
+    originOf(request),
   );
   return { token, expiresAt: readTime(rows[0], "expires_at").toISOString() };
 }
@@ -219,13 +237,16 @@ export const wrongPassword = "That password is not this account's.";
 /**
  * The routes of signing in and out, of one's sessions, and of one's
  * account. The security settings give the sign-in limits; the account's
- * apps read the approved AI endpoints with its workspaces.
+ * apps read the approved AI endpoints with its workspaces. Each sign-in,
+ * and each that fails, is told of (ADR 0081).
  */
 export function registerSessions(
   app: FastifyInstance,
   db: Database,
   security: SecuritySettings,
   aiEndpoints: AiEndpoints,
+  events: ServerEvents,
+  policies: DataPolicies,
 ): void {
   const account = signedIn(db);
 
@@ -260,10 +281,34 @@ export function registerSessions(
       // so the time an answer takes does not tell which addresses have one.
       const matches = await verifyPassword(request.body.password, hash ?? (await decoyHash()));
       if (row === undefined || hash === null || !matches) {
+        // The log may say which, as only instance admins read it.
+        const reason =
+          row === undefined
+            ? "no such account"
+            : hash === null
+              ? "the account has no password"
+              : "wrong password";
+        await events.attempt(
+          db,
+          {
+            action: "session.signed_in",
+            outcome: "failure",
+            reason,
+            actor:
+              row === undefined
+                ? { kind: "anonymous", email: request.body.email.slice(0, 320) }
+                : accountActor(readText(row, "id")),
+            details: { method: "password" },
+          },
+          originOf(request),
+          request.log,
+        );
         return fail(reply, 401, "That email address and password do not match an account.");
       }
       const id = readText(row, "id");
-      const session = await startSession(db, id, request);
+      const session = await db.transaction((tx) =>
+        startSession(tx, id, request, "password", events),
+      );
       return reply.code(201).send({
         ...session,
         user: {
@@ -297,7 +342,15 @@ export function registerSessions(
 
   // Signing out.
   app.delete("/api/sessions/current", { preHandler: account }, async (request, reply) => {
-    await db.query("DELETE FROM sessions WHERE id = $1", [accountOf(request).sessionId]);
+    const me = accountOf(request);
+    await db.transaction(async (tx) => {
+      await tx.query("DELETE FROM sessions WHERE id = $1", [me.sessionId]);
+      await events.emit(
+        tx,
+        { action: "session.signed_out", actor: accountActor(me.id) },
+        originOf(request),
+      );
+    });
     if (readCookies(request.headers.cookie).has(sessionCookie)) clearSessionCookies(reply);
     return reply.code(204).send();
   });
@@ -315,18 +368,33 @@ export function registerSessions(
         return fail(reply, 403, wrongPassword);
       }
       const { session } = request.body;
-      if (session === undefined) {
-        await db.query("DELETE FROM sessions WHERE user_id = $1 AND id <> $2", [
-          me.id,
-          me.sessionId,
-        ]);
-        return reply.code(204).send();
-      }
-      const { rows } = await db.query(
-        "DELETE FROM sessions WHERE id = $1 AND user_id = $2 RETURNING id",
-        [session.toLowerCase(), me.id],
-      );
-      if (rows.length === 0) return fail(reply, 404, "This account has no such session.");
+      const ended = await db.transaction(async (tx) => {
+        const { rows } =
+          session === undefined
+            ? await tx.query("DELETE FROM sessions WHERE user_id = $1 AND id <> $2 RETURNING id", [
+                me.id,
+                me.sessionId,
+              ])
+            : await tx.query("DELETE FROM sessions WHERE id = $1 AND user_id = $2 RETURNING id", [
+                session.toLowerCase(),
+                me.id,
+              ]);
+        if (session !== undefined && rows.length === 0) return false;
+        await events.emit(
+          tx,
+          {
+            action: "session.revoked",
+            actor: accountActor(me.id),
+            details: {
+              sessions: rows.map((row) => readText(row, "id")),
+              all: session === undefined,
+            },
+          },
+          originOf(request),
+        );
+        return true;
+      });
+      if (!ended) return fail(reply, 404, "This account has no such session.");
       return reply.code(204).send();
     },
   );
@@ -339,16 +407,25 @@ export function registerSessions(
         WHERE m.user_id = $1 ORDER BY w.created_at, w.name`,
       [me.id],
     );
+    const policed = await policies.on();
+    const workspaces = await Promise.all(
+      rows.map(async (row) => {
+        const id = readText(row, "id");
+        return {
+          id,
+          name: readText(row, "name"),
+          role: readText(row, "role"),
+          encryption: readText(row, "encryption"),
+          // Whether its members' apps offer AI in it (ADR 0068).
+          ai: readBoolean(row, "ai"),
+          // What its members' apps keep to of its data policy, or null (ADR 0088).
+          policies: policed ? appsPolicy(await policies.of(id)) : null,
+        };
+      }),
+    );
     return {
       user: { id: me.id, name: me.name, email: me.email, instanceAdmin: me.instanceAdmin },
-      workspaces: rows.map((row) => ({
-        id: readText(row, "id"),
-        name: readText(row, "name"),
-        role: readText(row, "role"),
-        encryption: readText(row, "encryption"),
-        // Whether its members' apps offer AI in it (ADR 0068).
-        ai: readBoolean(row, "ai"),
-      })),
+      workspaces,
       // The only addresses every app may send AI requests to, or null (ADR 0086).
       aiEndpoints: await aiEndpoints.locked(),
     };
@@ -373,6 +450,11 @@ export function registerSessions(
           me.id,
           me.sessionId,
         ]);
+        await events.emit(
+          tx,
+          { action: "account.password_changed", actor: accountActor(me.id) },
+          originOf(request),
+        );
       });
       return reply.code(204).send();
     },

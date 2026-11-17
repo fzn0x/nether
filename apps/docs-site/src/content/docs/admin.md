@@ -191,6 +191,7 @@ nothing through SAML, whose answers cannot say they verified it.
 
 Making people sign in only through single sign-on, refusing their
 passwords and codes, comes in a later version.
+
 ## AI endpoints
 
 With **Data policies** on, the console shows **AI endpoints**: the
@@ -218,3 +219,92 @@ The lock keeps Nether's apps to your endpoints. It cannot stop another
 program on someone's computer from reading their vault's files, or an app
 older than this one, which does not know the lock. Network rules on your
 organization's devices close that gap.
+
+## Data policies
+
+With **Data policies** on, the console also shows a **Data policies**
+section: how far your workspaces are shared in public, and whether their
+text leaves the server by export. Set a policy for **Every workspace**,
+then set any workspace apart with its own: pick it under **Set a
+workspace apart** and choose **Set apart**. It starts from every
+workspace's policy. **Use every workspace's** puts it back. Each form saves
+on its own.
+
+| Setting | What it does |
+| --- | --- |
+| Share links | **Open at any level**, **View only**, or **Off** |
+| Serve published sites | Off: no site of the workspace is served or published |
+| Allow export | Off: the public API gives none of the workspace's text |
+
+A workspace's owners keep their own switches, as publishing off; a policy
+only narrows them, and they cannot change it.
+
+- **Share links, View only.** A new link may only view, and a link made to
+  comment or edit opens to view. People visiting by a link are
+  disconnected when you save, and connect again only to view.
+- **Share links, Off.** No new link, and every link of the workspace tells
+  its visitor that the server's policy stops it. The links are kept, and
+  open again when you allow them.
+- **Published sites off.** The workspace's sites answer as not published,
+  on your server's address and on their own domains, and no one publishes.
+  The sites are kept, and come back when you allow them.
+- **Export off.** The [public API](../api/) refuses a note's Markdown, a
+  database's rows, and a search in the workspace, with 403. A search of
+  every workspace leaves it out. Lists of notes' names and paths, and
+  writes, go on.
+
+A change holds at once on the server you saved it on, and within five
+seconds on the others. Turning **Data policies** off narrows nothing, and
+keeps what you set for when it is on again.
+
+The apps' own export, and the Share dialog saying why a control is gone,
+come in a later version, as do how long history and the trash are kept
+and legal hold. A desktop vault's files are on its device, the person's
+own: no policy stops another program from reading them. Device management
+on your organization's computers is the tool for that.
+
+## Audit logs
+
+With **Audit logs** on, the server keeps a log of every sign-in, permission
+change, share, export and deletion, and the console shows it under **Audit
+log**, the newest first. Each event says who did it, what they did, in
+which workspace, when, and from which address and client. It keeps IDs
+and names, never what a note says, a search, a password or a token.
+
+| Kind | What it records |
+| --- | --- |
+| Sign-ins | Signing in, by password, an emailed code, OpenID Connect, single sign-on, an invitation or setup, and each failure with why; signing out; sessions ended; a password changed; a share link opened, or refused |
+| Permission changes | Members joined, removed or leaving, and their roles; a space's or a page's access given or taken; teamspaces, pages shared on their own, private spaces; a note moved where others may open it; an encrypted workspace's key given to a member; workspaces made or changed; API tokens made; enterprise features turned on or off |
+| Shares | Share links made and revoked; sites published, changed and taken down, and their domains; publishing allowed or not; invitations made, revoked and accepted; webhooks |
+| Exports | Each request to the [REST API](../api/) that gives notes' text, rows or search results, naming up to 50 notes and counting the rest; the server's backups |
+| Deletions | Notes deleted, in the apps or through the API; API tokens revoked |
+
+A change is recorded in the same step as the change itself: with the log
+on, a change it cannot record does not happen. An end-to-end encrypted
+workspace's notes are named by their IDs only, and its notes deleted in the
+apps are not seen, since the server cannot read their list.
+
+### Finding events
+
+Find events by **Email**, as an account had it or as someone typed it to
+sign in; by **Kind**; by **Workspace**; by **Outcome**; and by the days
+**From** and **To**. Fifty show at a time: **Older** shows the next. Each
+event's **Details** show its address, client and what changed, as a role
+from and to. **Only theirs** beside someone shows their events alone.
+
+### Keeping the log
+
+The log keeps its events 365 days. Change it under **Keep events for**,
+from 30 days to ten years, or set `NETHER_AUDIT_RETENTION_DAYS` in the
+server's settings to fix it there. Once an hour the server deletes the
+events older than that, and records that it did.
+
+The log is append-only: the server never changes or deletes an event but
+by that hourly purge, and the database refuses anything else. Each event
+is chained to the one before by a hash, under a key from
+`NETHER_SECRET_KEY` when the server has one, so a changed, removed or added
+event shows. **Check the log** checks the whole chain and names the first
+event that does not hold. Once an hour the server also writes the chain's
+last event to its own log, so events cut off the end show against those
+lines. Changing settings, adding a destination and checking the log are
+events too; searching is not.

@@ -3,16 +3,19 @@
 // /s#<token>. Those with full access to the page make, list and revoke its
 // links. Opening one starts a visit: its token in an HttpOnly cookie, kept
 // as its hash, which the sync server takes for that page's unit alone, and
-// the attachments route for its workspace's files, by their hash.
+// the attachments route for its workspace's files, by their hash. A data
+// policy (ADR 0088) may let a workspace's links only view, or open nothing.
 import { randomUUID } from "node:crypto";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { readCookies } from "./cookies.ts";
+import { type DataPolicy, linksOff, linksViewOnly } from "./dataPolicies.ts";
 import { type Database, type Queryable, readText, readTextOrNull, readTime } from "./db.ts";
 import { fail, limitByAddress, passwordField, tokenField, uuidField } from "./http.ts";
 import { hashPassword, verifyPassword } from "./passwords.ts";
 import { accountOf, newToken, signedIn, tokenHash } from "./sessions.ts";
 import { accessible, vaultDocument } from "./units.ts";
 import { membership } from "./workspaces.ts";
+import { type ServerEvents, accountActor, originOf } from "./events.ts";
 
 export const linkPrefix = "nether_link_";
 export const visitPrefix = "nether_visit_";
@@ -52,11 +55,31 @@ function isLinkLevel(value: unknown): value is LinkLevel {
   return value === "view" || value === "comment" || value === "edit";
 }
 
-/** The visit a cookie's token gives, while its link lasts. */
+/** What links read of a workspace's data policy. */
+export interface LinkPolicies {
+  of(workspace: string): Promise<DataPolicy>;
+}
+
+/** A link's level as its workspace's policy lets it open: only to view, or not at all. */
+export function levelAllowed(level: LinkLevel, policy: DataPolicy): LinkLevel | undefined {
+  if (policy.shareLinks === "off") return undefined;
+  return policy.shareLinks === "view" ? "view" : level;
+}
+
+/** The visit a cookie's token gives, while its link lasts and its workspace's policy lets it open. */
 export async function visitOf(
   db: Queryable,
+  policies: LinkPolicies,
   token: string | undefined,
 ): Promise<Visit | undefined> {
+  const visit = await storedVisit(db, token);
+  if (visit === undefined) return undefined;
+  const level = levelAllowed(visit.level, await policies.of(visit.workspace));
+  return level === undefined ? undefined : { ...visit, level };
+}
+
+/** The visit a cookie's token gives, while its link lasts, at the level the link was made with. */
+async function storedVisit(db: Queryable, token: string | undefined): Promise<Visit | undefined> {
   if (token?.startsWith(visitPrefix) !== true) return undefined;
   const { rows } = await db.query(
     `SELECT l.id, l.workspace_id, l.unit_id, l.level, u.root_note
@@ -190,9 +213,31 @@ export function registerLinks(
     readonly publicUrl: string | null;
     readonly webApp: boolean;
     readonly disconnect: (userId: string) => void;
+    readonly events: ServerEvents;
+    readonly policies: LinkPolicies & {
+      listen(listener: (workspaces: readonly string[] | null) => void): void;
+    };
   },
 ): void {
+  const { events } = options;
   const account = signedIn(db);
+  const { policies } = options;
+
+  // A policy that changes closes the visits of the workspaces it holds for,
+  // so each connects again at the level the policy now allows, or not at all.
+  policies.listen((workspaces) => {
+    db.query(
+      "SELECT id FROM share_links WHERE $1::uuid[] IS NULL OR workspace_id = ANY($1::uuid[])",
+      [workspaces],
+    ).then(
+      ({ rows }) => {
+        for (const row of rows) options.disconnect(visitor(readText(row, "id")));
+      },
+      (error: unknown) => {
+        app.log.error({ err: error }, "Could not close the visits a data policy changed");
+      },
+    );
+  });
 
   /** The page's unit, when the account has full access to it; else why not. */
   async function managed(request: FastifyRequest<{ Params: { workspace: string; unit: string } }>) {
@@ -242,7 +287,11 @@ export function registerLinks(
           WHERE l.unit_id = $1 ORDER BY l.created_at, l.id`,
         [found.unit],
       );
-      return { links: listed(request, rows) };
+      // What the workspace's data policy lets its links do, for the page to say.
+      return {
+        links: listed(request, rows),
+        policy: (await policies.of(found.workspace)).shareLinks,
+      };
     },
   );
 
@@ -255,6 +304,9 @@ export function registerLinks(
       }
       const found = await managed(request);
       if (!("unit" in found)) return fail(reply, found[0], found[1]);
+      const allowed = levelAllowed(request.body.level, await policies.of(found.workspace));
+      if (allowed === undefined) return fail(reply, 403, linksOff);
+      if (allowed !== request.body.level) return fail(reply, 403, linksViewOnly);
       const expires =
         request.body.expiresAt === undefined ? null : new Date(request.body.expiresAt);
       if (expires !== null && expires.getTime() <= Date.now()) {
@@ -286,6 +338,22 @@ export function registerLinks(
             accountOf(request).id,
           ],
         );
+        await events.emit(
+          tx,
+          {
+            action: "share_link.created",
+            actor: accountActor(accountOf(request).id),
+            workspace: found.workspace,
+            target: { type: "share_link", id },
+            details: {
+              unit: found.unit,
+              level: request.body.level,
+              password: password !== null,
+              expiresAt: expires === null ? null : expires.toISOString(),
+            },
+          },
+          originOf(request),
+        );
         return true;
       });
       if (!made) {
@@ -308,10 +376,27 @@ export function registerLinks(
       const found = await managed(request);
       if (!("unit" in found)) return fail(reply, found[0], found[1]);
       const link = request.params.link.toLowerCase();
-      const { rows } = await db.query(
-        "DELETE FROM share_links WHERE id = $1 AND unit_id = $2 RETURNING id",
-        [link, found.unit],
-      );
+      const rows = await db.transaction(async (tx) => {
+        const revoked = await tx.query(
+          "DELETE FROM share_links WHERE id = $1 AND unit_id = $2 RETURNING id, level",
+          [link, found.unit],
+        );
+        const row = revoked.rows[0];
+        if (row !== undefined) {
+          await events.emit(
+            tx,
+            {
+              action: "share_link.revoked",
+              actor: accountActor(accountOf(request).id),
+              workspace: found.workspace,
+              target: { type: "share_link", id: link },
+              details: { unit: found.unit, level: readText(row, "level") },
+            },
+            originOf(request),
+          );
+        }
+        return revoked.rows;
+      });
       if (rows.length === 0) return fail(reply, 404, "This page has no such link.");
       options.disconnect(visitor(link));
       return reply.code(204).send();
@@ -327,7 +412,27 @@ export function registerLinks(
     },
     async (request, reply) => {
       const { token, password } = request.body;
-      if (!token.startsWith(linkPrefix)) return fail(reply, 404, noPage);
+      /** A link that would not open, told as a visit refused. */
+      const refused = async (reason: string, link?: string, workspace?: string) => {
+        await events.attempt(
+          db,
+          {
+            action: "share_link.opened",
+            outcome: "failure",
+            reason,
+            actor:
+              link === undefined ? { kind: "anonymous" } : { kind: "visitor", link, name: null },
+            ...(workspace === undefined ? {} : { workspace }),
+            ...(link === undefined ? {} : { target: { type: "share_link", id: link } }),
+          },
+          originOf(request),
+          request.log,
+        );
+      };
+      if (!token.startsWith(linkPrefix)) {
+        await refused("no such link");
+        return fail(reply, 404, noPage);
+      }
       const { rows } = await db.query(
         `SELECT l.id, l.workspace_id, l.unit_id, l.level, l.password_hash, l.expires_at, u.root_note
            FROM share_links l
@@ -339,28 +444,61 @@ export function registerLinks(
       );
       const row = rows[0];
       const page = row === undefined ? null : readTextOrNull(row, "root_note");
-      if (row === undefined || page === null) return fail(reply, 404, noPage);
+      if (row === undefined || page === null) {
+        await refused("no such link, or it expired");
+        return fail(reply, 404, noPage);
+      }
+      const workspace = readText(row, "workspace_id");
+      const level = levelAllowed(
+        isLinkLevel(row.level) ? row.level : "view",
+        await policies.of(workspace),
+      );
+      // Told before its password is asked, as it opens nothing whatever it is.
+      if (level === undefined) {
+        await refused("the server's data policy allows no links", readText(row, "id"), workspace);
+        return fail(reply, 403, linksOff);
+      }
       const hash = readTextOrNull(row, "password_hash");
       if (hash !== null) {
+        // Asked for the password first: not a refusal yet.
         if (password === undefined) return fail(reply, 401, needsPassword);
-        if (!(await verifyPassword(password, hash))) return fail(reply, 401, wrongLinkPassword);
+        if (!(await verifyPassword(password, hash))) {
+          await refused("wrong password", readText(row, "id"), readText(row, "workspace_id"));
+          return fail(reply, 401, wrongLinkPassword);
+        }
       }
       const link = readText(row, "id");
       const linkExpires = row.expires_at === null ? undefined : readTime(row, "expires_at");
       const longest = Date.now() + visitDays * 86_400_000;
       const ends = new Date(Math.min(linkExpires?.getTime() ?? longest, longest));
       const visit = `${visitPrefix}${newToken()}`;
-      await db.query(
-        "INSERT INTO link_visits (token_hash, link_id, expires_at) VALUES ($1, $2, $3)",
-        [tokenHash(visit), link, ends],
-      );
+      await db.transaction(async (tx) => {
+        await tx.query(
+          "INSERT INTO link_visits (token_hash, link_id, expires_at) VALUES ($1, $2, $3)",
+          [tokenHash(visit), link, ends],
+        );
+        await events.emit(
+          tx,
+          {
+            action: "share_link.opened",
+            actor: { kind: "visitor", link, name: null },
+            workspace: readText(row, "workspace_id"),
+            target: { type: "share_link", id: link },
+            details: {
+              unit: readText(row, "unit_id"),
+              level: isLinkLevel(row.level) ? row.level : "view",
+            },
+          },
+          originOf(request),
+        );
+      });
       setVisitCookie(reply, request, visit, ends);
       const unit = readText(row, "unit_id");
       return {
-        workspace: readText(row, "workspace_id"),
+        workspace,
         unit,
         document: vaultDocument(unit),
-        level: isLinkLevel(row.level) ? row.level : "view",
+        level,
         page,
         expiresAt: ends.toISOString(),
       };
@@ -369,13 +507,15 @@ export function registerLinks(
 
   // What the visit a page's cookie carries opens, for the page to show again on reload.
   app.get("/api/links/visit", async (request, reply) => {
-    const visit = await visitOf(db, visitToken(request.headers.cookie));
+    const visit = await storedVisit(db, visitToken(request.headers.cookie));
     if (visit === undefined) return fail(reply, 401, noPage);
+    const level = levelAllowed(visit.level, await policies.of(visit.workspace));
+    if (level === undefined) return fail(reply, 403, linksOff);
     return {
       workspace: visit.workspace,
       unit: visit.unit,
       document: vaultDocument(visit.unit),
-      level: visit.level,
+      level,
       page: visit.page,
     };
   });

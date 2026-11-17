@@ -126,11 +126,9 @@ export async function indexPaths(
   db: Queryable,
   workspaceId: string,
   unit: string,
-  state: Uint8Array,
-  before: Uint8Array | undefined,
+  now: ReadonlyMap<string, string>,
+  was: ReadonlyMap<string, string>,
 ): Promise<void> {
-  const now = pathsOf(state);
-  const was = pathsOf(before);
   for (const [id, path] of now) {
     if (was.get(id) === path) continue;
     await db.query(
@@ -170,9 +168,9 @@ export async function backfillSearch(db: Database): Promise<number> {
       const workspace = readText(row, "workspace_id");
       const name = readText(row, "name");
       const state = readBytes(row, "state");
-      if (name === "vault") await indexPaths(tx, workspace, general, state, undefined);
+      if (name === "vault") await indexPaths(tx, workspace, general, pathsOf(state), new Map());
       else if (name.startsWith("vault.")) {
-        await indexPaths(tx, workspace, name.slice("vault.".length), state, undefined);
+        await indexPaths(tx, workspace, name.slice("vault.".length), pathsOf(state), new Map());
       } else await indexNote(tx, workspace, name, state);
     }
     return rows.length;
@@ -260,7 +258,8 @@ export interface SearchResult {
 /**
  * Searches the notes an account may open, in every workspace it is a member
  * of that the server can read, or in `only` that one; names the encrypted
- * ones it could not.
+ * ones it could not. `searched`, when given, leaves out each workspace it
+ * says no to.
  */
 export async function search(
   db: Queryable,
@@ -268,6 +267,7 @@ export async function search(
   text: string,
   limit = maxResults,
   only?: string,
+  searched?: (workspace: string) => Promise<boolean>,
 ): Promise<{ readonly results: SearchResult[]; readonly encrypted: string[] }> {
   const { rows: workspaces } = await db.query(
     `SELECT w.id, w.name, w.encryption FROM memberships m
@@ -285,6 +285,7 @@ export async function search(
       encrypted.push(readText(row, "name"));
       continue;
     }
+    if (searched !== undefined && !(await searched(id))) continue;
     for (const unit of (await accessible(db, userId, id)).levels.keys()) {
       pairs.push({ workspace: id, unit });
     }

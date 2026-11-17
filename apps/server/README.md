@@ -78,6 +78,10 @@ token as `Authorization: Bearer <token>`. Every error is
 | `PUT /api/admin/security` | instance admin | Sets settings by name, all or none: 400 for one unknown or out of range, 409 for one its variable pins; gives the settings as they are then |
 | `GET /api/admin/ai-endpoints` | instance admin | With the `policies` feature on: the approved AI `endpoints`, and `pinnedBy`, `NETHER_AI_ENDPOINTS` or `null` (ADR 0086) |
 | `PUT /api/admin/ai-endpoints` | instance admin | Sets the approved `endpoints`, 20 at most, each an http or https address; an empty list locks nothing; 400 for one that is not an address, 409 while the variable pins them |
+| `GET /api/admin/data-policies` | instance admin | With the `policies` feature on: the policy for `every` workspace, each workspace set `apart` with its `name` and `policy`, and the `others` (ADR 0088). A policy is `shareLinks` (`on`, `view` or `off`), `sites` and `export` |
+| `PUT /api/admin/data-policies` | instance admin | Sets every workspace's policy, all three settings; closes the visits of the links it narrows |
+| `PUT /api/admin/data-policies/workspaces/:id` | instance admin | Sets a workspace apart with its own policy; 404 for no such workspace |
+| `DELETE /api/admin/data-policies/workspaces/:id` | instance admin | Puts a workspace back under every workspace's policy; 404 when it was not apart |
 | `GET /api/setup`, `POST /api/setup` | | First-run setup, above |
 | `GET /api/sign-in-methods` | | Which ways to sign in this server offers: `password`, `emailCode` when it can send email, and `oidc` with the provider's name |
 | `POST /api/sessions` | | Signs in with `email` and `password`; gives `token` and `expiresAt` |
@@ -89,7 +93,7 @@ token as `Authorization: Bearer <token>`. Every error is
 | `GET /api/sessions` | yes | The account's sessions, the current one marked |
 | `DELETE /api/sessions/current` | yes | Signs out |
 | `POST /api/sessions/revoke` | yes | Ends the session `session`, or every other one, with `password` |
-| `GET /api/me` | yes | The account, the workspaces it is in with its role in each, and `aiEndpoints`: the only addresses its apps may send AI requests to, or `null` when nothing is locked (ADR 0086) |
+| `GET /api/me` | yes | The account, the workspaces it is in with its role in each and the `policies` its apps keep to, `{ "export": false }` or `null` (ADR 0088), and `aiEndpoints`: the only addresses its apps may send AI requests to, or `null` when nothing is locked (ADR 0086) |
 | `PUT /api/me/password` | yes | Changes the password from `current`; ends every other session |
 | `POST /api/workspaces/:id/invitations` | owner, admin; full on the page | Invites someone as `admin` or `member`, for one `email` or anyone; or as a `guest` to one shared page (`unit`) at a `level`; gives `token` |
 | `GET /api/workspaces/:id/invitations` | owner, admin | The invitations not yet accepted |
@@ -519,6 +523,13 @@ endpoints section otherwise sets (ADR 0086). They lock AI only while the
 `policies` feature is on: the relay then refuses, and does not keep, a
 provider at any other address, and `/api/me` gives the list to the apps,
 which keep to it.
+
+The data policies (ADR 0088) hold only while the `policies` feature is on
+too. A workspace's share links may only view, or open nothing, its sites
+may not be served, and the public API may keep its notes' text, rows and
+search passages, answering 403. `/api/me` gives each workspace's
+`policies`, `{ "export": false }` for one, or `null` while the feature is
+off. Each node reads them again within five seconds.
 
 Set `NETHER_TRUST_PROXY` whenever the server is behind a proxy, or every
 client shares the proxy's address and its limits on signing in. Use `on`
