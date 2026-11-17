@@ -133,12 +133,15 @@ export type AlsoIn = (tx: Queryable, before: DataPolicy | undefined) => Promise<
 
 export class DataPolicies {
   readonly #db: Database;
-  readonly #policiesOn: () => Promise<boolean>;
+  readonly #policiesOn: (db?: Queryable) => Promise<boolean>;
   readonly #listeners: PoliciesListener[] = [];
   #kept: { readonly at: number; readonly policies: Promise<Policies> } | undefined;
 
-  /** `policiesOn` says whether the `policies` feature is on now. */
-  constructor(db: Database, policiesOn: () => Promise<boolean>) {
+  /**
+   * `policiesOn` says whether the `policies` feature is on now, reading
+   * through `db` when it reads at all, as within a transaction.
+   */
+  constructor(db: Database, policiesOn: (db?: Queryable) => Promise<boolean>) {
     this.#db = db;
     this.#policiesOn = policiesOn;
   }
@@ -173,6 +176,31 @@ export class DataPolicies {
   /** Whether any policy holds: the feature is on. */
   on(): Promise<boolean> {
     return this.#policiesOn();
+  }
+
+  /**
+   * Which of `workspaces` are on legal hold now, read through `tx` and not
+   * from what is kept, its rows locked FOR SHARE: a hold committed before
+   * is seen, and one set on those rows meanwhile waits for `tx` to end.
+   * None while the feature is off, as its switch says, kept a few seconds.
+   * A removal that a hold must stop asks this, as a directory's (ADR 0085).
+   */
+  async heldIn(tx: Queryable, workspaces: readonly string[]): Promise<Set<string>> {
+    if (workspaces.length === 0 || !(await this.#policiesOn(tx))) return new Set();
+    const every = await tx.query("SELECT value FROM instance_settings WHERE key = $1 FOR SHARE", [
+      everyKey,
+    ]);
+    const apart = await tx.query(
+      "SELECT workspace_id, policy FROM workspace_policies WHERE workspace_id = ANY($1::uuid[]) FOR SHARE",
+      [workspaces],
+    );
+    const forEvery = readPolicy(every.rows[0]?.value);
+    const setApart = new Map(
+      apart.rows.map((row) => [readText(row, "workspace_id"), readPolicy(row.policy)]),
+    );
+    return new Set(
+      workspaces.filter((workspace) => (setApart.get(workspace) ?? forEvery).legalHold),
+    );
   }
 
   /** Every policy, as the purges read them; undefined while the feature is off. */
