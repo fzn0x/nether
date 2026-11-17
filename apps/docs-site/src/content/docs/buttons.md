@@ -73,6 +73,14 @@ as its manifest declares it. Some of the app's own:
 Obsidian's own commands, as `editor:toggle-bold`, are not Nether's: a
 button that names one says Nether has no such command.
 
+A button that runs commands asks first, since anyone who may edit the note
+wrote it: "This button runs: Open today's note. Run it?" It names each
+command as the command palette does. **Cancel** runs none of the button's
+actions. After **Run**, this device runs that button without asking again,
+until its block changes. A command that a plugin from the vault's folder
+adds is asked about each time, since the plugin's code can change. The
+other actions run without asking.
+
 ### Make a note
 
 ```yaml

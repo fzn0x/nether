@@ -182,7 +182,9 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   its ID, a new note from a template or blank, a property of its note or
   another, a link opened, a wait. One that fails stops the rest and says
   why, and a button that would run JavaScript, ask for input or change
-  the note's text says so and runs nothing.
+  the note's text says so and runs nothing. A button that runs commands
+  asks first, naming them: once on each device for the button as it is,
+  and each time for a command a vault's plugin adds.
 
 ### Changed
 
