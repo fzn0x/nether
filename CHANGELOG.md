@@ -265,6 +265,15 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   and it stays in the file until removed. The
   Buttons plugin is now Buttons and triggers, and runs them
   ([ADR 0072](docs/adr/0072-buttons-are-meta-bind-button-blocks-and-triggers-are-schema-rules-run-where-the-change-is-made.md)).
+- The enterprise switch and the admin console, first part: every image
+  has every enterprise feature, each off until an instance admin turns it
+  on in the admin console at `/admin`, or `NETHER_ENTERPRISE_<FEATURE>`
+  pins it on or off. A switch takes effect at once, on every node within
+  a few seconds. The console's Features page lists each feature and why it
+  is set as it is; with its own pages on, it shows the server's usage:
+  accounts, those active in the last 30 days, workspaces, notes and
+  attachments. An instance admin opens it from Servers and signing in
+  ([ADR 0079](docs/adr/0079-enterprise-features-are-in-every-image-off-and-switched-in-the-console-or-pinned-by-the-environment.md)).
 
 ### Changed
 
