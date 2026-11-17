@@ -33,6 +33,8 @@ services:
       NETHER_REDIS_URL: redis://valkey:6379
       NETHER_HOST: 0.0.0.0
       NETHER_PORT: "3000"
+      # One node, with no other to take its traffic: stop without draining.
+      NETHER_DRAIN_SECONDS: ${NETHER_DRAIN_SECONDS:-0}
     volumes:
       # Attachments in /data/attachments and backups in /data/backups.
       - files:/data

@@ -108,16 +108,56 @@ describe("migrate", () => {
     ]);
   });
 
-  it("will not start on a database a newer server migrated", async () => {
+  it("runs on a database a newer server migrated, unless a step since needs a newer server", async () => {
     const db = await database();
     await migrate(db);
-    await db.query("INSERT INTO schema_migrations (version, name) VALUES ($1, 'from the future')", [
-      schemaVersion + 1,
-    ]);
+    const next = schemaVersion + 1;
+    // A newer server's step that only adds: this server runs on it, as the
+    // previous release's pods do during a rolling upgrade (ADR 0082).
+    await db.query("INSERT INTO schema_migrations (version, name) VALUES ($1, 'added')", [next]);
+    expect(await migrate(db)).toEqual({ from: next, to: next });
+    // One that removes what servers before this one read.
+    await db.query(
+      "INSERT INTO schema_migrations (version, name, readable_from) VALUES ($1, 'removed', $2)",
+      [next + 1, schemaVersion],
+    );
+    expect(await migrate(db)).toEqual({ from: next + 1, to: next + 1 });
+    // One that removes what this server reads.
+    await db.query(
+      "INSERT INTO schema_migrations (version, name, readable_from) VALUES ($1, 'removed', $2)",
+      [next + 2, next],
+    );
     await expect(migrate(db)).rejects.toThrow(NewerDatabase);
     await expect(migrate(db)).rejects.toThrow(
-      `The database's schema is at version ${String(schemaVersion + 1)}, newer than this server's ${String(schemaVersion)}`,
+      `The database's schema is at version ${String(next + 2)}, newer than this server's ${String(schemaVersion)}, and needs a server at schema version ${String(next)} or later`,
     );
+  });
+
+  it("adds readable_from to the record an older server made, and keeps each step's", async () => {
+    const db = await database();
+    await db.query(`
+      CREATE TABLE schema_migrations (
+        version integer PRIMARY KEY,
+        name text NOT NULL,
+        applied_at timestamptz NOT NULL DEFAULT now()
+      )
+    `);
+    expect(await migrate(db)).toEqual({ from: 0, to: schemaVersion });
+    const { rows } = await db.query(
+      "SELECT version, readable_from FROM schema_migrations ORDER BY version",
+    );
+    expect(rows).toEqual(
+      migrations.map((item) => ({
+        version: item.version,
+        readable_from: item.readableFrom ?? null,
+      })),
+    );
+    // A contract step names a schema before its own.
+    for (const migration of migrations) {
+      if (migration.readableFrom === undefined) continue;
+      expect(migration.readableFrom).toBeGreaterThanOrEqual(1);
+      expect(migration.readableFrom).toBeLessThan(migration.version);
+    }
   });
 });
 
