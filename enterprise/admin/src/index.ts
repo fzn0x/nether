@@ -43,12 +43,12 @@ const roleBody = {
   properties: { role: { type: "string", enum: roles } },
 } as const;
 
-// Settings by name; which names, and each value's range, the settings check.
+// Settings by name. The settings check each name and value themselves: a
+// type here would have Fastify coerce values, as false to 0, before they do.
 const securityBody = {
   type: "object",
   minProperties: 1,
   maxProperties: 10,
-  additionalProperties: { type: ["integer", "boolean"] },
 } as const;
 
 /** What the server holds, as the console's Usage page shows it. */
