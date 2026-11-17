@@ -978,6 +978,8 @@ export const messages = {
   providerUnverified: "The provider has not verified your email address.",
   providerInvitation: "The invitation was used, withdrawn or has expired.",
   providerOtherAddress: "The invitation is for another email address.",
+  providerNoAddress:
+    "The provider gave no email address, which the server needs to find your account.",
   providerFailed: "The server could not use the provider's answer.",
   providerUnknown: "Signing in failed: {error}.",
   providerNeedsApp: "Signing in with a provider needs the desktop app.",
