@@ -131,8 +131,10 @@ describe("numbers in commit order", () => {
         await new Promise((resolve) => setTimeout(resolve, 100));
         held.release();
         const [earlier, later] = await Promise.all([before, after]);
-        const earlierNumbers = typeof earlier === "number" ? [earlier] : earlier;
-        const laterNumbers = typeof later === "number" ? [later] : later;
+        const numbersOf = (done: number | readonly { readonly seq: number }[]) =>
+          typeof done === "number" ? [done] : done.map((each) => each.seq);
+        const earlierNumbers = numbersOf(earlier);
+        const laterNumbers = numbersOf(later);
         // Neither waited on the other forever, and the later drew after the earlier committed.
         expect(Math.min(...laterNumbers)).toBeGreaterThan(Math.max(...earlierNumbers));
       }
