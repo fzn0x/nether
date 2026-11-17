@@ -16,8 +16,9 @@ organized:
   ([ADR 0079](../docs/adr/0079-enterprise-features-are-in-every-image-off-and-switched-in-the-console-or-pinned-by-the-environment.md)).
 - `server/` is the image's entry: it starts the server with every
   feature's module, each off until switched on. A module is a Fastify
-  plugin for one feature, given the database and a check that answers 404
-  while its feature is off.
+  plugin for one feature, given what the server shares with every module,
+  `EnterpriseServices` (the database, and closing an account's sync
+  connections), and a check that answers 404 while its feature is off.
 
 | Folder | What it holds |
 | --- | --- |
