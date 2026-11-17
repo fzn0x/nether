@@ -3,10 +3,13 @@
 // as the plugin API grows to hold them. Each is a folder holding its
 // manifest, read at startup, and its code, loaded when first used. A
 // built-in plugin's version changes with what it does, not with the app's.
-// Their order is the order of their panels and slash menu entries.
+// Their order is the order of their panels and slash menu entries. The
+// integrations come last: they run apart, in the sandbox, as a vault's
+// plugins do, and are off until a vault turns them on (ADR 0090).
 import assigned from "./assigned/manifest.json";
 import automations from "./automations/manifest.json";
 import backlinks from "./backlinks/manifest.json";
+import calendar from "./calendar/manifest.json";
 import canvas from "./canvas/manifest.json";
 import graph from "./graph/manifest.json";
 import layouts from "./layouts/manifest.json";
@@ -16,6 +19,16 @@ import outline from "./outline/manifest.json";
 import pdf from "./pdf/manifest.json";
 import query from "./query/manifest.json";
 import tags from "./tags/manifest.json";
+
+/**
+ * The code of a built-in plugin that runs apart, as the build makes it, one
+ * module beside the app's page, fetched when the plugin starts.
+ */
+export async function apartCode(id: string): Promise<string> {
+  const answer = await fetch(new URL(`/builtin-plugins/${id}.js`, location.href));
+  if (!answer.ok) throw new Error(`The app has no code for the ${id} plugin.`);
+  return answer.text();
+}
 
 export const builtinPlugins: readonly BuiltinPlugin[] = [
   { manifest: mermaid, load: () => import("./mermaid/plugin.ts") },
@@ -35,4 +48,5 @@ export const builtinPlugins: readonly BuiltinPlugin[] = [
   { manifest: pdf, load: () => import("./pdf/plugin.tsx") },
   // Its board, gallery, list, calendar and timeline keep their names in a database's schema.
   { manifest: layouts, load: () => import("./layouts/plugin.tsx"), appLayouts: true },
+  { manifest: calendar, apart: () => apartCode("calendar"), off: true },
 ];
