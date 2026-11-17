@@ -36,6 +36,8 @@ export interface SiteDomain {
 /** A workspace's sites the account may change, and its switch. */
 export interface Sites {
   readonly publishing: boolean;
+  /** Whether the server's data policy lets the workspace publish, over its switch (ADR 0088). */
+  readonly allowed: boolean;
   /** Whether the account turns publishing on and off: an owner or an admin. */
   readonly manages: boolean;
   readonly sites: readonly PublishedSite[];
@@ -89,6 +91,8 @@ export async function listSites(
   );
   return {
     publishing: answer.publishing === true,
+    // A server from before data policies allows it.
+    allowed: answer.policy !== "off",
     manages: answer.manages === true,
     sites: (Array.isArray(answer.sites) ? answer.sites : []).map(siteOf),
   };

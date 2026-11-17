@@ -339,6 +339,11 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   A change closes the visits it stops, and `/api/me` tells the apps each
   workspace's `export`
   ([ADR 0088](docs/adr/0088-data-policies-set-a-workspaces-retention-legal-hold-public-sharing-and-export-over-its-owners.md)).
+  The desktop and web apps keep to it: with export off, the Export dialog
+  and a database's CSV export say the server's policy keeps the
+  workspace's notes, asking the server as an export starts and holding to
+  its last answer offline, and the Share dialog offers only what links and
+  publishing may do, saying why.
 
 ### Changed
 

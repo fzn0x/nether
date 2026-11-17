@@ -45,3 +45,11 @@ the PDF lead to the note's first page.
 
 A database's view exports as a CSV table from its toolbar; see
 [Databases](../databases/#exporting-a-view-as-csv).
+
+## When export is off
+
+A vault synced with a workspace on a server may not export, if the
+server's admin keeps the workspace's notes there by a
+[data policy](../admin/#data-policies). The **Export** dialog then says
+so, and offers nothing, and so does a database's **Export CSV**. The
+vault's Markdown files are still yours, on your device.

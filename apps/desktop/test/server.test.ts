@@ -14,6 +14,7 @@ import {
   setUpServer,
   setWorkspaceAi,
   setupNeeded,
+  shareLinks,
   signInMethods,
   signInWithProvider,
   ssoProviders,
@@ -146,15 +147,36 @@ describe("request", () => {
         }),
     });
     // A server from before AI's switch says nothing of it: AI is on there,
-    // and one from before the lock locks nothing (ADR 0086).
+    // and one from before the lock locks nothing (ADR 0086), nor one from
+    // before data policies keeps export (ADR 0088).
     await expect(account(fetcher, base, "t0k")).resolves.toEqual({
       user,
       workspaces: [
-        { id: "w1", name: "Team", role: "owner", encrypted: false, ai: true },
-        { id: "w2", name: "Secret", role: "member", encrypted: true, ai: false },
+        { id: "w1", name: "Team", role: "owner", encrypted: false, ai: true, exportAllowed: true },
+        {
+          id: "w2",
+          name: "Secret",
+          role: "member",
+          encrypted: true,
+          ai: false,
+          exportAllowed: true,
+        },
       ],
       aiEndpoints: null,
     });
+    const policed = fakeFetch({
+      "GET /api/me": () =>
+        json(200, {
+          user,
+          workspaces: [
+            { id: "w1", name: "Team", role: "owner", policies: { export: false } },
+            { id: "w2", name: "Open", role: "owner", policies: { export: true } },
+            { id: "w3", name: "Unset", role: "owner", policies: null },
+          ],
+        }),
+    });
+    const kept = await account(policed.fetcher, base, "t0k");
+    expect(kept.workspaces.map((each) => each.exportAllowed)).toEqual([false, true, true]);
     const locked = fakeFetch({
       "GET /api/me": () =>
         json(200, { user, workspaces: [], aiEndpoints: ["https://llm.corp.example/v1"] }),
@@ -166,6 +188,34 @@ describe("request", () => {
     await expect(account(odd.fetcher, base, "t0k")).rejects.toThrow(
       "https://nether.example.org gave an answer Nether cannot read.",
     );
+  });
+});
+
+describe("a page's share links", () => {
+  it("come with what the workspace's data policy lets them do", async () => {
+    const link = {
+      id: "l1",
+      url: `${base}/s#nether_link_x`,
+      level: "edit",
+      password: false,
+      expiresAt: null,
+      createdBy: "Ada",
+    };
+    const viewOnly = fakeFetch({
+      "GET /api/workspaces/w1/units/u1/links": () => json(200, { links: [link], policy: "view" }),
+    });
+    await expect(shareLinks(viewOnly.fetcher, base, "t0k", "w1", "u1")).resolves.toEqual({
+      links: [link],
+      policy: "view",
+    });
+    // A server from before data policies lets links do anything (ADR 0088).
+    const older = fakeFetch({
+      "GET /api/workspaces/w1/units/u1/links": () => json(200, { links: [] }),
+    });
+    await expect(shareLinks(older.fetcher, base, "t0k", "w1", "u1")).resolves.toEqual({
+      links: [],
+      policy: "on",
+    });
   });
 });
 

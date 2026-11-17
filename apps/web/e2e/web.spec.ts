@@ -1286,3 +1286,80 @@ test("the admin console sets data policies for every workspace, and for one set 
   }
   expect(problems).toEqual([]);
 });
+
+test("a data policy keeps a workspace's export and narrows its sharing, and the apps say why", async ({
+  page,
+}) => {
+  const problems = problemsOf(page);
+  await signIn(page, { email: "ada@example.org", password: "a long password" });
+  await page.goto("/admin");
+  const feature = page.getByRole("checkbox", { name: "Data policies" });
+  await feature.check();
+  const section = page.getByRole("region", { name: "Data policies" });
+  const every = section.getByRole("group", { name: "Every workspace" });
+  const save = section
+    .locator("form")
+    .filter({ has: page.getByRole("group", { name: "Every workspace" }) })
+    .getByRole("button", { name: "Save" });
+  try {
+    await every.getByRole("combobox", { name: "Share links" }).selectOption("View only");
+    await every.getByRole("checkbox", { name: "Serve published sites" }).uncheck();
+    await every.getByRole("checkbox", { name: "Allow export" }).uncheck();
+    await save.click();
+    await expect(section.getByRole("status")).toHaveText("Saved the policy for Every workspace.");
+
+    await page.goto("/");
+    await openTeam(page);
+    const title = `Kept notes ${String(Date.now())}`;
+    await newNote(page, title, "Kept on the server.");
+    await expect.poll(() => fileText(page, `${title}.md`)).toBe("Kept on the server.\n");
+
+    // Export says why it is off, and offers nothing.
+    await page.keyboard.press("Control+p");
+    await page.keyboard.type("Export…");
+    await page.keyboard.press("Enter");
+    const exporting = page.getByRole("dialog", { name: "Export" });
+    await expect(exporting.getByRole("alert")).toHaveText(
+      "127.0.0.1:4175's policy keeps this workspace's notes from being exported.",
+    );
+    await expect(exporting.getByRole("radio")).toHaveCount(0);
+    expect(await violations(page)).toEqual([]);
+    await exporting.getByRole("button", { name: "Close" }).click();
+
+    // Links may only view, and nothing is published.
+    await page.keyboard.press("Control+p");
+    await page.keyboard.type("Share this page");
+    await page.keyboard.press("Enter");
+    const share = page.getByRole("dialog", { name: `Share ${title}` });
+    await share.getByRole("button", { name: "Share it on its own, with its subpages" }).click();
+    await expect(share.getByRole("status")).toHaveText(`${title} is shared on its own.`);
+    const links = share.getByRole("region", { name: "Anyone with the link" });
+    await expect(
+      links.getByText(
+        "127.0.0.1:4175's policy lets this workspace's links only view, whatever they were made to do.",
+      ),
+    ).toBeVisible();
+    await expect(links.getByRole("combobox", { name: "Access" }).getByRole("option")).toHaveCount(
+      1,
+    );
+    const publishing = share.getByRole("region", { name: "Publish to the web" });
+    await expect(
+      publishing.getByText(
+        "127.0.0.1:4175's policy publishes nothing of this workspace. Its sites open nothing until it allows them.",
+      ),
+    ).toBeVisible();
+    await expect(publishing.getByRole("button", { name: "Publish this page" })).toHaveCount(0);
+    expect(await violations(page)).toEqual([]);
+    await share.getByRole("button", { name: "Close" }).click();
+  } finally {
+    // Every workspace open again, as the other tests expect.
+    await page.goto("/admin");
+    await every.getByRole("combobox", { name: "Share links" }).selectOption("Open at any level");
+    await every.getByRole("checkbox", { name: "Serve published sites" }).check();
+    await every.getByRole("checkbox", { name: "Allow export" }).check();
+    await save.click();
+    await expect(section.getByRole("status")).toHaveText("Saved the policy for Every workspace.");
+    await feature.uncheck();
+  }
+  expect(problems).toEqual([]);
+});

@@ -789,12 +789,19 @@ export const messages = {
   shareLinkPassword: "Password (optional)",
   shareLinkMake: "Make a link",
   shareLinkMade: "The link is made, and copied.",
+  shareLinksPolicyOff:
+    "{server}'s policy allows no share links in this workspace. The links here open nothing until it does.",
+  shareLinksPolicyView:
+    "{server}'s policy lets this workspace's links only view, whatever they were made to do.",
   publishTitle: "Publish to the web",
   publishIntro:
     "A published site is a page anyone can open at its address, with no account, drawn from your notes as they are now. It shows the notes you have full access to, and its links lead only between its pages.",
   publishEncrypted: "An encrypted workspace publishes nothing: the server cannot read its notes.",
   publishAllow: "Let {workspace} publish sites",
   publishOff: "Publishing is off in this workspace: its owners and admins turn it on.",
+  exportPolicyOff: "{server}'s policy keeps this workspace's notes from being exported.",
+  publishPolicyOff:
+    "{server}'s policy publishes nothing of this workspace. Its sites open nothing until it allows them.",
   publishNowOn: "Publishing is on in this workspace.",
   publishNowOff:
     "Publishing is off in this workspace: its sites open nothing until it is on again.",
