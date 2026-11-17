@@ -24,6 +24,9 @@ import { type LinkGraph, noteSection } from "@nether/graph";
 import { type ParsedMarkdown, parseMarkdown, serializeMarkdown } from "@nether/markdown";
 import { ChangedOnDisk, type NoteEntry, type Vault } from "@nether/storage";
 import { pdfEmbed } from "./PdfEmbed.tsx";
+import { matchScore } from "./matchScore.ts";
+
+export { lowerMatchScore, matchScore } from "./matchScore.ts";
 
 // What tells a highlight from another block loads when a link to a block is followed.
 const loadHighlights = () => import("./pdfHighlights.ts");
@@ -100,37 +103,6 @@ function withId<T extends Block>(blocks: readonly T[], from: BlockId, to: BlockI
     const children: readonly Block[] | undefined = "children" in own ? own.children : undefined;
     return children === undefined ? own : { ...own, children: withId(children, from, to) };
   });
-}
-
-/**
- * How well `text` matches what was typed, case aside: whole, at its start,
- * at a word's start, anywhere, or as letters in order; 0 for not at all.
- */
-export function matchScore(query: string, text: string): number {
-  return lowerMatchScore(query.trim().toLowerCase(), text.toLowerCase());
-}
-
-/** Where a word starts: after a space, a slash, an underscore or a dash. */
-const wordBreak = /[\s/_-]/;
-
-/** As `matchScore`, for what was typed trimmed and lower case, and text lower case, as a search over every note keeps them. */
-export function lowerMatchScore(typed: string, target: string): number {
-  if (typed === "") return 1;
-  let at = target.indexOf(typed);
-  if (at !== -1) {
-    if (at === 0) return target.length === typed.length ? 100 : 80;
-    for (; at !== -1; at = target.indexOf(typed, at + 1)) {
-      if (wordBreak.test(target.charAt(at - 1))) return 60;
-    }
-    return 40;
-  }
-  at = 0;
-  for (const char of typed) {
-    at = target.indexOf(char, at);
-    if (at === -1) return 0;
-    at += 1;
-  }
-  return 20;
 }
 
 function titleOf(path: string): string {
