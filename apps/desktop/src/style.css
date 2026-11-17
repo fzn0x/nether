@@ -2642,6 +2642,66 @@ button {
   margin: 0;
 }
 
+.admin-find {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 0.5rem 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.admin-find .field {
+  flex: 1 1 16rem;
+}
+
+/* A wide table scrolls inside the page, not the page itself. */
+.admin-table-wrap {
+  overflow-x: auto;
+  margin-bottom: 1rem;
+}
+
+.admin-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.admin-table th,
+.admin-table td {
+  padding: 0.4rem 0.75rem 0.4rem 0;
+  border-bottom: 1px solid var(--rule);
+  text-align: start;
+  vertical-align: top;
+}
+
+.admin-table thead th {
+  color: var(--muted);
+  font-weight: normal;
+  white-space: nowrap;
+}
+
+.admin-table tbody th {
+  font-weight: normal;
+}
+
+.admin-open {
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  text-align: start;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.admin-tag {
+  display: block;
+}
+
+.admin-workspace h3 {
+  margin: 1rem 0 0.5rem;
+}
+
 .shared-password {
   display: grid;
   gap: 0.75rem;
