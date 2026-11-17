@@ -32,6 +32,7 @@ import { registerSetup } from "./setup.ts";
 import { signInGuards } from "./signIns.ts";
 import { registerRelay } from "./relay.ts";
 import { type ClusterBus, ProcessBus, shareDisconnects } from "./cluster.ts";
+import { Readiness, registerReadiness } from "./health.ts";
 import { ClusterJobs } from "./jobs.ts";
 import { purgeNodes, registerNodes, startHeartbeat } from "./nodes.ts";
 import { registerSync } from "./sync.ts";
@@ -67,8 +68,9 @@ const healthSchema = {
       properties: {
         status: { type: "string", enum: ["ok"] },
         version: { type: "string" },
+        // Null while the database does not answer: liveness checks nothing else.
         enterprise: {
-          type: "object",
+          type: ["object", "null"],
           required: [...enterpriseFeatures],
           additionalProperties: false,
           properties: Object.fromEntries(
@@ -110,6 +112,8 @@ export interface Services {
   readonly bus?: ClusterBus;
   /** What looks up sites' domains' TXT records (ADR 0077); the system's unless a test gives another. */
   readonly resolveTxt?: TxtResolver;
+  /** Whether this node takes work, which draining ends (ADR 0082); its own unless the caller drains it. */
+  readonly readiness?: Readiness;
 }
 
 /** Builds the server: its routes, and the modules of the enterprise features that are switched on. */
@@ -163,11 +167,14 @@ export async function buildApp(config: Config, services: Services): Promise<Fast
     config.enterprise,
     modules.map((module) => module.feature),
   );
+  // Liveness: the process answers, whatever the database does (ADR 0082).
   app.get("/health", { schema: healthSchema }, async () => ({
     status: "ok",
     version,
-    enterprise: await switches.all(),
+    enterprise: await switches.all().catch(() => null),
   }));
+  // Readiness: the database answers, and the node is not draining.
+  registerReadiness(app, services.db, services.redis, services.readiness ?? new Readiness());
   // The data policies (ADR 0088), which hold while the `policies` feature is on.
   const dataPolicies = new DataPolicies(services.db, () => switches.on("policies"));
   registerFeatures(app, services.db, switches, events, (feature) => {

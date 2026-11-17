@@ -19,7 +19,13 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   closes their sync and relay connections on every node, through the
   cluster bus; a node whose bus comes back after it was lost closes every
   socket it has, spread over five seconds. `NETHER_SETUP_CODE` sets the
-  first-run setup code, so every node takes the same one
+  first-run setup code, so every node takes the same one. `/health/ready`
+  says whether a node takes work, and `/health` no longer fails while the
+  database is away. On SIGTERM a node drains for `NETHER_DRAIN_SECONDS`,
+  then closes its sockets with 1012 and stores its open documents.
+  Migrations expand, and contract a release later: a server runs on a
+  database a newer release migrated unless a step since needs a newer
+  server. `node dist/admin.js migrate` migrates without starting the server
   ([ADR 0082](docs/adr/0082-several-nodes-share-sync-through-valkey-take-their-order-from-postgresql-and-roll-out-one-at-a-time.md)).
 - Publishing: a page with its subpages, or the folder it is in, published
   from its Share dialog as a site anyone opens at the server's

@@ -1,14 +1,25 @@
 // The database's schema, as numbered migrations of plain SQL that run when
 // the server starts (ADR 0031). They run in one transaction, under a lock
 // every server node takes, so several starting at once apply each once, and
-// a failed one leaves the database as it was. A server never starts on a
-// database a newer server has migrated, whose schema it would not know.
+// a failed one leaves the database as it was.
+//
+// Migrations expand, and contract a release later (ADR 0082): most only
+// add, so the previous release's server runs on the new schema, as it does
+// during a rolling upgrade. A step that renames, drops or narrows what an
+// older server reads says which schema version first stopped reading it,
+// and a server older than that refuses the database.
 import type { Database } from "./db.ts";
 
 export interface Migration {
   readonly version: number;
   readonly name: string;
   readonly sql: string;
+  /**
+   * A contract step's: the schema version of the first release that no
+   * longer needed what it removes. A server at that version or later may
+   * run on a database that has the step; one that only adds has none.
+   */
+  readonly readableFrom?: number;
 }
 
 export const migrations: readonly Migration[] = [
@@ -769,16 +780,19 @@ export const migrations: readonly Migration[] = [
 /** The schema version this server writes and reads. */
 export const schemaVersion = migrations.length;
 
-/** A database a newer server has migrated. */
+/** A database a newer server has migrated, with a step this server's schema is too old for. */
 export class NewerDatabase extends Error {
   readonly found: number;
+  /** The oldest schema version a server may have to run on the database. */
+  readonly needed: number;
 
-  constructor(found: number) {
+  constructor(found: number, needed: number) {
     super(
-      `The database's schema is at version ${String(found)}, newer than this server's ${String(schemaVersion)}: run the newer server, or restore a backup.`,
+      `The database's schema is at version ${String(found)}, newer than this server's ${String(schemaVersion)}, and needs a server at schema version ${String(needed)} or later: run the newer server, or restore a backup.`,
     );
     this.name = "NewerDatabase";
     this.found = found;
+    this.needed = needed;
   }
 }
 
@@ -789,7 +803,9 @@ const migrationLock = 7_446_872_101;
  * Brings the database to this server's schema, or to an earlier version, as
  * a restore does to load a backup made at that version, and says from which
  * version to which. Versions in between are applied in order, in one
- * transaction, so a database may skip any number of them.
+ * transaction, so a database may skip any number of them. A database a
+ * newer server migrated is left as it is, unless a step since needs a
+ * newer server than this one (`NewerDatabase`).
  */
 export async function migrate(
   db: Database,
@@ -804,16 +820,21 @@ export async function migrate(
         applied_at timestamptz NOT NULL DEFAULT now()
       )
     `);
-    const { rows } = await tx.query("SELECT max(version) AS version FROM schema_migrations");
+    // A contract step's oldest schema that may run on it; none for one that only adds.
+    await tx.query("ALTER TABLE schema_migrations ADD COLUMN IF NOT EXISTS readable_from integer");
+    const { rows } = await tx.query(
+      "SELECT max(version) AS version, max(readable_from) AS needed FROM schema_migrations",
+    );
     const from = Number(rows[0]?.version ?? 0);
-    if (from > schemaVersion) throw new NewerDatabase(from);
+    const needed = Number(rows[0]?.needed ?? 0);
+    if (from > schemaVersion && needed > schemaVersion) throw new NewerDatabase(from, needed);
     for (const migration of migrations) {
       if (migration.version <= from || migration.version > upTo) continue;
       await tx.query(migration.sql);
-      await tx.query("INSERT INTO schema_migrations (version, name) VALUES ($1, $2)", [
-        migration.version,
-        migration.name,
-      ]);
+      await tx.query(
+        "INSERT INTO schema_migrations (version, name, readable_from) VALUES ($1, $2, $3)",
+        [migration.version, migration.name, migration.readableFrom ?? null],
+      );
     }
     return { from, to: Math.max(from, Math.min(upTo, schemaVersion)) };
   });
