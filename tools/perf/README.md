@@ -118,7 +118,7 @@ them from disk.
 ```sh
 pnpm --filter @nether/mobile build                          # the page, copied into the app
 (cd apps/mobile/android && ./gradlew assemblePerf)          # optimized, its WebView open to DevTools
-pnpm --filter @nether/perf android -- --apk apps/mobile/android/app/build/outputs/apk/perf/app-perf.apk --notes 5000 --out perf-android-report.json
+pnpm --filter @nether/perf android --notes 5000 --out perf-android-report.json   # --apk names another build
 ```
 
 It installs the `perf` build on the device or emulator adb has, drives the

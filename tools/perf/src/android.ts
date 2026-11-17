@@ -6,7 +6,7 @@
 //
 //   pnpm --filter @nether/mobile build:page
 //   (cd apps/mobile && npx cap sync android && cd android && ./gradlew assemblePerf)
-//   pnpm --filter @nether/perf android -- --notes 5000 --out perf-android-report.json
+//   pnpm --filter @nether/perf android --notes 5000 --out perf-android-report.json
 //
 // The first run writes the reference vault into the app, note by note,
 // through its own plugin, then opens it once so its index is whole, and
@@ -15,16 +15,24 @@
 import { execFileSync } from "node:child_process";
 import { existsSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 import { _android as android } from "@playwright/test";
 import { generateVault } from "@nether/vault-generator";
 
 const app = "io.github.fzn0x.nether";
 const { values } = parseArgs({
+  // pnpm passes on a "--" before the harness's own arguments.
+  args: process.argv.slice(2).filter((arg, index) => index !== 0 || arg !== "--"),
   options: {
     apk: {
       type: "string",
-      default: "apps/mobile/android/app/build/outputs/apk/perf/app-perf.apk",
+      default: fileURLToPath(
+        new URL(
+          "../../../apps/mobile/android/app/build/outputs/apk/perf/app-perf.apk",
+          import.meta.url,
+        ),
+      ),
     },
     notes: { type: "string", default: "5000" },
     runs: { type: "string", default: "5" },
@@ -60,8 +68,13 @@ const [attached] = await android.devices();
 if (attached === undefined) throw new Error("No device is attached.");
 const device = attached;
 
+/** The page in the app's WebView: this process's, never one Playwright knows from before an end. */
 async function page() {
-  const webView = await device.webView({ pkg: app }, { timeout: 120_000 });
+  const pid = shell("pidof", app).trim();
+  const webView = await device.webView(
+    { socketName: `webview_devtools_remote_${pid}` },
+    { timeout: 120_000 },
+  );
   const opened = await webView.page();
   opened.setDefaultTimeout(600_000);
   return opened;
