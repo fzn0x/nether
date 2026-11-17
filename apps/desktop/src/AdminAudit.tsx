@@ -2,7 +2,7 @@
 // the server's events, newest first, found by who by email or account, by
 // kind, workspace, outcome and time, 50 at a time; how long the log keeps
 // them; and a check of its chain. Only IDs and names, never contents.
-import { type SyntheticEvent, useCallback, useEffect, useState } from "react";
+import { type SyntheticEvent, useCallback, useEffect, useId, useState } from "react";
 import { type MessageKey, t } from "./messages.ts";
 import { webFetch, webServer } from "./web.ts";
 
@@ -204,6 +204,9 @@ export function AdminAudit() {
   const [events, setEvents] = useState<readonly AuditEvent[] | undefined>();
   const [next, setNext] = useState<number | null>(null);
   const [workspaces, setWorkspaces] = useState<readonly { id: string; name: string }[]>([]);
+  // The accounts whose names or emails match what is typed, for the email to be chosen.
+  const [actors, setActors] = useState<readonly { name: string; email: string }[]>([]);
+  const actorList = useId();
   const [settings, setSettings] = useState<Settings | undefined>();
   const [days, setDays] = useState("");
   const [status, setStatus] = useState<string | undefined>();
@@ -251,6 +254,24 @@ export function AdminAudit() {
       })
       .catch(failed);
   }, [search, loadSettings]);
+
+  const typed = form.email.trim();
+  useEffect(() => {
+    if (typed === "") {
+      setActors([]);
+      return;
+    }
+    const timer = setTimeout(() => {
+      json<{ actors: { name: string; email: string }[] }>(
+        webFetch(`${webServer}/api/audit/actors?${new URLSearchParams({ q: typed }).toString()}`),
+      ).then((found) => {
+        setActors(found.actors);
+      }, failed);
+    }, 250);
+    return () => {
+      clearTimeout(timer);
+    };
+  }, [typed]);
 
   const submit = (event: SyntheticEvent) => {
     event.preventDefault();
@@ -320,12 +341,20 @@ export function AdminAudit() {
           {t("adminAuditEmail")}
           <input
             type="search"
+            list={actorList}
             value={form.email}
             onChange={(event) => {
               set("email", event.target.value);
             }}
           />
         </label>
+        <datalist id={actorList}>
+          {actors.map((actor) => (
+            <option key={actor.email} value={actor.email}>
+              {actor.name}
+            </option>
+          ))}
+        </datalist>
         <label>
           {t("adminAuditGroup")}
           <select
