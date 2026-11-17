@@ -30,7 +30,7 @@ import {
   vaultDocument,
   writesAt,
 } from "./units.ts";
-import { socketVisitToken, visitOf, visitPrefix, visitor } from "./links.ts";
+import { type LinkPolicies, socketVisitToken, visitOf, visitPrefix, visitor } from "./links.ts";
 import { membership } from "./workspaces.ts";
 
 const uuid = "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}";
@@ -225,7 +225,11 @@ function under(path: string, folder: string): boolean {
   return path.toLowerCase().startsWith(folder.toLowerCase());
 }
 
-export async function registerSync(app: FastifyInstance, db: Database): Promise<SyncControl> {
+export async function registerSync(
+  app: FastifyInstance,
+  db: Database,
+  policies: LinkPolicies,
+): Promise<SyncControl> {
   // A note's update may be large, as a pasted image's data is; 16 MiB at most.
   await app.register(websocket, { options: { maxPayload: 16 * 1024 * 1024 } });
 
@@ -273,6 +277,7 @@ export async function registerSync(app: FastifyInstance, db: Database): Promise<
       // writes the unit's vault document, which says what notes it has.
       const visit = await visitOf(
         db,
+        policies,
         token === ""
           ? socketVisitToken(requestHeaders)
           : token.startsWith(visitPrefix)

@@ -3,10 +3,12 @@
 // /s#<token>. Those with full access to the page make, list and revoke its
 // links. Opening one starts a visit: its token in an HttpOnly cookie, kept
 // as its hash, which the sync server takes for that page's unit alone, and
-// the attachments route for its workspace's files, by their hash.
+// the attachments route for its workspace's files, by their hash. A data
+// policy (ADR 0088) may let a workspace's links only view, or open nothing.
 import { randomUUID } from "node:crypto";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { readCookies } from "./cookies.ts";
+import { type DataPolicy, linksOff, linksViewOnly } from "./dataPolicies.ts";
 import { type Database, type Queryable, readText, readTextOrNull, readTime } from "./db.ts";
 import { fail, limitByAddress, passwordField, tokenField, uuidField } from "./http.ts";
 import { hashPassword, verifyPassword } from "./passwords.ts";
@@ -52,11 +54,31 @@ function isLinkLevel(value: unknown): value is LinkLevel {
   return value === "view" || value === "comment" || value === "edit";
 }
 
-/** The visit a cookie's token gives, while its link lasts. */
+/** What links read of a workspace's data policy. */
+export interface LinkPolicies {
+  of(workspace: string): Promise<DataPolicy>;
+}
+
+/** A link's level as its workspace's policy lets it open: only to view, or not at all. */
+export function levelAllowed(level: LinkLevel, policy: DataPolicy): LinkLevel | undefined {
+  if (policy.shareLinks === "off") return undefined;
+  return policy.shareLinks === "view" ? "view" : level;
+}
+
+/** The visit a cookie's token gives, while its link lasts and its workspace's policy lets it open. */
 export async function visitOf(
   db: Queryable,
+  policies: LinkPolicies,
   token: string | undefined,
 ): Promise<Visit | undefined> {
+  const visit = await storedVisit(db, token);
+  if (visit === undefined) return undefined;
+  const level = levelAllowed(visit.level, await policies.of(visit.workspace));
+  return level === undefined ? undefined : { ...visit, level };
+}
+
+/** The visit a cookie's token gives, while its link lasts, at the level the link was made with. */
+async function storedVisit(db: Queryable, token: string | undefined): Promise<Visit | undefined> {
   if (token?.startsWith(visitPrefix) !== true) return undefined;
   const { rows } = await db.query(
     `SELECT l.id, l.workspace_id, l.unit_id, l.level, u.root_note
@@ -190,9 +212,29 @@ export function registerLinks(
     readonly publicUrl: string | null;
     readonly webApp: boolean;
     readonly disconnect: (userId: string) => void;
+    readonly policies: LinkPolicies & {
+      listen(listener: (workspaces: readonly string[] | null) => void): void;
+    };
   },
 ): void {
   const account = signedIn(db);
+  const { policies } = options;
+
+  // A policy that changes closes the visits of the workspaces it holds for,
+  // so each connects again at the level the policy now allows, or not at all.
+  policies.listen((workspaces) => {
+    db.query(
+      "SELECT id FROM share_links WHERE $1::uuid[] IS NULL OR workspace_id = ANY($1::uuid[])",
+      [workspaces],
+    ).then(
+      ({ rows }) => {
+        for (const row of rows) options.disconnect(visitor(readText(row, "id")));
+      },
+      (error: unknown) => {
+        app.log.error({ err: error }, "Could not close the visits a data policy changed");
+      },
+    );
+  });
 
   /** The page's unit, when the account has full access to it; else why not. */
   async function managed(request: FastifyRequest<{ Params: { workspace: string; unit: string } }>) {
@@ -242,7 +284,11 @@ export function registerLinks(
           WHERE l.unit_id = $1 ORDER BY l.created_at, l.id`,
         [found.unit],
       );
-      return { links: listed(request, rows) };
+      // What the workspace's data policy lets its links do, for the page to say.
+      return {
+        links: listed(request, rows),
+        policy: (await policies.of(found.workspace)).shareLinks,
+      };
     },
   );
 
@@ -255,6 +301,9 @@ export function registerLinks(
       }
       const found = await managed(request);
       if (!("unit" in found)) return fail(reply, found[0], found[1]);
+      const allowed = levelAllowed(request.body.level, await policies.of(found.workspace));
+      if (allowed === undefined) return fail(reply, 403, linksOff);
+      if (allowed !== request.body.level) return fail(reply, 403, linksViewOnly);
       const expires =
         request.body.expiresAt === undefined ? null : new Date(request.body.expiresAt);
       if (expires !== null && expires.getTime() <= Date.now()) {
@@ -340,6 +389,13 @@ export function registerLinks(
       const row = rows[0];
       const page = row === undefined ? null : readTextOrNull(row, "root_note");
       if (row === undefined || page === null) return fail(reply, 404, noPage);
+      const workspace = readText(row, "workspace_id");
+      const level = levelAllowed(
+        isLinkLevel(row.level) ? row.level : "view",
+        await policies.of(workspace),
+      );
+      // Told before its password is asked, as it opens nothing whatever it is.
+      if (level === undefined) return fail(reply, 403, linksOff);
       const hash = readTextOrNull(row, "password_hash");
       if (hash !== null) {
         if (password === undefined) return fail(reply, 401, needsPassword);
@@ -357,10 +413,10 @@ export function registerLinks(
       setVisitCookie(reply, request, visit, ends);
       const unit = readText(row, "unit_id");
       return {
-        workspace: readText(row, "workspace_id"),
+        workspace,
         unit,
         document: vaultDocument(unit),
-        level: isLinkLevel(row.level) ? row.level : "view",
+        level,
         page,
         expiresAt: ends.toISOString(),
       };
@@ -369,13 +425,15 @@ export function registerLinks(
 
   // What the visit a page's cookie carries opens, for the page to show again on reload.
   app.get("/api/links/visit", async (request, reply) => {
-    const visit = await visitOf(db, visitToken(request.headers.cookie));
+    const visit = await storedVisit(db, visitToken(request.headers.cookie));
     if (visit === undefined) return fail(reply, 401, noPage);
+    const level = levelAllowed(visit.level, await policies.of(visit.workspace));
+    if (level === undefined) return fail(reply, 403, linksOff);
     return {
       workspace: visit.workspace,
       unit: visit.unit,
       document: vaultDocument(visit.unit),
-      level: visit.level,
+      level,
       page: visit.page,
     };
   });
