@@ -1,0 +1,27 @@
+{
+  "name": "@nether/enterprise-sso",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Single sign-on: SAML 2.0 and OpenID Connect providers bound to email domains, set in the admin console (ADR 0080).",
+  "license": "AGPL-3.0-or-later",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@nether/server": "workspace:*",
+    "@node-saml/node-saml": "5.2.0",
+    "@xmldom/xmldom": "0.8.15",
+    "xpath": "0.0.35"
+  },
+  "devDependencies": {
+    "@types/node": "^24.19.2",
+    "vitest": "^5.0.5",
+    "xml-crypto": "6.4.0",
+    "xml-encryption": "3.1.0"
+  }
+}
