@@ -2,13 +2,42 @@
 // A note open in the app shows what a plugin draws below the block's code,
 // and an HTML page in the code's place. A plugin's code loads when a block
 // in a language its manifest declares is first drawn.
-import type { NoteId } from "@nether/core";
+import type { LinkTarget, NoteId } from "@nether/core";
 import type { LinkGraph } from "@nether/graph";
 import type { CodeBlockContext, CodeBlockOutput } from "@nether/plugin-api";
 import type { Vault } from "@nether/storage";
 import type { ReactNode } from "react";
 import type { VaultMedia } from "../backend.ts";
 import { KeyedRegistry } from "./keyed.ts";
+
+/** A note a button makes (ADR 0072). */
+export interface NoteRequest {
+  /** Its folder, from the vault's; "" for the vault's own. */
+  readonly folder: string;
+  /** Its name, without `.md`; none for the app's name for a new note. */
+  readonly name?: string | undefined;
+  /** The template it is made from, as the template settings name one. */
+  readonly template?: string | undefined;
+  /** Whether it opens once made. */
+  readonly open: boolean;
+  /** Whether a note there already opens, in place of a new one beside it. */
+  readonly openIfExists: boolean;
+}
+
+/** How a command a button names ran: it did, the app has none, or it cannot run now. */
+export type CommandRun = "ran" | "missing" | "unavailable";
+
+/** What a live view may do from the note its block is in, as a button does (ADR 0072). */
+export interface CodeBlockNote {
+  /** The note the block is in. */
+  readonly id: NoteId;
+  /** Runs a command of the registry by its ID, as the palette runs it. */
+  readonly runCommand: (command: string) => CommandRun;
+  /** Makes a note, or opens the one there; rejects with why it could not. */
+  readonly createNote: (request: NoteRequest) => Promise<void>;
+  /** Opens what a link names, as a link in the note does: a note, a part of one, or a file. */
+  readonly openLink: (target: LinkTarget) => void;
+}
 
 /** What a built-in plugin's live view of a code block is given, below its code in a note. */
 export interface CodeBlockViewProps {
@@ -18,6 +47,8 @@ export interface CodeBlockViewProps {
   readonly graph: LinkGraph;
   /** Opens a note, as a link in the block's note does. */
   readonly openNote: (id: NoteId) => void;
+  /** What the view may do from the block's note; none where it is not in one. */
+  readonly note?: CodeBlockNote | undefined;
 }
 
 /** A built-in plugin's live view of a code block, which only the host gives (not the SDK). */

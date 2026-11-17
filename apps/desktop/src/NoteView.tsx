@@ -32,6 +32,7 @@ import { useSlashEntries } from "./plugins/blocks.ts";
 import { type PanelRegistry, usePanels } from "./plugins/panels.ts";
 import { NotePanelSection } from "./PanelOutput.tsx";
 import type { Registries } from "./plugins/host.ts";
+import type { CodeBlockNote, CommandRun, NoteRequest } from "./plugins/codeBlocks.ts";
 
 export type NoteMode = "blocks" | "source";
 
@@ -79,6 +80,8 @@ export default function NoteView(props: {
   readonly onOpenFile?: (path: string, part?: string) => boolean;
   /** Shows the notes with a tag, as a tag in this note does. */
   readonly onOpenTag: (name: string) => void;
+  /** Makes a note, as a button in this one asks (ADR 0072); rejects with why it could not. */
+  readonly onCreateNote?: (request: NoteRequest) => Promise<void>;
   readonly mode: NoteMode;
   readonly onMode: (mode: NoteMode) => void;
   /** Moves the note to the vault's trash. */
@@ -127,6 +130,7 @@ export default function NoteView(props: {
     onOpenNote,
     onOpenFile,
     onOpenTag,
+    onCreateNote,
     onTrash,
     onExport,
     onRename,
@@ -190,20 +194,36 @@ export default function NoteView(props: {
       }),
     [vault, media, id],
   );
-  const links = useMemo(
-    () => ({
-      ...noteLinks(
-        vault,
-        graph,
-        id,
-        onOpenNote,
-        (error) => {
-          setFileError(error instanceof Error ? error.message : String(error));
-        },
-        onOpenTag,
-        onOpenFile,
-      ),
-      // What plugins draw below a code block: a diagram, the notes a query finds.
+  const links = useMemo(() => {
+    const base = noteLinks(
+      vault,
+      graph,
+      id,
+      onOpenNote,
+      (error) => {
+        setFileError(error instanceof Error ? error.message : String(error));
+      },
+      onOpenTag,
+      onOpenFile,
+    );
+    // What a button in the note does through the app (ADR 0072).
+    const blockNote: CodeBlockNote = {
+      id,
+      runCommand: (command): CommandRun => {
+        const found = plugins.commands.get(command);
+        if (found === undefined) return "missing";
+        if (!found.enabled()) return "unavailable";
+        found.run();
+        return "ran";
+      },
+      createNote: onCreateNote ?? (() => Promise.reject(new Error(t("buttonCannotCreate")))),
+      openLink: (target) => {
+        base.open(target);
+      },
+    };
+    return {
+      ...base,
+      // What plugins draw below a code block: a diagram, the notes a query finds, a button.
       renderCode: (language: string, info: string, source: string) => (
         <CodeOutput
           codeBlocks={plugins.codeBlocks}
@@ -216,6 +236,7 @@ export default function NoteView(props: {
           onOpen={(note) => {
             onOpenNote(note);
           }}
+          note={blockNote}
         />
       ),
       // A plugin's block shows as its plugin shows it.
@@ -233,9 +254,8 @@ export default function NoteView(props: {
           onChange={setAttrs}
         />
       ),
-    }),
-    [vault, media, graph, plugins, id, onOpenNote, onOpenTag, onOpenFile],
-  );
+    };
+  }, [vault, media, graph, plugins, id, onOpenNote, onOpenTag, onOpenFile, onCreateNote]);
 
   const toggle = async () => {
     // Save what either editor has, so the other starts from it.
