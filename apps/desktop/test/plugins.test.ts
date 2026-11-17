@@ -980,7 +980,8 @@ describe("PluginHost, adding", () => {
     for (const builtin of builtinPlugins) expect(host.add(builtin)).toEqual([]);
     expect(codeBlocks.get("mermaid")?.plugin).toBe("mermaid");
     expect(codeBlocks.get("base")?.plugin).toBe("query");
-    // The slash menu's Diagram and Query come from them.
+    expect(codeBlocks.get("Meta-Bind-Button")?.plugin).toBe("automations");
+    // The slash menu's Diagram, Query and Button come from them.
     expect(
       slashEntries(codeBlocks.all(), []).map(({ id, title, insert }) => [
         id,
@@ -990,6 +991,7 @@ describe("PluginHost, adding", () => {
     ).toEqual([
       ["code:mermaid", "Diagram", "flowchart LR"],
       ["code:base", "Query", "views:"],
+      ["code:meta-bind-button", "Button", "label: Mark done"],
     ]);
     // The sidebar's Tags and Assigned, and the outline, backlinks and unlinked mentions beside a note.
     expect(
