@@ -1,7 +1,8 @@
-// The restore drill (ADR 0052): backs the database NETHER_DATABASE_URL
-// names up with the built admin command, restores the backup into a new,
-// empty schema of the same server, as the documented procedure does, and
-// checks the two hold the same rows. CI runs it after the smoke run, on a
+// The restore drill (ADR 0052): brings the database NETHER_DATABASE_URL
+// names to the schema with the built admin command, as a Kubernetes Job
+// does before a rollout (ADR 0082), backs it up, restores the backup into a
+// new, empty schema of the same server, as the documented procedure does,
+// and checks the two hold the same rows. CI runs it after the smoke run, on a
 // real PostgreSQL: `pnpm --filter @nether/server drill`.
 import { spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
@@ -38,6 +39,11 @@ function admin(args, databaseUrl) {
 const client = new pg.Client({ connectionString: url });
 await client.connect();
 try {
+  console.log(admin(["migrate"], url));
+  // Once more: the schema is this release's, so nothing is left to do.
+  const again = admin(["migrate"], url);
+  if (!again.endsWith("nothing to do.")) throw new Error(`admin migrate, again: ${again}`);
+  console.log(again);
   console.log(admin(["backup", file], url));
   await client.query(`CREATE SCHEMA ${schema}`);
   console.log(admin(["restore", file], restoreUrl));

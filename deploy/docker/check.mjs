@@ -1,9 +1,10 @@
 // Checks that `docker compose up` gives a working server (ADR 0054): it
-// starts the compose project, sets the server up with the code from its
-// log, keeps an attachment, serves the web app, counts its rate limits in
-// Valkey and makes a backup; then stops it all, starts it again and finds
-// the account and the attachment kept; then restores the backup on a new
-// install, as the self-hosting guide says. CI runs it on the image it built.
+// starts the compose project, finds its schema current, sets
+// the server up with the code from its log, keeps an attachment, serves the
+// web app, counts its rate limits in Valkey and makes a backup; then stops
+// it all, starts it again and finds the account and the attachment kept;
+// then restores the backup on a new install, as the self-hosting guide
+// says. CI runs it on the image it built.
 //
 //   node deploy/docker/check.mjs           # the image NETHER_VERSION names, pulled or built
 //   node deploy/docker/check.mjs --build   # built from this checkout first
@@ -98,6 +99,8 @@ try {
     Object.values(status.enterprise).every((on) => on === false),
     "every enterprise feature is off",
   );
+  const migrated = compose(["exec", "-T", "server", "node", "dist/admin.js", "migrate"]);
+  check(migrated.includes("nothing to do"), "the admin command finds the schema current");
   check((await (await call("GET", "/api/setup")).json()).needed === true, "it asks to be set up");
 
   const logs = compose(["logs", "--no-color", "server"]);

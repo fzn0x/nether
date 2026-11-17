@@ -9,12 +9,15 @@
 //                                      NETHER_DATABASE_URL names, which must
 //                                      be empty, and its attachments into
 //                                      the configured store
+//   node dist/admin.js migrate         brings the database to this
+//                                      release's schema, as a Kubernetes
+//                                      Job does before a rollout (ADR 0082)
 import { DiskBlobs, S3Blobs } from "./blobs.ts";
 import { backupFileLines, restoreBackupLines, writeBackupFile } from "./backup.ts";
 import { backupTarget, isBackupName, runBackup } from "./backups.ts";
 import { readConfig } from "./config.ts";
 import { connectPostgres } from "./db.ts";
-import { migrate } from "./migrations.ts";
+import { migrate, schemaVersion } from "./migrations.ts";
 
 function print(message: string): void {
   process.stdout.write(`${message}\n`);
@@ -57,8 +60,19 @@ async function main(args: readonly string[]): Promise<void> {
       print(
         `Restored ${String(restored.rows)} rows and ${String(restored.blobs)} attachments, made at schema version ${String(restored.schema)}.`,
       );
+    } else if (command === "migrate") {
+      const { from, to } = await migrate(db);
+      if (from > schemaVersion) {
+        print(
+          `The database's schema is at version ${String(from)}, newer than this release's ${String(schemaVersion)}, which runs on it.`,
+        );
+      } else if (from === to) {
+        print(`The database's schema is at version ${String(to)}: nothing to do.`);
+      } else {
+        print(`Migrated the database from schema version ${String(from)} to ${String(to)}.`);
+      }
     } else {
-      print("Use: node dist/admin.js backup [file] | backups | restore <name or file>");
+      print("Use: node dist/admin.js backup [file] | backups | restore <name or file> | migrate");
       process.exitCode = 2;
     }
   } finally {
