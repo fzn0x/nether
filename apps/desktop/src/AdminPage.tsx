@@ -4,6 +4,7 @@
 // the server's usage, counted when the page asks. Only its own code loads,
 // as a share link's page does.
 import { type ReactNode, useCallback, useEffect, useState } from "react";
+import { AdminAudit } from "./AdminAudit.tsx";
 import { t } from "./messages.ts";
 import { webFetch, webServer } from "./web.ts";
 
@@ -152,6 +153,9 @@ export function AdminPage() {
 
   const consoleOn =
     step.kind === "open" && step.features.some((state) => state.feature === "admin" && state.on);
+  // The audit log shows while its feature is on (ADR 0081).
+  const auditOn =
+    step.kind === "open" && step.features.some((state) => state.feature === "audit" && state.on);
 
   const count = useCallback(() => {
     setUsage(undefined);
@@ -257,6 +261,7 @@ export function AdminPage() {
           ) : (
             <p className="hint">{t("adminConsoleOff")}</p>
           )}
+          {auditOn ? <AdminAudit /> : null}
         </>
       ) : null}
       {status === undefined ? null : <p role="status">{status}</p>}
