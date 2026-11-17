@@ -70,6 +70,12 @@ export interface Config {
    */
   readonly ssoPrivate: boolean | readonly string[];
   /**
+   * Which addresses that are not public the LDAP directories the console
+   * names may be at, as Active Directory on the server's network (ADR
+   * 0085): none, all, or these addresses and ranges.
+   */
+  readonly ldapPrivate: boolean | readonly string[];
+  /**
    * Whether single sign-on may require its providers, as the console says
    * (ADR 0080); false when NETHER_SSO_ENFORCE=off pins it off, the way back
    * in when a provider breaks: its sign-in goes on, and every other way in
@@ -613,6 +619,7 @@ export function readConfig(env: NodeJS.ProcessEnv): Config {
     ai: readAi(env),
     aiPrivate: readPrivate(env, "NETHER_AI_PRIVATE", "the admin's AI providers"),
     ssoPrivate: readPrivate(env, "NETHER_SSO_PRIVATE", "single sign-on providers"),
+    ldapPrivate: readPrivate(env, "NETHER_LDAP_PRIVATE", "LDAP directories"),
     ssoEnforce: readPin(env, "NETHER_SSO_ENFORCE") !== false,
     secretKey: readSecretKey(env),
     setupCode: readSetupCode(env),

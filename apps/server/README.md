@@ -542,6 +542,7 @@ machine.
 | `NETHER_ENTERPRISE_SSO` | unset | Single sign-on |
 | `NETHER_SSO_ENFORCE` | unset | `off` stops single sign-on requiring its providers, as the console sets it, until unset: the way back in when a provider breaks (ADR 0080) |
 | `NETHER_ENTERPRISE_SCIM` | unset | Provisioning through SCIM and LDAP |
+| `NETHER_LDAP_PRIVATE` | `off` | Addresses that are not public where the LDAP directories the console names may be, as Active Directory on your own network: `on` for any, or addresses and ranges such as `10.0.0.5, 192.168.0.0/16`. A connection is always encrypted (ADR 0085) |
 | `NETHER_ENTERPRISE_AUDIT` | unset | Audit logs |
 | `NETHER_ENTERPRISE_POLICIES` | unset | Data policies and advanced permissions |
 | `NETHER_ENTERPRISE_ADMIN` | unset | The admin console's usage, workspaces and security pages |
