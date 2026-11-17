@@ -227,6 +227,9 @@ importers:
       '@hocuspocus/server':
         specifier: ~4.7.1
         version: 4.7.1(y-protocols@1.0.7(yjs@13.6.33))(yjs@13.6.33)
+      '@nether/ai':
+        specifier: workspace:*
+        version: link:../../packages/ai
       '@nether/core':
         specifier: workspace:*
         version: link:../../packages/core

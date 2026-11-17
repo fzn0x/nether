@@ -2,7 +2,8 @@
 // first, events this reader does not know, errors midway, refusals, and no
 // embeddings.
 import { describe, expect, it } from "vitest";
-import { anthropic, anthropicVersion, defaultMaxTokens } from "../src/anthropic.ts";
+import { anthropic, defaultMaxTokens } from "../src/anthropic.ts";
+import { anthropicVersion } from "../src/endpoints.ts";
 import { AiError } from "../src/errors.ts";
 import { collect, fakeFetch } from "./fake.ts";
 import {

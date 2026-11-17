@@ -2,8 +2,10 @@
 // goes to before anything is sent, offers what to do with the text, streams
 // the reply into a preview, and puts it in the note only when the user says
 // so, in the text's place or after it, as one edit one undo takes out.
-// Before each request it asks the workspace's server whether AI may run, and
-// reads the provider's key from the keychain.
+// Before each request it asks the workspace's server whether AI may run,
+// and sends as the backend says: to the provider with its key from the
+// keychain in the desktop app, through the server's relay in the web app
+// (ADR 0070), which names the server too.
 import {
   AiError,
   type AssistAction,
@@ -58,9 +60,13 @@ export function WritingAssist(props: {
   /** The title a link to a note writes. */
   readonly noteTitle: (note: NoteId) => string | undefined;
   readonly allowedNow: () => Promise<boolean>;
+  /** The workspace the vault syncs with, whose relay the web app sends through. */
+  readonly workspaceId?: string | undefined;
+  /** The server the text goes through first, by its host, when it does. */
+  readonly through?: string | undefined;
   readonly onClose: () => void;
 }) {
-  const { provider, selection, noteTitle, allowedNow, onClose } = props;
+  const { provider, selection, noteTitle, allowedNow, workspaceId, through, onClose } = props;
   const [phase, setPhase] = useState<Phase>({ kind: "choosing" });
   const [how, setHow] = useState("");
   const [into, setInto] = useState(ownLanguage);
@@ -114,14 +120,14 @@ export function WritingAssist(props: {
       return;
     }
     try {
-      const key = await backend.aiKey(provider.id);
+      const access = await backend.aiAccess(provider, workspaceId);
       const chat = createProvider(
         {
           kind: provider.kind === "anthropic" ? "anthropic" : "openai",
-          url: provider.url,
+          url: access.url,
           model: provider.model,
         },
-        { fetch: backend.aiFetch, key },
+        { fetch: access.fetch, key: access.key },
       );
       const request = assistRequest(action, markdown, { language: into, how });
       for await (const part of chat.chat({ ...request, signal: controller.signal })) {
@@ -177,7 +183,15 @@ export function WritingAssist(props: {
   return (
     <section className="assist-panel" aria-labelledby="assist-title" onKeyDown={onKeyDown}>
       <h2 id="assist-title">{t("aiAssist")}</h2>
-      <p className="hint">{t("aiAssistSends", { name, where: providerWhere(provider) })}</p>
+      <p className="hint">
+        {through === undefined
+          ? t("aiAssistSends", { name, where: providerWhere(provider) })
+          : t("aiAssistSendsThrough", {
+              server: through,
+              name,
+              where: providerWhere(provider, true),
+            })}
+      </p>
       {selection === undefined ? (
         <>
           <p role="status">{t("aiAssistNothing")}</p>

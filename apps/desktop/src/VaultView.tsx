@@ -30,7 +30,7 @@ import { NewFolderDialog } from "./NewFolderDialog.tsx";
 import { TextPromptDialog } from "./TextPromptDialog.tsx";
 import { myName, setMyName } from "./people.ts";
 import { DeleteFolderDialog } from "./DeleteFolderDialog.tsx";
-import { build, commandShown, shownEntries } from "./features.ts";
+import { commandShown, shownEntries } from "./features.ts";
 import { SidebarResizer, useSidebarWidth } from "./SidebarResizer.tsx";
 import { builtInTheme } from "./appearance.ts";
 import {
@@ -101,7 +101,7 @@ import type { NotePart } from "./noteLinks.ts";
 import type { NoteMode } from "./NoteView.tsx";
 import { findTemplate, nameOf, periodicNote, periods, templateChoices } from "./templates.ts";
 import { useGraph } from "./useGraph.ts";
-import { syncSummary } from "./sync.ts";
+import { hostOf, syncSummary } from "./sync.ts";
 import { useHotkeys } from "./useHotkeys.ts";
 import { useTemplateSettings } from "./useTemplateSettings.ts";
 import { useSync } from "./useSync.ts";
@@ -1506,26 +1506,23 @@ export function VaultView(props: {
         />
       ),
     },
-    // Where AI is set up, the one place it shows before it is; the web app
-    // gets it through its server, in a later part (ADR 0068).
-    ...(build.web
-      ? []
-      : [
-          {
-            id: "ai",
-            name: t("aiTab"),
-            render: () => (
-              <Suspense fallback={null}>
-                <AiSettings
-                  ai={ai}
-                  encrypted={sync.link?.encrypted === true}
-                  server={sync.link?.server}
-                  onClose={closeDialog}
-                />
-              </Suspense>
-            ),
-          },
-        ]),
+    // Where AI is set up, the one place it shows before it is: on this
+    // device in the desktop app (ADR 0068), on the server in the web app
+    // (ADR 0070).
+    {
+      id: "ai",
+      name: t("aiTab"),
+      render: () => (
+        <Suspense fallback={null}>
+          <AiSettings
+            ai={ai}
+            encrypted={sync.link?.encrypted === true}
+            server={sync.link?.server}
+            onClose={closeDialog}
+          />
+        </Suspense>
+      ),
+    },
     ...(pluginState.state === undefined
       ? []
       : (() => {
@@ -2525,6 +2522,12 @@ export function VaultView(props: {
                                   provider: ai.resolution.provider,
                                   request: paneAsks.assist,
                                   allowedNow: ai.allowedNow,
+                                  workspaceId: sync.link?.workspaceId,
+                                  // The web app's requests go through its server.
+                                  through:
+                                    ai.settings.server === undefined || sync.link === undefined
+                                      ? undefined
+                                      : hostOf(sync.link.server),
                                 },
                               })}
                           people={people}

@@ -1,12 +1,14 @@
 // Requests the server sends where someone told it to, as webhooks are
-// (ADR 0060). A server sits inside a network: its database, Valkey, a
-// cloud's metadata at 169.254.169.254 and the admin's other services are
-// all a request away. So each request resolves its host when it is sent,
-// refuses every address that is not public unless the admin allows it
-// (NETHER_WEBHOOK_PRIVATE), and connects to the address it checked, so a
-// name cannot resolve to a public address when checked and a private one
-// when used. Redirects are not followed, and the answer's body is not read.
-// Signatures follow the Standard Webhooks spec.
+// (ADR 0060), and the web app's AI requests (ADR 0070). A server sits
+// inside a network: its database, Valkey, a cloud's metadata at
+// 169.254.169.254 and the admin's other services are all a request away.
+// So each request resolves its host when it is sent, refuses every address
+// that is not public unless the admin allows it (NETHER_WEBHOOK_PRIVATE,
+// NETHER_AI_PRIVATE), and connects to the address it checked, so a name
+// cannot resolve to a public address when checked and a private one when
+// used. Redirects are not followed. A webhook's answer's body is not read;
+// an AI provider's is streamed back. Signatures follow the Standard
+// Webhooks spec.
 import { createHmac, randomBytes } from "node:crypto";
 import { lookup } from "node:dns/promises";
 import { type IncomingMessage, request as httpRequest } from "node:http";
@@ -197,6 +199,8 @@ export interface SendOptions {
   readonly resolve?: Resolver;
   /** How long to wait for the answer's status, in milliseconds. */
   readonly timeout?: number;
+  /** The setting that allows addresses that are not public, which a refusal names. */
+  readonly allowedBy?: string;
 }
 
 /**
@@ -221,7 +225,7 @@ async function target(url: URL, options: SendOptions): Promise<Resolved | string
   if (first === undefined) return `${host} resolves to no address.`;
   const refused = found.find((item) => !reachable(options.policy, item.address));
   if (refused !== undefined) {
-    return `${host} resolves to ${refused.address}, which is not a public address: the server's admin can allow it with NETHER_WEBHOOK_PRIVATE.`;
+    return `${host} resolves to ${refused.address}, which is not a public address: the server's admin can allow it with ${options.allowedBy ?? "NETHER_WEBHOOK_PRIVATE"}.`;
   }
   if (url.protocol === "http:" && isPublicAddress(first.address)) {
     return "http:// goes only to a private address the admin allows; a public one takes https://.";
@@ -297,6 +301,83 @@ export async function post(
             ? { ok: true, status }
             : { ok: false, status, error: `The address answered ${String(status)}.` },
         );
+      },
+    );
+    const timer = setTimeout(() => {
+      request.destroy();
+      finish({ ok: false, error: `No answer within ${String(timeout / 1000)} seconds.` });
+    }, timeout);
+    request.on("error", (error) => {
+      finish({ ok: false, error: `Could not send: ${error.message}` });
+    });
+    request.end(body);
+  });
+}
+
+/** An answer whose body is read as it comes, or why there is none. */
+export type Opened =
+  | {
+      readonly ok: true;
+      readonly answer: IncomingMessage;
+      /** Ends the request and its answer, as when the one who asked has gone. */
+      readonly close: () => void;
+    }
+  | { readonly ok: false; readonly error: string };
+
+/**
+ * Posts `body` to `address` as `post` does, checked and pinned to the
+ * address its host resolved to, and gives the answer to read as it comes,
+ * as a relay streams a reply back (ADR 0070). Redirects are not followed.
+ */
+export async function open(
+  address: string,
+  headers: Readonly<Record<string, string>>,
+  body: string,
+  options: SendOptions,
+): Promise<Opened> {
+  let url: URL;
+  try {
+    url = new URL(address);
+  } catch {
+    return { ok: false, error: "This is not an address." };
+  }
+  if (url.protocol !== "https:" && url.protocol !== "http:") {
+    return { ok: false, error: "This address is not http:// or https://." };
+  }
+  const to = await target(url, options);
+  if (typeof to === "string") return { ok: false, error: to };
+  const host = hostOf(url);
+  const timeout = options.timeout ?? 10_000;
+  return new Promise<Opened>((resolve) => {
+    let settled = false;
+    const finish = (outcome: Opened) => {
+      clearTimeout(timer);
+      if (settled) return;
+      settled = true;
+      resolve(outcome);
+    };
+    const send = url.protocol === "https:" ? httpsRequest : httpRequest;
+    const request = send(
+      {
+        protocol: url.protocol,
+        hostname: host,
+        port: url.port === "" ? undefined : Number(url.port),
+        path: `${url.pathname}${url.search}`,
+        method: "POST",
+        headers: { ...headers, "content-length": String(Buffer.byteLength(body)) },
+        lookup: pinned(to),
+        agent: false,
+        ...(isIP(host) === 0 ? { servername: host } : {}),
+      },
+      (answer: IncomingMessage) => {
+        finish({
+          ok: true,
+          answer,
+          close: () => {
+            request.destroy();
+            answer.destroy();
+          },
+        });
       },
     );
     const timer = setTimeout(() => {

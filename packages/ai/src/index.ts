@@ -1,4 +1,12 @@
-export { anthropic, anthropicVersion, defaultMaxTokens } from "./anthropic.ts";
+export { anthropic, defaultMaxTokens } from "./anthropic.ts";
+export {
+  type ProviderCall,
+  anthropicVersion,
+  apiBase,
+  callOf,
+  callPath,
+  requestHeaders,
+} from "./endpoints.ts";
 export {
   type AssistAction,
   type AssistOptions,
