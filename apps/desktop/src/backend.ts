@@ -129,8 +129,8 @@ export interface AiAccess {
 }
 
 export interface Backend {
-  /** The desktop app, the web app, or a browser showing the sample vault. */
-  readonly kind: "desktop" | "web" | "preview";
+  /** The desktop app, the web app, the mobile apps, or a browser showing the sample vault. */
+  readonly kind: "desktop" | "web" | "mobile" | "preview";
   /** The vault the app was started with, as `nether ~/Notes`; null when none. */
   startup(): Promise<Startup | null>;
   recent(): Promise<VaultInfo[]>;
@@ -200,6 +200,12 @@ export interface Backend {
   mark(name: string): void;
   /** Hands back to the system the memory the app no longer uses, after a burst of work. */
   settle(): void;
+  /**
+   * In the mobile apps (ADR 0087), runs `save` as the app leaves the screen,
+   * within the time the system gives it, before the app may be ended;
+   * returns what stops it. Absent where the app is not ended unasked.
+   */
+  readonly onBackground?: (save: () => Promise<void>) => () => void;
 }
 
 /** A write's result, with the Go service's ErrChanged as a `ChangedOnDisk`. */
@@ -697,5 +703,16 @@ const preview: Backend = {
 const web =
   import.meta.env.VITE_NETHER_TARGET === "web" ? (await import("./webBackend.ts")).web : undefined;
 
+/**
+ * The mobile apps' backend (ADR 0087), loaded in their build alone, and
+ * there only inside the apps: in a browser, as in the end-to-end tests, the
+ * mobile build shows the preview.
+ */
+const mobile =
+  import.meta.env.VITE_NETHER_TARGET === "mobile" &&
+  (await import("@capacitor/core")).Capacitor.isNativePlatform()
+    ? (await import("./mobileBackend.ts")).mobile
+    : undefined;
+
 /** The backend for where the page runs. */
-export const backend: Backend = isMyGo() ? desktop : (web ?? preview);
+export const backend: Backend = isMyGo() ? desktop : (web ?? mobile ?? preview);

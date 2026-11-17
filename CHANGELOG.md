@@ -398,6 +398,19 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   and a property's handle opens a menu that moves it up or down, with no
   drag. The phone's parts load only at a phone's width
   ([ADR 0087](docs/adr/0087-the-mobile-apps-run-the-shared-page-in-capacitor-with-each-vaults-files-and-index-on-the-phone.md)).
+  Then the Android app, `apps/mobile`: the page in Capacitor 8, with
+  vaults of the phone's own, each a folder of Markdown files in the app's
+  storage with its ID in `.nether/vault.json` as the desktop app keeps it,
+  and its index in SQLite through `@capacitor-community/sqlite`, in WAL
+  mode with full syncs. The app's own plugin writes a note in one step,
+  to a temporary file synced to the disk and renamed over it, after
+  checking it is still what the page read; `DeviceFiles` in
+  `packages/storage` does the rest. Every open note is saved as the app
+  leaves the screen, and the vault looks again as it comes back. It works
+  with no account; signing in, sync and exports come in later parts. CI
+  builds the debug APK, tests the plugin on the JVM, checks every library
+  the app ships against ADR 0001's licenses, and runs the app on an
+  Android 15 emulator, ending it mid-edit.
 - Provisioning, first part: an account can be deactivated, which the
   server enforces whether the `scim` feature is on or off. It signs in no
   way: a password answers as a wrong one, no email code is sent, and a
@@ -442,6 +455,13 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- The server takes no note into a page's unit while the page stops being
+  shared on its own. A move asked meanwhile, as an app asks that sees the
+  page's notes listed where it sits while its unit is still there, waits
+  until the unit is gone and is refused. Before, an app up to 0.1.0 could
+  move them back into the unit, and once it was gone they went to the
+  trash on every device. A move into a unit removed while it was asked is
+  refused with 403, where it failed with 500.
 - A device back from being away could skip a note stored at the same
   moment as another, when the server's database numbered the two in one
   order and committed them in the other. A workspace's stores now take

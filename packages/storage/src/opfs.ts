@@ -48,7 +48,7 @@ const batch = 500;
 const decoder = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true });
 const encoder = new TextEncoder();
 
-function checkPath(path: string): readonly string[] {
+export function checkPath(path: string): readonly string[] {
   const parts = path.split("/");
   if (
     path === "" ||
@@ -61,7 +61,7 @@ function checkPath(path: string): readonly string[] {
   return parts;
 }
 
-function hiddenPath(path: string): boolean {
+export function hiddenPath(path: string): boolean {
   return path.split("/").some((part) => part.startsWith("."));
 }
 
@@ -72,7 +72,7 @@ function isMissing(error: unknown): boolean {
 }
 
 /** `name 1.png`, `name 2.png` and so on, for a path that is taken. */
-function numbered(path: string, n: number): string {
+export function numbered(path: string, n: number): string {
   const slash = path.lastIndexOf("/");
   const dot = path.lastIndexOf(".");
   const [stem, ext] = dot > slash + 1 ? [path.slice(0, dot), path.slice(dot)] : [path, ""];
