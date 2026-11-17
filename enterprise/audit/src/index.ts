@@ -1,17 +1,23 @@
 // Audit logs (ADR 0081), the `audit` enterprise feature: every event the
 // server tells of, recorded in the transaction of the change it tells of,
 // as the next row of a chained, append-only log; searched, checked and
-// kept as long as an instance admin says, in the admin console. While the
-// feature is off, nothing is recorded and its routes answer 404; turning
-// it on or off is recorded either way.
+// kept as long as an instance admin says, in the admin console, and sent
+// to a SIEM by syslog or a webhook. While the feature is off, nothing is
+// recorded or sent and its routes answer 404; turning it on or off is
+// recorded either way.
+import { serverVersion } from "@nether/server/src/app.ts";
 import type { Database, Queryable } from "@nether/server/src/db.ts";
 import type { EnterpriseContext, EnterpriseModule } from "@nether/server/src/enterprise.ts";
 import { type ServerEvent, accountActor, originOf } from "@nether/server/src/events.ts";
 import { instanceAdmin } from "@nether/server/src/features.ts";
 import { fail, uuidField } from "@nether/server/src/http.ts";
+import type { Resolver } from "@nether/server/src/outbound.ts";
+import { sealWith } from "@nether/server/src/secrets.ts";
 import { accountOf, signedIn } from "@nether/server/src/sessions.ts";
 import { type ChainKey, chainKey } from "./chain.ts";
 import { checkLog } from "./check.ts";
+import { pinnedDestinations } from "./destinations.ts";
+import { newSender, syslogHost } from "./export.ts";
 import { record } from "./log.ts";
 import {
   keepUp,
@@ -22,12 +28,16 @@ import {
   setRetentionDays,
 } from "./retention.ts";
 import { actionGroups, isActionGroup, searchLog, shownEvent } from "./search.ts";
+import { registerSiem } from "./siem.ts";
+import { clientCertificate } from "./syslog.ts";
 
 export { canonical, chainKey, keyFingerprint, rowHash } from "./chain.ts";
 export { type CheckResult, checkLog } from "./check.ts";
 export { type AuditRow, fieldsOf, record } from "./log.ts";
 export { checkpoint, keepUp, purge, retentionDays } from "./retention.ts";
 export { actionGroups, searchLog } from "./search.ts";
+export { exportedEvent, sendDue, sendNext, waitAfter } from "./export.ts";
+export { syslogFrame } from "./syslog.ts";
 
 /** How often the log is purged and its head recorded. */
 const upkeepEvery = 3_600_000;
@@ -251,15 +261,28 @@ function registerAudit(
   });
 }
 
+/** What a test sets beside the environment. */
+export interface AuditOptions {
+  /** How often each node looks for events to send; two seconds. */
+  readonly sendEvery?: number;
+  /** What resolves a webhook's host; the system's. */
+  readonly resolve?: Resolver;
+}
+
 /**
  * The audit module, read from `env` as the server's environment holds it:
- * NETHER_AUDIT_RETENTION_DAYS pins the days the log keeps its events.
+ * NETHER_AUDIT_RETENTION_DAYS pins the days the log keeps its events;
+ * NETHER_AUDIT_SYSLOG and NETHER_AUDIT_WEBHOOK pin a destination each, and
+ * NETHER_AUDIT_SYSLOG_CERT and _KEY name syslog's client certificate.
  */
-export function createAuditModule(env: NodeJS.ProcessEnv = process.env): EnterpriseModule {
+export function createAuditModule(
+  env: NodeJS.ProcessEnv = process.env,
+  options: AuditOptions = {},
+): EnterpriseModule {
   const pinned = pinnedRetention(env.NETHER_AUDIT_RETENTION_DAYS);
   return {
     feature: "audit",
-    plugin: (app, { db, config, isOn, whenOn, events, dataPolicies }) => {
+    plugin: async (app, { db, config, isOn, whenOn, events, dataPolicies }) => {
       const key = chainKey(config.secretKey);
       const stop = events.listen(
         async (event, origin, tx) => {
@@ -290,7 +313,27 @@ export function createAuditModule(env: NodeJS.ProcessEnv = process.env): Enterpr
       // While a workspace is on legal hold, the log purges nothing (ADR 0088):
       // its purge cuts the chain's oldest rows, the held workspace's among them.
       registerAudit(app, db, isOn, key, pinned, whenOn, () => dataPolicies.anyHold());
-      return Promise.resolve();
+      // Read as the server starts: a destination set wrong stops it, saying which.
+      const seal = config.secretKey === null ? undefined : sealWith(config.secretKey);
+      const destinations = pinnedDestinations(env);
+      const sender = newSender({
+        seal,
+        pinned: destinations,
+        client: clientCertificate(env),
+        host: syslogHost(config.publicUrl),
+        version: serverVersion(),
+        ...(options.resolve === undefined ? {} : { resolve: options.resolve }),
+      });
+      await registerSiem(app, {
+        db,
+        isOn,
+        whenOn,
+        key,
+        seal,
+        pinned: destinations,
+        sender,
+        ...(options.sendEvery === undefined ? {} : { every: options.sendEvery }),
+      });
     },
   };
 }
