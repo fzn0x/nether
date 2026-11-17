@@ -6,6 +6,8 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-11-17
+
 ### Added
 
 - The admin console lists the server's nodes, each with its name, version
@@ -1084,6 +1086,7 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   multi-select cell are both kept: the second no longer writes the list
   as the cell showed it before the first was read back.
 
-[Unreleased]: https://github.com/fzn0x/nether/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/fzn0x/nether/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/fzn0x/nether/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/fzn0x/nether/compare/v0.0.1...v0.1.0
 [0.0.1]: https://github.com/fzn0x/nether/releases/tag/v0.0.1
