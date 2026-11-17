@@ -79,4 +79,5 @@ record supersedes it and says so. Start a new one from
 | [0069](0069-writing-assist-streams-into-a-preview-and-goes-in-as-one-edit.md) | Writing assist streams into a preview, and goes into the note as one edit | Accepted |
 | [0070](0070-the-web-apps-ai-goes-through-its-server-which-seals-the-keys-and-reaches-only-what-it-may.md) | The web app's AI goes through its server, which seals the keys and reaches only what it may | Accepted |
 | [0071](0071-a-share-link-opens-one-shared-page-to-anyone-with-it-through-the-web-app.md) | A share link opens one shared page to anyone with it, through the web app | Accepted |
+| [0072](0072-buttons-are-meta-bind-button-blocks-and-triggers-are-schema-rules-run-where-the-change-is-made.md) | Buttons are Meta Bind's button blocks, and triggers are rules in a database's schema, run where the change is made | Accepted |
 | [0074](0074-search-by-meaning-keeps-passages-vectors-on-the-device-and-loads-them-only-to-search.md) | Search by meaning keeps each passage's vector on the device, and loads them only to search | Accepted |

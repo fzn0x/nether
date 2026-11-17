@@ -44,7 +44,9 @@ Notion exports. Self-hosting is available for enterprise.
 > desktop's keychain or sealed on your server for the web app, and the
 > desktop app searches notes by meaning with its embedding model; share links
 > open a page to anyone with one, with no account, to read, comment on or
-> edit; and the
+> edit; [buttons](https://fzn0x.github.io/nether/buttons/) in a note, as
+> Meta Bind writes them, run commands, make notes from templates and set
+> properties; and the
 > [roadmap](docs/roadmap.md#phase-4-platform) ticks off the rest as it
 > lands.
 

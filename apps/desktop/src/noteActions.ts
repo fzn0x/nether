@@ -1,7 +1,7 @@
 // What a note's menu does that is more than a call: a copy of the note
 // beside it, its full path on disk, the vault's folders to move it to, and
 // its tags, read and written in its frontmatter through its document, as
-// the editor and sync change it.
+// the editor and sync change it. A button sets a property the same way.
 import type { JsonValue, NoteId, PropertyEntry } from "@nether/core";
 import { documentProperties, setDocumentProperties } from "@nether/editor";
 import { type NoteEntry, type Vault, folderOf, numberedPath } from "@nether/storage";
@@ -19,6 +19,28 @@ export async function copyNote(vault: Vault, id: NoteId): Promise<NoteEntry> {
       return vault.create(path, text);
     }
   }
+}
+
+/**
+ * The path of a note a button makes (ADR 0072): its name in its folder,
+ * from the vault's; undefined for none, or a place a note cannot be, in a
+ * hidden folder or above the vault's.
+ */
+export function buttonNotePath(folder: string, name: string): string | undefined {
+  const parts = [...folder.split(/[\\/]/), ...name.replace(/\.md$/i, "").split(/[\\/]/)]
+    .map((part) => part.trim())
+    .filter((part) => part !== "");
+  if (parts.length === 0 || parts.some((part) => part.startsWith("."))) return undefined;
+  return `${parts.join("/")}.md`;
+}
+
+/** `path`, or with a number after its name when a file is there, as the vault names files that meet. */
+export function freeNotePath(vault: Vault, path: string): string {
+  let free = path;
+  for (let n = 2; vault.noteAt(free) !== undefined || vault.fileInfo(free) !== undefined; n++) {
+    free = numberedPath(path, n);
+  }
+  return free;
 }
 
 /** A file's full path on disk, written as the vault's folder writes its own. */
@@ -71,10 +93,7 @@ export function withTags(
 ): PropertyEntry[] {
   const key = tagsKey(entries);
   if (tags.length === 0) return entries.filter((entry) => entry.key !== key);
-  const value = [...tags];
-  return entries.some((entry) => entry.key === key)
-    ? entries.map((entry) => (entry.key === key ? { key, value } : entry))
-    : [...entries, { key, value }];
+  return withProperty(entries, key, [...tags]);
 }
 
 /** Runs `change` on a note's document, held while it runs, as the editor and sync hold it. */
@@ -85,12 +104,13 @@ async function changeDocument<T>(
     readonly entries?: PropertyEntry[];
     readonly result: T;
   },
+  cannot: string,
 ): Promise<T> {
   const hold = noteDocuments(vault).open(id);
   try {
     await whenLoaded(hold.note);
     const { state } = hold.note.snapshot;
-    if (state.status !== "ready") throw new Error(t("tagsCannotChange"));
+    if (state.status !== "ready") throw new Error(cannot);
     if (state.frontmatterError !== undefined) throw new Error(state.frontmatterError);
     const { entries, result } = change(documentProperties(state.document));
     if (entries !== undefined) setDocumentProperties(state.document, entries);
@@ -102,15 +122,48 @@ async function changeDocument<T>(
 
 /** A note's tags in its frontmatter. */
 export function noteTags(vault: Vault, id: NoteId): Promise<string[]> {
-  return changeDocument(vault, id, (entries) => ({
-    result: tagsOf(entries.find((entry) => entry.key === tagsKey(entries))?.value),
-  }));
+  return changeDocument(
+    vault,
+    id,
+    (entries) => ({
+      result: tagsOf(entries.find((entry) => entry.key === tagsKey(entries))?.value),
+    }),
+    t("tagsCannotChange"),
+  );
 }
 
 /** Sets a note's tags in its frontmatter, the other properties as they are. */
 export function setNoteTags(vault: Vault, id: NoteId, tags: readonly string[]): Promise<void> {
-  return changeDocument(vault, id, (entries) => ({
-    entries: withTags(entries, tags),
-    result: undefined,
-  }));
+  return changeDocument(
+    vault,
+    id,
+    (entries) => ({ entries: withTags(entries, tags), result: undefined }),
+    t("tagsCannotChange"),
+  );
+}
+
+/** A note's properties with one set: in its place, or last when it is new. */
+export function withProperty(
+  entries: readonly PropertyEntry[],
+  key: string,
+  value: JsonValue,
+): PropertyEntry[] {
+  return entries.some((entry) => entry.key === key)
+    ? entries.map((entry) => (entry.key === key ? { key, value } : entry))
+    : [...entries, { key, value }];
+}
+
+/** Sets a property of a note in its frontmatter, as a button does, the others as they are. */
+export function setNoteValue(
+  vault: Vault,
+  id: NoteId,
+  key: string,
+  value: JsonValue,
+): Promise<void> {
+  return changeDocument(
+    vault,
+    id,
+    (entries) => ({ entries: withProperty(entries, key, value), result: undefined }),
+    t("propertyCannotChange"),
+  );
 }

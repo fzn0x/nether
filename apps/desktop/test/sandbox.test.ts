@@ -270,6 +270,8 @@ describe("PluginHost, a plugin from a folder", () => {
     };
     expect(host.addFolder({ manifest: echo, code: "the code" })).toEqual([]);
     expect(frame.opened).toEqual([]);
+    // A button asks each time it runs a command of a plugin from the vault (ADR 0072).
+    expect(commands.get("echo:say")?.fromVault).toBe(true);
     commands.get("echo:say")?.run();
     await settle();
     expect(said).toEqual(["said"]);

@@ -168,10 +168,11 @@ in it, holding `text`:
 `name` and `keywords` are strings, or strings by language. Without a
 `name`, the language has no entry.
 
-Mermaid diagrams and query blocks are built-in plugins, and the slash
-menu's Diagram and Query are their entries. Mermaid's uses only this API.
-A query block's notes are a live view, which only built-in plugins can
-show; an exported page shows a query block's code.
+Mermaid diagrams, query blocks and [buttons](../buttons/) are built-in
+plugins, and the slash menu's Diagram, Query and Button are their entries.
+Mermaid's uses only this API. A query block's notes and a button are live
+views, which only built-in plugins can show; an exported page shows their
+code.
 
 ## Blocks
 
