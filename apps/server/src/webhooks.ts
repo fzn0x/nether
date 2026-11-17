@@ -18,7 +18,7 @@ import { type WorkspaceParams, reach, type registerApi, workspaceParams } from "
 import { addressProblem, newSecret, type PrivatePolicy } from "./outbound.ts";
 import { type EventType, eventTypes } from "./outbox.ts";
 import { type ApiCaller, callerActor, callerOf } from "./tokens.ts";
-import { membership } from "./workspaces.ts";
+import { placeOf } from "./places.ts";
 import { type EventDetails, type ServerEvents, originOf } from "./events.ts";
 
 /** The most webhooks a workspace has. */
@@ -131,8 +131,9 @@ export function registerWebhooks(
     if (changing && caller.access !== "write") return [403, readOnly];
     const reached = await reach(db, caller, workspace);
     if (!("workspace" in reached)) return reached;
-    const member = await membership(db, caller.userId, reached.workspace);
-    if (member?.role !== "owner" && member?.role !== "admin") return [403, onlyAdmins];
+    // Its role manages the workspace's webhooks, as an owner's and an admin's do (ADR 0089).
+    const place = await placeOf(db, caller.userId, reached.workspace);
+    if (place?.settings.workspace !== true) return [403, onlyAdmins];
     return reached.workspace;
   }
 

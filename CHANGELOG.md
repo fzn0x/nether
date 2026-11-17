@@ -471,6 +471,16 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   it below them or remove it, and the members list says which group gives
   the place. The console's Workspaces page marks those with no active
   owner, and lists them alone when asked.
+- Advanced permissions, first part: what a role may do is ten settings,
+  which each built-in role fixes to what it has always given, and every
+  check of the server reads them in place of a role's name. `/api/me`
+  gives each workspace's as `may`. Advanced permissions is an enterprise
+  feature of its own, `NETHER_ENTERPRISE_PERMISSIONS`, on the console's
+  Features page; custom roles, groups' access and sharing domains follow
+  ([ADR 0089](docs/adr/0089-custom-roles-adjust-a-built-in-role-groups-are-granted-teamspaces-and-pages-and-a-workspace-may-share-only-within-its-domains.md)).
+  - A guest who edits a page now sends its attachments, as its images:
+    sending one takes edit access in General or in any teamspace or page,
+    where it took a role other than a guest's.
 
 ### Changed
 

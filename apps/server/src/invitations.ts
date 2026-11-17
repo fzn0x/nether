@@ -19,6 +19,7 @@ import {
 } from "./http.ts";
 import { higherRole, roleOf } from "./members.ts";
 import { hashPassword } from "./passwords.ts";
+import { invitesMembers, placeOf } from "./places.ts";
 import { type Level, accessible } from "./units.ts";
 import {
   accountOf,
@@ -245,13 +246,10 @@ export function registerInvitations(
     userId: string,
     workspaceId: string,
   ): Promise<readonly [number, string] | undefined> {
-    const { rows } = await db.query(
-      "SELECT role FROM memberships WHERE workspace_id = $1 AND user_id = $2",
-      [workspaceId, userId],
-    );
+    const place = await placeOf(db, userId, workspaceId);
     // A workspace the account is not in is not found, so its existence stays hidden.
-    if (rows.length === 0) return [404, "This account is in no such workspace."];
-    if (!["owner", "admin"].includes(readText(rows[0], "role"))) {
+    if (place === undefined) return [404, "This account is in no such workspace."];
+    if (!invitesMembers(place.settings)) {
       return [403, "Only the workspace's owners and admins may invite."];
     }
     return undefined;
@@ -275,14 +273,17 @@ export function registerInvitations(
         if (role !== "guest" || level === undefined) {
           return fail(reply, 400, "An invitation to a page makes a guest, at a level there.");
         }
-        // Anyone with full access to a shared page may invite someone to it.
-        const { levels: found, units } = await accessible(db, me.id, workspace);
-        if (found.size === 0) return fail(reply, 404, "This account is in no such workspace.");
+        // Anyone with full access to a shared page, whose role invites guests, may invite someone to it.
+        const { levels: found, units, place } = await accessible(db, me.id, workspace);
+        if (place === undefined) return fail(reply, 404, "This account is in no such workspace.");
         if (units.get(unit)?.kind !== "page" || !found.has(unit)) {
           return fail(reply, 404, "This account has no such shared page here.");
         }
         if (found.get(unit) !== "full") {
           return fail(reply, 403, "Inviting someone to a page takes full access to it.");
+        }
+        if (!place.settings.guests) {
+          return fail(reply, 403, "Your role in this workspace invites no guests.");
         }
       }
       const token = newToken();
