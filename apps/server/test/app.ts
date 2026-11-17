@@ -7,6 +7,7 @@ import { buildApp } from "../src/app.ts";
 import { connectRedis } from "../src/redis.ts";
 import { readConfig } from "../src/config.ts";
 import type { BlobStore } from "../src/blobs.ts";
+import type { ClusterBus } from "../src/cluster.ts";
 import type { Database } from "../src/db.ts";
 import type { TxtResolver } from "../src/domains.ts";
 import type { Mailer, Message } from "../src/mail.ts";
@@ -81,11 +82,15 @@ export async function startServer(
     enterpriseModules?: readonly EnterpriseModule[];
     /** What the server queries instead of the test's database, as one that delays answers. */
     wrapDb?: (db: Database) => Database;
+    /** What the server's nodes tell each other, shared by the nodes a test starts. */
+    bus?: ClusterBus;
+    /** A server already started, which this one is another node of: its database, set up already. */
+    nodeOf?: TestServer;
   } = {},
 ): Promise<TestServer> {
-  const db = await testDatabase();
-  await migrate(db);
-  const setupCode = newSetupCode();
+  const db = options.nodeOf?.db ?? (await testDatabase());
+  if (options.nodeOf === undefined) await migrate(db);
+  const setupCode = options.nodeOf?.setupCode ?? newSetupCode();
   const config = readConfig({ ...baseEnv, ...options.env });
   const redis = options.redis ?? (await testRedis());
   const server = await buildApp(config, {
@@ -97,6 +102,7 @@ export async function startServer(
     ...(options.webhookWorker === undefined ? {} : { webhookWorker: options.webhookWorker }),
     ...(options.aiResolve === undefined ? {} : { aiResolve: options.aiResolve }),
     ...(options.resolveTxt === undefined ? {} : { resolveTxt: options.resolveTxt }),
+    ...(options.bus === undefined ? {} : { bus: options.bus }),
     ...(options.enterpriseModules === undefined
       ? {}
       : { enterpriseModules: options.enterpriseModules }),
@@ -109,7 +115,8 @@ export async function startServer(
       await server.close();
       // A client the test gave is the test's to close.
       if (options.redis === undefined) await redis?.quit();
-      await db.close();
+      // Another node's database is the first node's to close.
+      if (options.nodeOf === undefined) await db.close();
     },
   };
 }

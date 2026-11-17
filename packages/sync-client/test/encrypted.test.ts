@@ -3,7 +3,7 @@
 // beside them, nothing the server keeps readable, files kept as ciphertext,
 // and a long log replaced by a snapshot.
 import { randomUUID } from "node:crypto";
-import type { Database } from "@nether/server/src/db.ts";
+import type { Database, Queryable } from "@nether/server/src/db.ts";
 import { afterEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
 import {
@@ -58,10 +58,10 @@ async function api(url: string, token: string, method: string, path: string, bod
 function answeringOutOfOrder() {
   const gate = { note: "", armed: false };
   let release: (() => void) | undefined;
-  const wrap = (database: Database): Database => ({
-    ...database,
-    async query(text, params) {
-      const result = await database.query(text, params);
+  const gated =
+    (query: Queryable["query"]): Queryable["query"] =>
+    async (text, params) => {
+      const result = await query(text, params);
       const push =
         gate.armed && text.includes("INSERT INTO encrypted_updates") && params?.[1] === gate.note;
       if (!push) return result;
@@ -76,7 +76,15 @@ function answeringOutOfOrder() {
         setTimeout(() => release?.(), 200);
       }
       return result;
-    },
+    };
+  // In a transaction too, where a push is stored.
+  const wrap = (database: Database): Database => ({
+    ...database,
+    query: gated((text, params) => database.query(text, params)),
+    transaction: (work) =>
+      database.transaction((tx) =>
+        work({ query: gated((text, params) => tx.query(text, params)) }),
+      ),
   });
   return { gate, wrap };
 }

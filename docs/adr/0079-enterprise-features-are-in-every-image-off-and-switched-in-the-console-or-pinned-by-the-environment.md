@@ -1,6 +1,7 @@
 # 0079. Enterprise features are in every image, off, and switched in the console or pinned by the environment
 
 - Status: Accepted
+- Amended for `ha` by [ADR 0082](0082-several-nodes-share-sync-through-valkey-take-their-order-from-postgresql-and-roll-out-one-at-a-time.md): set by the environment only
 - Date: 2026-11-17
 
 ## Context
