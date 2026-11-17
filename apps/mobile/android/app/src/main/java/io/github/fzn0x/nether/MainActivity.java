@@ -5,6 +5,7 @@ import android.content.Intent;
 import android.content.pm.PackageInfo;
 import android.net.Uri;
 import android.os.Bundle;
+import android.webkit.WebSettings;
 import android.webkit.WebView;
 import androidx.appcompat.app.AlertDialog;
 import androidx.webkit.WebViewCompat;
@@ -25,6 +26,12 @@ public class MainActivity extends BridgeActivity {
         super.onCreate(savedInstanceState);
         // The perf build is measured through the WebView's DevTools (tools/perf/android.mjs).
         if ("perf".equals(BuildConfig.BUILD_TYPE)) WebView.setWebContentsDebuggingEnabled(true);
+        // The debug build may sync with a development server over plain HTTP on
+        // the emulator's host (ADR 0087): its socket is ws:, which the page's
+        // own https: origin would otherwise refuse. Release builds speak only HTTPS.
+        if (BuildConfig.DEBUG) {
+            getBridge().getWebView().getSettings().setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
+        }
         warnOfAnOldWebView();
     }
 

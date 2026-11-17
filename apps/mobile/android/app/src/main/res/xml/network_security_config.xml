@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Servers over HTTPS only (ADR 0087), as the self-hosting guide asks. The
+     debug build's own copy of this file lets it reach plain HTTP on the
+     emulator's host, for development. -->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false" />
+</network-security-config>

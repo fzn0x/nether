@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Android 11 and earlier (ADR 0087): the server sessions' tokens and the
+     account's private key, sealed under a key that never leaves the
+     Keystore, stay out of backups; a restored app signs in again. -->
+<full-backup-content>
+    <exclude domain="sharedpref" path="WSSecureStorageSharedPreferences.xml" />
+</full-backup-content>
