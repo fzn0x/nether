@@ -231,7 +231,9 @@ new HocuspocusProvider({
 
 The server stores a document two seconds after it stops changing, and at
 least every ten seconds, as its merged state numbered from one sequence. A
-client back from being away asks
+workspace's stores draw their numbers in the order they commit, under a
+lock for the workspace held to the commit (ADR 0082), so a listing that
+shows a number shows every smaller one. A client back from being away asks
 `GET /api/workspaces/:id/documents?since=<the last number it saw>` and
 syncs only those. A client syncing the vault document hears of every note
 as it is stored, as the stateless message
@@ -247,8 +249,11 @@ to their public key by a member who had it.
 
 Hocuspocus refuses these workspaces' documents. They sync through
 `/api/relay`, which keeps each encrypted update in order, numbered from the
-same sequence, and sends it on. A socket sends `{"type":"auth","token"}`,
-then:
+same sequence, and sends it on. Each node reads a workspace's updates in
+the order they are numbered, after the last it read, and sends them to its
+own subscribers: when it stores one, when the bus says another node did,
+and every five seconds. It tells a pusher its number once it has read past
+it. A socket sends `{"type":"auth","token"}`, then:
 
 | Message | Answer |
 | --- | --- |
