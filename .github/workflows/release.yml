@@ -7,10 +7,15 @@ name: Release
 # SHA256SUMS. The release is the repository's latest, which installed apps
 # read their updates from (releases/latest/download), so it is never a
 # draft or a prerelease.
+#
+# Run by hand on a branch, it is a dry run: every job builds, the APK and
+# the updates are signed, the chart is packaged and the notes rendered,
+# but nothing is pushed or published. Run it on main before tagging.
 
 on:
   push:
     tags: ["v*"]
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -31,10 +36,13 @@ jobs:
       - name: The tag is the app's version, and the changelog has its section
         run: |
           version="$(jq -r .version apps/desktop/mygo.json)"
-          test "$GITHUB_REF_NAME" = "v$version" || {
-            echo "The tag $GITHUB_REF_NAME is not v$version, the version in apps/desktop/mygo.json."
-            exit 1
-          }
+          # A dry run has no tag: it checks the rest.
+          if [ "$GITHUB_EVENT_NAME" = push ]; then
+            test "$GITHUB_REF_NAME" = "v$version" || {
+              echo "The tag $GITHUB_REF_NAME is not v$version, the version in apps/desktop/mygo.json."
+              exit 1
+            }
+          fi
           server="$(jq -r .version apps/server/package.json)"
           test "$server" = "$version" || {
             echo "apps/server/package.json is at $server, not $version: /health would report it."
@@ -195,6 +203,7 @@ jobs:
       - uses: docker/setup-qemu-action@v4
       - uses: docker/setup-buildx-action@v4
       - uses: docker/login-action@v4
+        if: github.event_name == 'push'
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -207,13 +216,13 @@ jobs:
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
             type=raw,value=latest
-      - name: Build and push it
+      - name: Build it, and push it on a tag
         uses: docker/build-push-action@v7
         with:
           context: .
           file: deploy/docker/Dockerfile
           platforms: linux/amd64,linux/arm64
-          push: true
+          push: ${{ github.event_name == 'push' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
 
@@ -229,13 +238,19 @@ jobs:
       - uses: azure/setup-helm@v5.0.1
         with:
           version: v4.3.1
-      - name: Package it at the release's version, and push it to ghcr.io
+      - name: Package it at the release's version
+        run: |
+          version="$(jq -r .version apps/desktop/mygo.json)"
+          helm package deploy/helm/nether --version "$version" --app-version "$version" --destination dist
+          # The packaged chart renders, as a one-node install would have it.
+          helm template nether "dist/nether-$version.tgz" -f deploy/helm/nether/examples/one-node.yaml > /dev/null
+      - name: Push it to ghcr.io
+        if: github.event_name == 'push'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          version="${GITHUB_REF_NAME#v}"
+          version="$(jq -r .version apps/desktop/mygo.json)"
           echo "$GH_TOKEN" | helm registry login ghcr.io --username "${{ github.actor }}" --password-stdin
-          helm package deploy/helm/nether --version "$version" --app-version "$version" --destination dist
           helm push "dist/nether-$version.tgz" oci://ghcr.io/fzn0x/charts
 
   clipper:
@@ -297,7 +312,7 @@ jobs:
           rm -f "$NETHER_ANDROID_KEYSTORE_FILE"
       - name: Check it is signed with the project's key, and name it
         run: |
-          version="${GITHUB_REF_NAME#v}"
+          version="$(jq -r .version apps/mobile/package.json)"
           apk=apps/mobile/android/app/build/outputs/apk/release/app-release.apk
           apksigner="$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)/apksigner"
           "$apksigner" verify --print-certs "$apk" | tee "$RUNNER_TEMP/certs.txt"
@@ -328,12 +343,12 @@ jobs:
           merge-multiple: true
       - name: Checksums and notes
         run: |
-          version="${GITHUB_REF_NAME#v}"
+          version="$(jq -r .version apps/desktop/mygo.json)"
           cd release
           sha256sum -- * > SHA256SUMS
           cat SHA256SUMS
           cd ..
-          url="https://github.com/$GITHUB_REPOSITORY/releases/download/$GITHUB_REF_NAME"
+          url="https://github.com/$GITHUB_REPOSITORY/releases/download/v$version"
           {
             cat .github/release-notes.md | sed "s|{version}|$version|g; s|{url}|$url|g"
             echo
@@ -347,7 +362,9 @@ jobs:
               found { print }
             ' CHANGELOG.md
           } > notes.md
+          cat notes.md
       - name: Publish the release, the manifests last
+        if: github.event_name == 'push'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
