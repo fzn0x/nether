@@ -144,6 +144,7 @@ describe("DeviceFiles", () => {
     expect(device).toEqual(memory);
   });
 
+  // 1,200 writes one after another: a busy CI runner has taken over 5 s.
   it("hands a large folder over in batches, and reads many in batches too", async () => {
     const folder = new FakeFolder();
     const files = new DeviceFiles(folder);
@@ -163,7 +164,7 @@ describe("DeviceFiles", () => {
     expect(texts[0]).toBe("note 0");
     expect(texts.at(-1)).toBe("note 1199");
     expect(folder.asked.map((asked) => asked.length)).toEqual([500, 500, 200]);
-  });
+  }, 30_000);
 
   it("attaches beside a name another write took first, and trashes under a free name", async () => {
     const folder = new FakeFolder();

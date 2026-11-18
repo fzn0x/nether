@@ -149,13 +149,14 @@ describe("OpfsFiles", () => {
     await expect(files.write("A.md", "next", first.hash)).resolves.toMatchObject({ text: "next" });
   });
 
+  // 1,200 writes one after another: a busy CI runner has taken over 5 s.
   it("hands a large folder over in batches", async () => {
     const files = new OpfsFiles(new FakeDirectory());
     for (let n = 0; n < 1_201; n++) await files.write(`Notes/${String(n)}.md`, "", "");
     const sizes: number[] = [];
     await files.list("", (batch) => sizes.push(batch.length));
     expect(sizes).toEqual([500, 500, 201]);
-  });
+  }, 30_000);
 
   it("lists nothing for a folder that is not there", async () => {
     const files = new OpfsFiles(new FakeDirectory());
