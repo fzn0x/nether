@@ -1,6 +1,6 @@
 {
   "name": "@nether/mobile",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "description": "The Nether apps for Android and iOS: the desktop app's page in Capacitor, each vault Markdown files on the phone with its index in SQLite.",
   "license": "AGPL-3.0-or-later",
