@@ -1,6 +1,6 @@
 {
   "name": "@nether/clipper",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "description": "The Nether web clipper: a browser extension for Chrome and Firefox that saves a page or a selection as Markdown to a note or a database on your Nether server.",
   "license": "AGPL-3.0-or-later",
