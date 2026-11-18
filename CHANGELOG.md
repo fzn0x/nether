@@ -6,8 +6,6 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-## [0.2.0] - 2026-11-18
-
 ### Added
 
 - Each release has the Android app, `nether-<version>-android.apk`, signed
@@ -20,6 +18,7 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `apps/mobile/ios/nether.xcconfig`, which a git-ignored
   `nether.local.xcconfig` overrides, and the install guide walks through
   it (#238).
+
 - The admin console lists the server's nodes, each with its name, version
   and start, in every build. A node writes its heartbeat every half a
   minute; its name is `NETHER_NODE_NAME`, or its machine's. A node without
@@ -574,6 +573,7 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Boards, galleries, lists, calendars and timelines are the built-in
   Database layouts plugin's, keeping their names; the table stays the
   app's own.
+
 - The desktop app keeps one copy of each link target, tag, heading and
   property value its notes' indexes repeat, as the vault's links load: on
   50,000 notes the page's heap is 10 MB smaller, and the app idles 5 MB
@@ -1172,7 +1172,6 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   multi-select cell are both kept: the second no longer writes the list
   as the cell showed it before the first was read back.
 
-[Unreleased]: https://github.com/fzn0x/nether/compare/v0.2.0...HEAD
-[0.2.0]: https://github.com/fzn0x/nether/compare/v0.1.0...v0.2.0
+[Unreleased]: https://github.com/fzn0x/nether/compare/v0.1.0...HEAD
 [0.1.0]: https://github.com/fzn0x/nether/compare/v0.0.1...v0.1.0
 [0.0.1]: https://github.com/fzn0x/nether/releases/tag/v0.0.1
