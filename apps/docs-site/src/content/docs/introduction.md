@@ -50,8 +50,8 @@ importers from Obsidian, Notion, Logseq, HTML and CSV. A server you
 end-to-end encryption, spaces and sharing, co-editing, comments and
 mentions, history and backups, and serves the web app.
 
-Version 0.1.0, the first public release, with sync and the server, is
-ready to [install](../install/). The fifth phase, the platform,
+Version 0.2.0, with the phone apps, is ready to
+[install](../install/). The fifth phase, the platform,
 is done: the [plugin API](../plugins/) is done, and Nether's own
 diagrams, panels, canvas, graph and database layouts are built-in plugins
 on it. Plugins from a vault run in a sandbox, with only what each device

@@ -139,7 +139,7 @@ Settings go in the `.env` file beside `docker-compose.yml`, one
 | Setting | Default | |
 | --- | --- | --- |
 | `NETHER_PUBLISH` | `127.0.0.1:3000` | The address and port on this machine the server answers at; `0.0.0.0:3000` for every network it is on |
-| `NETHER_VERSION` | `latest` | The image's version, as `0.1.0`, to stay on one release |
+| `NETHER_VERSION` | `latest` | The image's version, as `0.2.0`, to stay on one release |
 | `NETHER_POSTGRES_PASSWORD` | `nether` | PostgreSQL's password, read when its volume is first made; set it before the first start |
 
 The server reads every other setting of the
