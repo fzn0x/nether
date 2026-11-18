@@ -1,0 +1,14 @@
+// The IDs the iOS app and its share extension are signed with (#238).
+//
+// The project's own are below. To build Nether with your own Apple ID, a
+// free one will do, write yours in nether.local.xcconfig beside this file,
+// which git ignores:
+//
+//   NETHER_BUNDLE_ID = com.yourname.nether
+//
+// The share extension's ID, `<it>.share`, and the App Group they share,
+// `group.<it>`, follow from it.
+NETHER_BUNDLE_ID = io.github.fzn0x.nether
+NETHER_APP_GROUP = group.$(NETHER_BUNDLE_ID)
+
+#include? "nether.local.xcconfig"

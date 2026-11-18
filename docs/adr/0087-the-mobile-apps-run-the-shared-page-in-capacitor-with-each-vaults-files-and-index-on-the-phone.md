@@ -284,10 +284,14 @@ development.
   - It takes text, a link, and up to ten images, videos or files: iOS's
     activation rules name kinds of file only through a predicate, so any
     file is offered, where Android takes only what a note embeds.
-  - The App Group is `group.io.github.fzn0x.nether`, in both targets'
-    entitlements. A simulator build applies them unsigned, so CI reads and
-    files the group's inbox; on a phone the maintainer's account registers
-    the group.
+  - The App Group is `group.` and the bundle ID, `group.io.github.fzn0x.nether`
+    for the project's, in both targets' entitlements, set once in
+    `ios/nether.xcconfig` with the bundle IDs; the app and the extension
+    read it from their Info.plist. A simulator build applies them
+    unsigned, so CI reads and files the group's inbox; on a phone, whoever
+    builds it signs it with their own Apple ID's team, a free one included,
+    and their own IDs in `nether.local.xcconfig` (#238). No store
+    distributes it.
   - The inbox's format is one Swift file, `Captures.swift`, in the
     plugin's package with its tests, which the extension compiles too.
 
