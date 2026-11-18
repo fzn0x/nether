@@ -284,10 +284,15 @@ describe("syncing desktop vaults", () => {
     await until(() => laptop.engine.status.state === "synced");
 
     const phone = await device(served, {});
-    await until(
+    // Sync writes a fetched file's bytes, then records it in the vault's
+    // index, which the note's link reads: wait for both.
+    await step(
+      "the phone's files and their records",
       () =>
         phone.memory.bytes("attachments/photo.png") !== undefined &&
-        phone.memory.bytes("Packing.txt") !== undefined,
+        phone.memory.bytes("Packing.txt") !== undefined &&
+        phone.vault.fileInfo("attachments/photo.png") !== undefined &&
+        phone.vault.fileInfo("Packing.txt") !== undefined,
     );
     expect(phone.memory.bytes("attachments/photo.png")).toEqual(png);
     expect(phone.vault.resolveFile("photo.png", "Trip.md")).toBe("attachments/photo.png");
