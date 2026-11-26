@@ -17,21 +17,21 @@
   "dependencies": {
     "@aparajita/capacitor-secure-storage": "8.0.1",
     "@capacitor-community/sqlite": "8.1.1",
-    "@capacitor/android": "8.6.0",
+    "@capacitor/android": "8.6.2",
     "@capacitor/app": "8.1.2",
     "@capacitor/browser": "8.0.5",
-    "@capacitor/core": "8.6.0",
-    "@capacitor/ios": "8.6.0",
+    "@capacitor/core": "8.6.2",
+    "@capacitor/ios": "8.6.2",
     "@capacitor/share": "8.0.3",
     "@capawesome/capacitor-app-shortcuts": "8.0.3",
     "@capawesome/capacitor-background-task": "8.0.3",
     "@nether/mobile-plugin": "link:./plugin"
   },
   "devDependencies": {
-    "@capacitor/cli": "8.6.0",
+    "@capacitor/cli": "8.6.2",
     "@nether/desktop": "workspace:*",
-    "@playwright/test": "^1.64.1",
+    "@playwright/test": "^1.65.1",
     "@types/node": "^24.19.2",
-    "vite": "^8.3.5"
+    "vite": "^8.3.8"
   }
 }

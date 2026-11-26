@@ -15,15 +15,15 @@
   "dependencies": {
     "@nether/server": "workspace:*",
     "@node-saml/node-saml": "5.2.0",
-    "@xmldom/xmldom": "0.8.15",
-    "fastify": "^5.12.7",
-    "xpath": "0.0.35"
+    "@xmldom/xmldom": "0.9.12",
+    "fastify": "^5.12.8",
+    "xpath": "0.0.36"
   },
   "devDependencies": {
     "@types/node": "^24.19.2",
     "@types/xml-encryption": "1.2.4",
-    "vitest": "^5.0.5",
+    "vitest": "^5.1.1",
     "xml-crypto": "6.4.0",
-    "xml-encryption": "3.1.0"
+    "xml-encryption": "6.0.2"
   }
 }
